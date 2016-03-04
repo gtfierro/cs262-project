@@ -1,0 +1,99 @@
+\documentclass{article}
+\usepackage[utf8]{inputenc}
+\usepackage{natbib}
+\usepackage[in]{fullpage}
+\usepackage{filecontents}
+
+\title{CS262 Proposal}
+\author{Gabe Fierro}
+\date{February 2016}
+
+\begin{document}
+
+\maketitle
+
+\section{Problem Statement and Motivation}
+
+The context of the Internet of Things has seen an increase in both the number
+and capabilities of small, low-powered, constrained devices wanting to interact
+with each other and the outside world.  This has raised the question of how to
+conduct discovery and communication. The publish-subscribe (\emph{pub-sub}) is
+an attractive approach because it decouples publishers from subscribers in
+space (communication through a well-known broker helps deal with firewalls and
+NATs), and reduces load on popular publishers.
+
+Ensembles of networked ``things'' interacting with dynamic applications require
+rich descriptive power to promote discovery across heterogeneous devices and
+services, which should be reflected in the syndication mechanism. 
+
+as well as the ability to quickly react to changes in the set of
+subscribed sources.
+
+There are two dominant ``flavors'' of pub-sub -- topic-based and content-based
+\footnote{\cite{eugster2003many} actually names type-based pub-sub as a third
+type, but it is very smilar to content-based} -- that traditionally identify
+tradeoffs between performance and expressiveness. In topic-based pub-sub
+systems, messages are published to logical channels that may be in a flat or
+hierarchical namespace, and subscribers identify a name or ``glob'' that
+matches topics. The benefits are that matching is typically fast and message
+overhead is small, but the expressive power of a ``topic'' is limited.  In
+content-based pub-sub, subscribers specify predicates, which act as filters for
+incoming messages for publishers. While this scheme has richer descriptive
+power, routing on a per-message basis is computationally expensive (reducing
+routing efficiency) and can require larger messages from publishers (if
+messages must contain descriptive elements for routing).
+
+
+needs to provide for the low-bandwidth and duty-cycled nature of embedded motes,
+high expressisve and descriptive power to enable dynamic applications and low latency
+response times for real-time clients.
+
+\section{Prior Work}
+
+\if 0
+list of topic based
+kafka
+mqtt
+
+list of content based
+rabbitmq
+\fi
+
+
+\section{Estimate of Results and Deliverables}
+
+\bibliographystyle{abbrv}
+\bibliography{proposal}
+
+\begin{filecontents}{proposal.bib}
+@article{eugster2003many,
+  title={The many faces of publish/subscribe},
+  author={Eugster, Patrick Th and Felber, Pascal A and Guerraoui, Rachid and Kermarrec, Anne-Marie},
+  journal={ACM Computing Surveys (CSUR)},
+  volume={35},
+  number={2},
+  pages={114--131},
+  year={2003},
+  publisher={ACM}
+}
+\end{filecontents}
+
+
+\end{document}
+
+\if 0
+# Problem Domain + Motivation
+
+# Description of what i am going to do and what is new about it
+
+# how I am going to do the evaluation
+- client complexity/size
+- throughput
+- latency of re-evaluation
+- descriptive power? similar to how arkas paper was, how well do 'capabilities' cover the same object as 'interfaces'?
+
+# list all the resources i need
+
+# list all of the participants :(
+
+\fi

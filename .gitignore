@@ -1,0 +1,13 @@
+# Emacs:
+*~
+\#*\#
+auto-save-list
+.\#*
+
+# LaTeX:
+*.aux
+*.bbl
+*.bib
+*.blg
+*.log
+*.pdf

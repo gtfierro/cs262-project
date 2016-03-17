@@ -69,7 +69,6 @@ relational tables or "bag of tags" or key-value pairs approaches.
 
 ### What about Topics?
 
-
 Topic-based pubsub methods are the most prevalent flavor of publish-subscribe models
 that exist today: Kafka, MQTT, AMQP.... However, is the topic structure sufficient
 for the above description schemes? There are two options:
@@ -77,8 +76,35 @@ for the above description schemes? There are two options:
 1. saving producer metadata in topic paths
 2. implementing a "discovery" overlay for topic-based pubsub
 
+The main intuition here is that the space of descriptions that could apply to a
+single stream is large enough that you need a structured approach to
+representing and querying it. For our use case, this is some database that can
+support "rich queries" (most likely relational).  In the simplest cases, where
+topics and names are known a priori, the topic approach is certainly
+sufficient, but in the IoT, we predict a need for more expressive descriptions.
+
+#### Saving Metadata in Topics
+
 Topic matching methods
-- strict name matching
-- hierarchical matching (matches some prefix)
-- wildcard matching (prefix, suffix)
-- full regex
+- strict name matching (Kafka)
+- hierarchical/wildcard matching (prefix, suffix) (MQTT)
+- full regex (Kafka)
+
+It is certainly *possible* to store an arbitrary structure inside what is
+essentially a flat char array, but this requires strict rules on how exactly
+the arbitrary descriptive structure should be packed, but matching on this is
+likely to be slow because descriptions may be arbitrarily large and complex.
+Strict name matching is pretty much out here, but this is possible with wildcard
+or regex matching.
+
+The other option is to introduce an external service that stores the publisher
+descriptions and serves queries that resolve to the specific producer topics
+that are then subscribed to. There are several issues here: firstly, how does a
+producer change or update its discription/metadata? Would the producer connect
+to an external service, which would require the producer to wait for the change
+to be "confirmed" before it could start sending data that occured "after" the
+change? 
+
+Or would the producer send the description inside its message, and then the
+broker handles this reevaluation? This is essentially the solution we're
+proposing.

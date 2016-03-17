@@ -4,6 +4,16 @@ Single Node
 Here we implement a single-node server and discuss some of the design decisions (which
 may be revisited)
 
+## Install/Run
+
+For development, first clone this repository, then from within this directory, run
+
+```
+go get ./...
+go build
+./single-node
+```
+
 ## Messages and Transport
 
 There are 3 types of messages: subscribe, publish and subscribediff.

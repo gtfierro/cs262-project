@@ -25,6 +25,11 @@ func main() {
 	if config.Logging.UseJSON {
 		log.Formatter = &logrus.JSONFormatter{}
 	}
+	loglevel, err := logrus.ParseLevel(*config.Logging.Level)
+	if err != nil {
+		loglevel = logrus.InfoLevel // default to Info
+	}
+	log.Level = loglevel
 
 	server := NewServer(config)
 	server.listenAndDispatch()

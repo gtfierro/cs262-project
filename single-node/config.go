@@ -10,6 +10,7 @@ type Config struct {
 	Logging struct {
 		// whether or not log outputs in JSON
 		UseJSON bool
+		Level   *string
 	}
 
 	// server configuration

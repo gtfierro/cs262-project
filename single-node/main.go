@@ -1,3 +1,4 @@
+//go:generate go tool yacc -o query.go -p cqbs query.y
 package main
 
 import (

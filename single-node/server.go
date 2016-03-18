@@ -128,11 +128,12 @@ func (s *Server) handleSubscribe(r *bufio.Reader, conn net.Conn) {
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
 
+	// parse it!
+	Parse(query)
 	//TODO: put this into a client struct, evaluate it and return initial results, and
 	// 		establish which publishers are going to be forwarding
 }
 
-//TODO: make a "Message" class and unmarshal this into that.
 func (s *Server) handlePublish(r *bufio.Reader, conn net.Conn) {
 	var (
 		dec = msgpack.NewDecoder(r)

@@ -84,10 +84,11 @@ func (s *Server) dispatch(conn net.Conn) {
 		conn.Close()
 		return
 	}
-	if isMsgPackString(firstByte[0]) {
-		s.handleSubscribe(r)
-	} else if isMsgPackArray(firstByte[0]) {
-		s.handlePublish(r)
+
+	if isMsgPackArray(firstByte[0]) {
+		s.handlePublish(r, conn)
+	} else if isMsgPackString(firstByte[0]) {
+		s.handleSubscribe(r, conn)
 	} else {
 		log.WithFields(logrus.Fields{
 			"firstByte": firstByte[0],

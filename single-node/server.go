@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"github.com/Sirupsen/logrus"
+	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 )
 
@@ -78,6 +79,9 @@ func (s *Server) listenAndDispatch() {
 // structure, we can just look at the first byte of a connection:
 // If it's a string, its a subscribe. If it's an array, its a publish.
 func (s *Server) dispatch(conn net.Conn) {
+	log.WithFields(logrus.Fields{
+		"from": conn.RemoteAddr(),
+	}).Debug("Got a new message!")
 	var r = bufio.NewReader(conn)
 	firstByte, err := r.Peek(1)
 	if err != nil {
@@ -98,12 +102,70 @@ func (s *Server) dispatch(conn net.Conn) {
 			"firstByte": firstByte[0],
 		}).Error("Could not decode the packet. Not valid MsgPack!")
 		conn.Close()
-		return
 	}
 }
 
-func (s *Server) handleSubscribe(r *bufio.Reader) {
+// We have buffered the initial contents into bufio.Reader, so we pass that
+// to this handler so we can finish decoding it. We also pass in the connection
+// so that we can transmit back to the client.
+func (s *Server) handleSubscribe(r *bufio.Reader, conn net.Conn) {
+	var (
+		query string
+		err   error
+		dec   = msgpack.NewDecoder(r)
+	)
+	// decode string
+	query, err = dec.DecodeString()
+	if err != nil && err.Error() != "EOF" {
+		log.WithFields(logrus.Fields{
+			"from": conn.RemoteAddr(), "error": err,
+		}).Error("Could not decode subscription")
+		conn.Close()
+		return
+	}
+
+	log.WithFields(logrus.Fields{
+		"from": conn.RemoteAddr(), "query": query,
+	}).Debug("Got a new Subscription!")
+
+	//TODO: put this into a client struct, evaluate it and return initial results, and
+	// 		establish which publishers are going to be forwarding
 }
 
-func (s *Server) handlePublish(r *bufio.Reader) {
+//TODO: make a "Message" class and unmarshal this into that.
+func (s *Server) handlePublish(r *bufio.Reader, conn net.Conn) {
+	var (
+		dec = msgpack.NewDecoder(r)
+		msg = new(Message)
+		err error
+	)
+
+	// decode the incoming message
+	err = msg.DecodeMsgpack(dec)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"error": err,
+		}).Error("Could not decode message")
+		conn.Close()
+		return
+	}
+
+	// log that we got it (if DEBUG is on)
+	log.WithFields(logrus.Fields{
+		"from": conn.RemoteAddr(), "uuid": msg.UUID,
+		"metadata": msg.Metadata, "value": msg.Value,
+	}).Debug("Got a new Publish!")
+
+	// save the metadata
+	err = s.metadata.Save(msg)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"message": msg, "error": err,
+		}).Error("Could not save metadata")
+		conn.Close()
+		return
+	}
+
+	//TODO: update subscriptions
+	//TODO: forward to clients
 }

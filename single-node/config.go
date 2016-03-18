@@ -19,6 +19,12 @@ type Config struct {
 		// if true, listens on 0.0.0.0
 		Global bool
 	}
+
+	// MongoDB configuration
+	Mongo struct {
+		Port *int
+		Host *string
+	}
 }
 
 func LoadConfig(filename string) (config *Config) {

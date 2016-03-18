@@ -7,9 +7,12 @@ import (
 	"net"
 )
 
+type UUID string
+
 type Server struct {
 	address  *net.TCPAddr
 	listener *net.TCPListener
+	metadata *MetadataStore
 }
 
 // Create a new server instance using the configuration
@@ -41,6 +44,7 @@ func NewServer(c *Config) *Server {
 		}).Fatal("Could not listen on the provided address")
 	}
 
+	s.metadata = NewMetadataStore(c)
 	return s
 }
 
@@ -52,7 +56,7 @@ func (s *Server) listenAndDispatch() {
 	)
 	log.WithFields(logrus.Fields{
 		"address": s.address,
-	}).Info("Listening!")
+	}).Info("Broker Listening!")
 
 	// loop on the TCP connection and hand new connections to the dispatcher
 	for {

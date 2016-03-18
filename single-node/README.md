@@ -27,7 +27,7 @@ smaller than JSON even though it can encode the same structures.
 #### Subscribe
 This is the message sent by a client when a connection to the
 server is initiated and takes the form of a SQL-like predicate (described
-below). Publishers do not use or see this message. 
+below). Publishers do not use or see this message.
 
 Up for discussion: how powerful are these subscriptions? Can clients only subscribe to
 published messages, or can clients also subscribe to some more detailed query, such
@@ -41,13 +41,12 @@ Representation: This is a MsgPack string.
 This is the message sent by producers and also the message received by clients.
 Each `publish` message must carry Metadata (a description of the producer) and
 Data (the actual message contents, likely a sensor reading). Metadata is a set
-of key-value pairs.  Data (for now) is simply a float indicating a sensor
-reading. 
+of key-value pairs.  Data (for now) is the `interface{}` type, so its anything.
 
-Representation: This is a MsgPack array with length 3: 
+Representation: This is a MsgPack array with length 3:
 1. unique identifier for the publisher (discussed below)
 2. a MsgPack map containing all key-value pairs in metadata
-3. a float containing the sensor reading. 
+3. whatever the value to be published is
 
 A publisher does not need to (and in fact *should not*) send all of its
 metadata in each message. Metadata is stored at the broker on a per-producer
@@ -59,7 +58,7 @@ producer.
 For unique identifiers, we use UUIDv4 to remove the need to coordinate
 publisher IDs.
 
-#### SubscribeDiff 
+#### SubscribeDiff
 
 This is the message received by clients when the set of publishers they are
 subscribed to changes because of a change in that publisher's metadata.

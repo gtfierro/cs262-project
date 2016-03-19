@@ -129,7 +129,17 @@ func (s *Server) handleSubscribe(r *bufio.Reader, conn net.Conn) {
 	}).Debug("Got a new Subscription!")
 
 	// parse it!
-	Parse(query)
+	node := Parse(query)
+	producerIDs, err := s.metadata.Query(node)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"error": err, "query": query,
+		}).Error("Error evaluating mongo query")
+	}
+
+	log.WithFields(logrus.Fields{
+		"query": query, "results": producerIDs,
+	}).Debug("Evaluated query")
 	//TODO: put this into a client struct, evaluate it and return initial results, and
 	// 		establish which publishers are going to be forwarding
 }

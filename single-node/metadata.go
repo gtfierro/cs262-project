@@ -19,6 +19,8 @@ type MetadataStore struct {
 	metadata *mgo.Collection
 }
 
+var selectID = bson.M{"_id": 1}
+
 func NewMetadataStore(c *Config) *MetadataStore {
 	var (
 		m   = new(MetadataStore)
@@ -70,4 +72,22 @@ func (ms *MetadataStore) Save(msg *Message) error {
 
 	_, err := ms.metadata.UpsertId(msg.UUID, bson.M{"$set": bson.M(msg.Metadata)})
 	return err
+}
+
+func (ms *MetadataStore) Query(node Node) ([]UUID, error) {
+	var (
+		results []UUID
+	)
+	query := node.MongoQuery()
+	log.WithFields(logrus.Fields{
+		"query": query,
+	}).Debug("Running mongo query")
+
+	iter := ms.metadata.Find(query).Select(selectID).Iter()
+	var r map[string]string
+	for iter.Next(&r) {
+		results = append(results, UUID(r["_id"]))
+	}
+	err := iter.Close()
+	return results, err
 }

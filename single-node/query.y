@@ -5,63 +5,93 @@ package main
 import (
 	"github.com/Sirupsen/logrus"
 	"github.com/taylorchu/toki"
+	"gopkg.in/mgo.v2/bson"
 )
 
 // AST structures
 
 type key string
 type value string
-type node interface{}
+type Node interface{
+    // generates the mongo query for this node
+    MongoQuery() bson.M
+}
 
 type equalNode struct {
-	Key		key
-	Value	value
+	Key		string
+	Value	string
+}
+
+func (en equalNode) MongoQuery() bson.M {
+    return bson.M{en.Key: en.Value}
 }
 
 type nequalNode struct {
-	Key		key
-	Value	value
+	Key		string
+	Value	string
+}
+
+func (nen nequalNode) MongoQuery() bson.M {
+    return bson.M{nen.Key: bson.M{"$neq": nen.Value}}
 }
 
 type likeNode struct {
-	Key	key
-	Value	value
+	Key	string
+	Value	string
+}
+
+func (ln likeNode) MongoQuery() bson.M {
+    return bson.M{ln.Key: bson.M{"$regex": ln.Value}}
 }
 
 type hasNode struct {
-	Key key
+	Key string
+}
+
+func (hn hasNode) MongoQuery() bson.M {
+    return bson.M{hn.Key: bson.M{"$exists": true}}
 }
 
 type andNode struct {
-	Left	node
-	Right	node
+	Left	Node
+	Right	Node
+}
+
+func (an andNode) MongoQuery() bson.M {
+    return bson.M{"$and": []bson.M{an.Left.MongoQuery(), an.Right.MongoQuery()}}
 }
 
 type orNode struct {
-	Left	node
-	Right	node
+	Left	Node
+	Right	Node
+}
+
+func (on orNode) MongoQuery() bson.M {
+    return bson.M{"$or": []bson.M{on.Left.MongoQuery(), on.Right.MongoQuery()}}
 }
 
 type notNode struct {
-	Clause	node
+	Clause	Node
 }
 
-var root node
+//TODO: fix this!
+func (nn notNode) MongoQuery() bson.M {
+    return nn.Clause.MongoQuery()
+}
+
+var root Node
 %}
 
 %union{
     str     string
-    key     key
-    value   value
-    node    node
+    node    Node
 }
 
 %token <str> LPAREN RPAREN AND OR NOT LIKE EQ NEQ HAS
-%token <key> KEY
-%token <value> VALUE
+%token <str> KEY VALUE
 
 %type <node> predicate term
-%type <key> key
+%type <str> key value
 
 %right EQ
 
@@ -90,15 +120,15 @@ predicate   :  predicate AND term
             }
             ;
 
-term        :  key LIKE VALUE
+term        :  key LIKE value
             {
                 $$ = likeNode{Key: $1, Value: $3}
             }
-            |  key EQ VALUE
+            |  key EQ value
             {
                 $$ = equalNode{Key: $1, Value: $3}
             }
-            |  key NEQ VALUE
+            |  key NEQ value
             {
                 $$ = nequalNode{Key: $1, Value: $3}
             }
@@ -118,12 +148,17 @@ key         : KEY
                 $$ = $1
             }
             ;
+
+value       : VALUE
+            {
+              $$ = $1[1:len($1)-1]
+            }
 %%
 
 const eof = 0
-var keys = []key{}
+var keys = []string{}
 
-func Parse(querystring string) {
+func Parse(querystring string) Node {
     lexer := &Lexer{query: querystring}
     lexer.scanner = toki.NewScanner(
         []toki.Def{
@@ -146,14 +181,15 @@ func Parse(querystring string) {
     log.WithFields(logrus.Fields{
         "keys": keys, "query": lexer.query,
     }).Info("Finished parsing query")
-    log.Debug(root)
+    keys = []string{}
+    return root
 }
 
 type Lexer struct {
     query   string
     scanner *toki.Scanner
-    keys    []key
-    node    *node
+    keys    []string
+    node    *Node
     lasttoken string
 }
 
@@ -163,14 +199,7 @@ func (l *Lexer) Lex(lval *cqbsSymType) int {
 	if r.Pos.Line == 2 || len(r.Value) == 0 {
 		return eof
 	}
-    switch r.Token {
-    case KEY:
-        lval.key = key(r.Value)
-    case VALUE:
-        lval.value = value(r.Value)
-    default:
-        lval.str = string(r.Value)
-    }
+    lval.str = string(r.Value)
 	return int(r.Token)
 }
 

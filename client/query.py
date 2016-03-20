@@ -1,4 +1,5 @@
 import msgpack
+import sys
 import socket
 import uuid as uuidlib
 
@@ -40,4 +41,4 @@ if __name__ == '__main__':
     #    i += 1
     #    c.publish(i)
     #    time.sleep(5)
-    c.subscribe("Room = '410'")
+    c.subscribe(sys.argv[1])

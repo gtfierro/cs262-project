@@ -32,12 +32,11 @@ class Client:
 
 if __name__ == '__main__':
     c = Client("localhost", "4444")
-    #c.add_metadata({"Room": "410", "Building": "Soda", "Device": "Temperature Sensor"})
+    c.add_metadata({"Room": "410", "Building": "Soda", "Device": "Temperature Sensor"})
 
-    #import time
-    #i = 0
-    #while True:
-    #    i += 1
-    #    c.publish(i)
-    #    time.sleep(5)
-    c.subscribe("Room = '410'")
+    import time
+    i = 0
+    while True:
+        i += 1
+        c.publish(i)
+        time.sleep(5)

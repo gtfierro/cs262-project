@@ -65,6 +65,35 @@ func (b *Broker) producerMatchesQuery(query string, producerIDs ...UUID) {
 	b.producers_lock.Unlock()
 }
 
+func (b *Broker) ForwardMessage(m *Message) {
+	var (
+		matchingQueries []string
+		found           bool
+	)
+	b.producers_lock.RLock()
+	// return if we can't find anyone to forward to
+	matchingQueries, found = b.producers[m.UUID]
+	b.producers_lock.RUnlock()
+
+	if !found || len(matchingQueries) == 0 {
+		b.producers_lock.RUnlock()
+		return
+	}
+
+	var clientList []Client
+	for _, query := range matchingQueries {
+		b.subscriber_lock.RLock()
+		clientList, found = b.subscribers[query]
+		b.subscriber_lock.RUnlock()
+		if !found || len(clientList) == 0 {
+			break
+		}
+		for _, client := range clientList {
+			client.Send(m)
+		}
+	}
+}
+
 // Evaluates the query and establishes the forwarding decisions.
 // Returns the client
 func (b *Broker) NewSubscription(query string, conn net.Conn) *Client {
@@ -83,6 +112,7 @@ func (b *Broker) NewSubscription(query string, conn net.Conn) *Client {
 	//TODO: put this into a client struct, evaluate it and return initial results, and
 	// 		establish which publishers are going to be forwarding
 	c := NewClient(query, &conn)
+	go c.dosend()
 
 	// set up forwarding for all initial producers
 	b.producerMatchesQuery(query, producerIDs...)

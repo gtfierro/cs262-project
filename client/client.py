@@ -1,6 +1,7 @@
 import msgpack
 import socket
 import uuid as uuidlib
+from io import BytesIO, BufferedRWPair
 
 class Client:
     def __init__(self, host, port, uuid=None):
@@ -18,6 +19,14 @@ class Client:
 
     def subscribe(self, query):
         self.s.send(msgpack.packb(query))
+        self.unpacker = msgpack.Unpacker()
+        while 1:
+            data = self.s.recv(1024)
+            if not data:
+                continue
+            self.unpacker.feed(data)
+            for m in self.unpacker:
+                print m
 
     def add_metadata(self, d):
         strd = {str(k): str(v) for k,v in d.items()}

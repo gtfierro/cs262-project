@@ -129,7 +129,7 @@ func (s *Server) handleSubscribe(r *bufio.Reader, conn net.Conn) {
 	log.WithFields(logrus.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
-	s.NewSubscription(query, conn)
+	s.broker.NewSubscription(query, conn)
 }
 
 func (s *Server) handlePublish(r *bufio.Reader, conn net.Conn) {
@@ -164,6 +164,8 @@ func (s *Server) handlePublish(r *bufio.Reader, conn net.Conn) {
 		conn.Close()
 		return
 	}
+
+	//TODO: start reading socket and parse more packets
 
 	//TODO: update subscriptions
 	//TODO: forward to clients

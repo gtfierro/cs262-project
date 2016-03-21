@@ -5,9 +5,10 @@ import (
 )
 
 type Client struct {
-	conn *net.Conn
+	conn  *net.Conn
+	query string
 }
 
-func NewClient(conn *net.Conn) *Client {
-	return &Client{conn: conn}
+func NewClient(query string, conn *net.Conn) *Client {
+	return &Client{query: query, conn: conn}
 }

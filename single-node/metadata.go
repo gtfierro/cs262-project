@@ -70,7 +70,7 @@ func (ms *MetadataStore) Save(msg *Message) error {
 		return nil
 	}
 
-	_, err := ms.metadata.UpsertId(msg.UUID, bson.M{"$set": bson.M(msg.Metadata)})
+	_, err := ms.metadata.Upsert(bson.M{"uuid": msg.UUID}, bson.M{"$set": bson.M(msg.Metadata)})
 	return err
 }
 

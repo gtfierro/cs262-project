@@ -34,6 +34,7 @@ func NewClient(query string, conn *net.Conn) *Client {
 func (c *Client) Send(m *Message) {
 	select {
 	case c.buffer <- m: // if we have space in the buffer
+		log.Debugf("Dropping %v", m)
 	default: // drop it otherwise
 		return
 	}

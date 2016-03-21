@@ -133,37 +133,8 @@ func (s *Server) handleSubscribe(r *bufio.Reader, conn net.Conn) {
 }
 
 func (s *Server) handlePublish(r *bufio.Reader, conn net.Conn) {
-	var (
-		dec = msgpack.NewDecoder(r)
-		msg = new(Message)
-		err error
-	)
 
-	// decode the incoming message
-	err = msg.DecodeMsgpack(dec)
-	if err != nil {
-		log.WithFields(logrus.Fields{
-			"error": err,
-		}).Error("Could not decode message")
-		conn.Close()
-		return
-	}
-
-	// log that we got it (if DEBUG is on)
-	log.WithFields(logrus.Fields{
-		"from": conn.RemoteAddr(), "uuid": msg.UUID,
-		"metadata": msg.Metadata, "value": msg.Value,
-	}).Debug("Got a new Publish!")
-
-	// save the metadata
-	err = s.metadata.Save(msg)
-	if err != nil {
-		log.WithFields(logrus.Fields{
-			"message": msg, "error": err,
-		}).Error("Could not save metadata")
-		conn.Close()
-		return
-	}
+	s.broker.HandleProducer(r, conn)
 
 	//TODO: start reading socket and parse more packets
 

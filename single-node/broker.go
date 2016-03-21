@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bufio"
 	"github.com/Sirupsen/logrus"
+	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 	"sync"
 )
@@ -15,8 +17,12 @@ type Broker struct {
 	subscribers     map[string][]Client
 
 	// map of producer ids to queries
+	forwarding_lock sync.RWMutex
+	forwarding      map[UUID][]string
+
+	// index of producers
 	producers_lock sync.RWMutex
-	producers      map[UUID][]string
+	producers      map[UUID]*Producer
 }
 
 //TODO: config for broker?
@@ -24,7 +30,8 @@ func NewBroker(metadata *MetadataStore) *Broker {
 	return &Broker{
 		metadata:    metadata,
 		subscribers: make(map[string][]Client),
-		producers:   make(map[UUID][]string),
+		forwarding:  make(map[UUID][]string),
+		producers:   make(map[UUID]*Producer),
 	}
 }
 
@@ -35,6 +42,7 @@ func (b *Broker) mapQueryToClient(query string, c *Client) {
 		// check if we are already in the list
 		for _, c2 := range list {
 			if c2 == *c {
+				b.subscriber_lock.Unlock()
 				return
 			}
 		}
@@ -48,21 +56,23 @@ func (b *Broker) mapQueryToClient(query string, c *Client) {
 // for any producer ID, we want to be able to quickly find which queries
 // it maps to. From the query, we can easily find the list of clients
 func (b *Broker) producerMatchesQuery(query string, producerIDs ...UUID) {
-	b.producers_lock.Lock()
+	b.forwarding_lock.Lock()
 	for _, producerID := range producerIDs {
-		if list, found := b.producers[producerID]; found {
+		if list, found := b.forwarding[producerID]; found {
 			// check if we are already in the list
 			for _, q2 := range list {
 				if q2 == query {
+					b.forwarding_lock.Unlock()
 					return
 				}
 			}
-			b.producers[producerID] = append(list, query)
+			b.forwarding[producerID] = append(list, query)
 		} else {
-			b.producers[producerID] = []string{query}
+			b.forwarding[producerID] = []string{query}
 		}
 	}
-	b.producers_lock.Unlock()
+	log.Debugf("forwarding table %v", b.forwarding)
+	b.forwarding_lock.Unlock()
 }
 
 func (b *Broker) ForwardMessage(m *Message) {
@@ -70,13 +80,15 @@ func (b *Broker) ForwardMessage(m *Message) {
 		matchingQueries []string
 		found           bool
 	)
-	b.producers_lock.RLock()
+	log.Debugf("forwarding msg? %v", m)
+	b.forwarding_lock.RLock()
 	// return if we can't find anyone to forward to
-	matchingQueries, found = b.producers[m.UUID]
-	b.producers_lock.RUnlock()
+	matchingQueries, found = b.forwarding[m.UUID]
+	b.forwarding_lock.RUnlock()
 
+	log.Debug("forward to: %v", matchingQueries)
 	if !found || len(matchingQueries) == 0 {
-		b.producers_lock.RUnlock()
+		log.Debugf("no forwarding targets")
 		return
 	}
 
@@ -86,10 +98,11 @@ func (b *Broker) ForwardMessage(m *Message) {
 		clientList, found = b.subscribers[query]
 		b.subscriber_lock.RUnlock()
 		if !found || len(clientList) == 0 {
+			log.Debugf("found no clients")
 			break
 		}
 		for _, client := range clientList {
-			client.Send(m)
+			go client.Send(m)
 		}
 	}
 }
@@ -109,8 +122,7 @@ func (b *Broker) NewSubscription(query string, conn net.Conn) *Client {
 	log.WithFields(logrus.Fields{
 		"query": query, "results": producerIDs,
 	}).Debug("Evaluated query")
-	//TODO: put this into a client struct, evaluate it and return initial results, and
-	// 		establish which publishers are going to be forwarding
+
 	c := NewClient(query, &conn)
 	go c.dosend()
 
@@ -119,4 +131,59 @@ func (b *Broker) NewSubscription(query string, conn net.Conn) *Client {
 	b.mapQueryToClient(query, c)
 
 	return c
+}
+
+func (b *Broker) HandleProducer(r *bufio.Reader, conn net.Conn) {
+	// use uuid to find old producer or create new one
+	// add producer.C to a list of channels to select from
+	// when we receive a message from a producer, save the
+	// metadata and evaluate it, then forward it.
+	// decode the incoming message
+	var (
+		dec   = msgpack.NewDecoder(r)
+		msg   = new(Message)
+		err   error
+		found bool
+		p     *Producer
+	)
+	err = msg.DecodeMsgpack(dec)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"error": err,
+		}).Error("Could not decode message")
+		conn.Close()
+		return
+	}
+
+	// save the metadata
+	err = b.metadata.Save(msg)
+	if err != nil {
+		log.WithFields(logrus.Fields{
+			"message": msg, "error": err,
+		}).Error("Could not save metadata")
+		conn.Close()
+		return
+	}
+
+	// find the producer
+	b.producers_lock.RLock()
+	p, found = b.producers[msg.UUID]
+	b.producers_lock.RUnlock()
+	if found {
+		err = b.metadata.Save(msg)
+		return
+	}
+	p = NewProducer(msg.UUID, dec)
+	go p.dorecv()
+
+	go func(p *Producer) {
+		for p.C != nil {
+			select {
+			case msg := <-p.C:
+				log.Debugf("read msg %v", msg)
+				err = b.metadata.Save(msg)
+				b.ForwardMessage(msg)
+			}
+		}
+	}(p)
 }

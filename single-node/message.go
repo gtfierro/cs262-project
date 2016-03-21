@@ -22,6 +22,9 @@ func (m *Message) DecodeMsgpack(dec *msgpack.Decoder) error {
 	)
 	// decode the actual slice
 	arrlen, err = dec.DecodeSliceLen()
+	if err != nil {
+		return err
+	}
 	if arrlen != 3 {
 		return errors.New("Length of publish array is not 3")
 	}

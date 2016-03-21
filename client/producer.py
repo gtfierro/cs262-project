@@ -31,7 +31,7 @@ class Client:
         self._dirty_metadata = {}
 
 if __name__ == '__main__':
-    c = Client("localhost", "4444")
+    c = Client("localhost", "4444", uuid="4600a1f2-ef35-11e5-9fe7-271a9f80bc76")
     c.add_metadata({"Room": "410", "Building": "Soda", "Device": "Temperature Sensor"})
 
     import time
@@ -39,4 +39,4 @@ if __name__ == '__main__':
     while True:
         i += 1
         c.publish(i)
-        time.sleep(5)
+        time.sleep(1)

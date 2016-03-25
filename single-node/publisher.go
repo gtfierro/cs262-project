@@ -32,7 +32,7 @@ func (p *Producer) dorecv() {
 	)
 	for {
 		err = msg.DecodeMsgpack(p.dec)
-		if err == io.EOF {
+		if err == io.EOF || msg.isEmpty() {
 			continue
 		}
 		if err != nil {

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"github.com/Sirupsen/logrus"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
@@ -111,8 +110,8 @@ func (b *Broker) ForwardMessage(m *Message) {
 // Returns the client
 func (b *Broker) NewSubscription(query string, conn net.Conn) *Client {
 	// parse it!
-	node := Parse(query)
-	producerIDs, err := b.metadata.Query(node)
+	queryAST := Parse(query)
+	producerIDs, err := b.metadata.Query(queryAST)
 	if err != nil {
 		log.WithFields(logrus.Fields{
 			"error": err, "query": query,
@@ -129,31 +128,22 @@ func (b *Broker) NewSubscription(query string, conn net.Conn) *Client {
 	// set up forwarding for all initial producers
 	b.producerMatchesQuery(query, producerIDs...)
 	b.mapQueryToClient(query, c)
+	c.Send(producerIDs)
 
 	return c
 }
 
-func (b *Broker) HandleProducer(r *bufio.Reader, conn net.Conn) {
+func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Conn) {
 	// use uuid to find old producer or create new one
 	// add producer.C to a list of channels to select from
 	// when we receive a message from a producer, save the
 	// metadata and evaluate it, then forward it.
 	// decode the incoming message
 	var (
-		dec   = msgpack.NewDecoder(r)
-		msg   = new(Message)
 		err   error
 		found bool
 		p     *Producer
 	)
-	err = msg.DecodeMsgpack(dec)
-	if err != nil {
-		log.WithFields(logrus.Fields{
-			"error": err,
-		}).Error("Could not decode message")
-		conn.Close()
-		return
-	}
 
 	// save the metadata
 	err = b.metadata.Save(msg)
@@ -174,6 +164,10 @@ func (b *Broker) HandleProducer(r *bufio.Reader, conn net.Conn) {
 		return
 	}
 	p = NewProducer(msg.UUID, dec)
+
+	// queue first message to be sent
+	b.ForwardMessage(msg)
+
 	go p.dorecv()
 
 	go func(p *Producer) {

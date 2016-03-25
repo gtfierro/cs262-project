@@ -12,7 +12,7 @@ type Client struct {
 	// the query this client is subscribed to
 	query string
 	// buffer of messages to send out
-	buffer chan *Message
+	buffer chan interface{}
 	// whether or not client is actively sending messages
 	active  bool
 	stop    chan bool
@@ -23,7 +23,7 @@ func NewClient(query string, conn *net.Conn) *Client {
 	return &Client{
 		query:   query,
 		conn:    conn,
-		buffer:  make(chan *Message, 10),
+		buffer:  make(chan interface{}, 10),
 		active:  false,
 		stop:    make(chan bool),
 		encoder: msgpack.NewEncoder(*conn),
@@ -31,23 +31,21 @@ func NewClient(query string, conn *net.Conn) *Client {
 }
 
 // queues a message to be sent
-func (c *Client) Send(m *Message) {
+func (c *Client) Send(m interface{}) {
 	select {
 	case c.buffer <- m: // if we have space in the buffer
-		log.Debugf("Dropping %v", m)
 	default: // drop it otherwise
-		return
+		log.Debugf("Dropping %v", m)
 	}
 }
 
 func (c *Client) dosend() {
-	var m *Message
 	for {
 		select {
 		case <-c.stop:
 			c.active = false
 			break
-		case m = <-c.buffer:
+		case m := <-c.buffer:
 			log.WithFields(logrus.Fields{
 				"query": c.query, "message": m,
 			}).Debug("Forwarding message")

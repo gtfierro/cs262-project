@@ -19,7 +19,7 @@ type MetadataStore struct {
 	metadata *mgo.Collection
 }
 
-var selectID = bson.M{"_id": 1}
+var selectID = bson.M{"uuid": 1}
 
 func NewMetadataStore(c *Config) *MetadataStore {
 	var (
@@ -67,6 +67,9 @@ func (ms *MetadataStore) Save(msg *Message) error {
 	}
 
 	if len(msg.Metadata) == 0 { // nothing to save
+		log.WithFields(logrus.Fields{
+			"UUID": msg.UUID, "value": msg.Value,
+		}).Debug("No message metadata to save")
 		return nil
 	}
 
@@ -76,7 +79,7 @@ func (ms *MetadataStore) Save(msg *Message) error {
 
 func (ms *MetadataStore) Query(node Node) ([]UUID, error) {
 	var (
-		results []UUID
+		results = []UUID{}
 	)
 	query := node.MongoQuery()
 	log.WithFields(logrus.Fields{
@@ -86,7 +89,7 @@ func (ms *MetadataStore) Query(node Node) ([]UUID, error) {
 	iter := ms.metadata.Find(query).Select(selectID).Iter()
 	var r map[string]string
 	for iter.Next(&r) {
-		results = append(results, UUID(r["_id"]))
+		results = append(results, UUID(r["uuid"]))
 	}
 	err := iter.Close()
 	return results, err

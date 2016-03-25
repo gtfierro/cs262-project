@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"github.com/Sirupsen/logrus"
 	"gopkg.in/vmihailenco/msgpack.v2"
@@ -84,57 +83,53 @@ func (s *Server) dispatch(conn net.Conn) {
 	log.WithFields(logrus.Fields{
 		"from": conn.RemoteAddr(),
 	}).Debug("Got a new message!")
-	var r = bufio.NewReader(conn)
-	firstByte, err := r.Peek(1)
+
+	var dec = msgpack.NewDecoder(conn)
+	thing, err := dec.DecodeInterface()
 	if err != nil {
 		log.WithFields(logrus.Fields{
-			"address": conn.RemoteAddr(),
-		}).Error("Closing connection because we couldn't read first byte")
+			"error": err, "address": conn.RemoteAddr(),
+		}).Error("Could not decode msgpack on connection. Closing!")
 		// close connection
 		conn.Close()
 		return
 	}
-
-	if isMsgPackArray(firstByte[0]) {
-		s.handlePublish(r, conn)
-	} else if isMsgPackString(firstByte[0]) {
-		s.handleSubscribe(r, conn)
-	} else {
-		log.WithFields(logrus.Fields{
-			"firstByte": firstByte[0],
-		}).Error("Could not decode the packet. Not valid MsgPack!")
-		conn.Close()
+	// TODO: implement "parse message" method that
+	// outputs both the query and the message and you check for nil?
+	if query, ok := thing.(string); ok {
+		log.Debugf("its a string %v", query)
+		s.handleSubscribe(query, dec, conn)
+	} else if array, ok := thing.([]interface{}); ok {
+		var first = new(Message)
+		err := first.fromArray(array)
+		if err != nil {
+			log.WithFields(logrus.Fields{
+				"error": err, "UUID": first.UUID, "Metadata": first.Metadata,
+				"Value": first.Value, "From": conn.RemoteAddr(),
+			}).Error("Could not decode first publisher msg")
+			conn.Close()
+			return
+		}
+		log.Debugf("got msg %v", first)
+		s.handlePublish(first, dec, conn)
 	}
 }
 
 // We have buffered the initial contents into bufio.Reader, so we pass that
 // to this handler so we can finish decoding it. We also pass in the connection
 // so that we can transmit back to the client.
-func (s *Server) handleSubscribe(r *bufio.Reader, conn net.Conn) {
-	var (
-		query string
-		err   error
-		dec   = msgpack.NewDecoder(r)
-	)
+func (s *Server) handleSubscribe(query string, dec *msgpack.Decoder, conn net.Conn) {
 	// decode string
-	query, err = dec.DecodeString()
-	if err != nil && err.Error() != "EOF" {
-		log.WithFields(logrus.Fields{
-			"from": conn.RemoteAddr(), "error": err,
-		}).Error("Could not decode subscription")
-		conn.Close()
-		return
-	}
-
 	log.WithFields(logrus.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
 	s.broker.NewSubscription(query, conn)
 }
 
-func (s *Server) handlePublish(r *bufio.Reader, conn net.Conn) {
+func (s *Server) handlePublish(first *Message, dec *msgpack.Decoder, conn net.Conn) {
 
-	s.broker.HandleProducer(r, conn)
+	s.broker.HandleProducer(first, dec, conn)
+	//s.broker.ForwardMessage(first)
 
 	//TODO: start reading socket and parse more packets
 

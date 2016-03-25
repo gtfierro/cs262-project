@@ -55,18 +55,27 @@ func (b *Broker) mapQueryToClient(query string, c *Client) {
 // for any producer ID, we want to be able to quickly find which queries
 // it maps to. From the query, we can easily find the list of clients
 func (b *Broker) producerMatchesQuery(query string, producerIDs ...UUID) {
+	log.WithFields(logrus.Fields{
+		"producers": producerIDs, "query": query,
+	}).Debug("Trying to match producers to queries")
 	b.forwarding_lock.Lock()
+Loop:
 	for _, producerID := range producerIDs {
 		if list, found := b.forwarding[producerID]; found {
 			// check if we are already in the list
 			for _, q2 := range list {
 				if q2 == query {
-					b.forwarding_lock.Unlock()
-					return
+					continue Loop
 				}
 			}
+			log.WithFields(logrus.Fields{
+				"producerID": producerID, "query": query, "list": list,
+			}).Debug("Adding query to existing query list")
 			b.forwarding[producerID] = append(list, query)
 		} else {
+			log.WithFields(logrus.Fields{
+				"producerID": producerID, "query": query,
+			}).Debug("Adding query to NEW query list")
 			b.forwarding[producerID] = []string{query}
 		}
 	}
@@ -159,11 +168,10 @@ func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Con
 	b.producers_lock.RLock()
 	p, found = b.producers[msg.UUID]
 	b.producers_lock.RUnlock()
-	if found {
-		err = b.metadata.Save(msg)
-		return
+	if !found {
+		p = NewProducer(msg.UUID, dec)
 	}
-	p = NewProducer(msg.UUID, dec)
+	b.RemapProducer(p, msg)
 
 	// queue first message to be sent
 	b.ForwardMessage(msg)
@@ -174,10 +182,39 @@ func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Con
 		for p.C != nil {
 			select {
 			case msg := <-p.C:
-				log.Debugf("read msg %v", msg)
-				err = b.metadata.Save(msg)
+				if len(msg.Metadata) > 0 {
+					err = b.metadata.Save(msg)
+					b.RemapProducer(p, msg)
+				}
 				b.ForwardMessage(msg)
 			}
 		}
 	}(p)
+}
+
+// 1. Firstly, have a method that given a producer (which is an implicit pointer to its
+//    metadata) reevaluates all queries.
+
+// when we receive a new producer, find related queries and update the forwarding
+// tables that match. If newMetadata is nil, it will just reevaluate using current
+// producer metadata across *all* queries, else it can use metadata in the provided
+// Message to filter which queries to reevaluate
+func (b *Broker) RemapProducer(p *Producer, newMetadata *Message) {
+	if newMetadata == nil || true { // reevaluate ALL queries
+		b.subscriber_lock.RLock()
+		for query, _ := range b.subscribers {
+			queryAST := Parse(query)
+			producerIDs, err := b.metadata.Query(queryAST)
+			if err != nil {
+				log.WithFields(logrus.Fields{
+					"error": err, "query": query,
+				}).Error("Error evaluating mongo query")
+				continue
+			}
+			log.Debugf("remapped? %v %v %v", p, query, producerIDs)
+			//TODO: add MYSELF to this?
+			b.producerMatchesQuery(query, producerIDs...)
+		}
+		b.subscriber_lock.RUnlock()
+	}
 }

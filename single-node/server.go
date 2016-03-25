@@ -5,6 +5,8 @@ import (
 	"github.com/Sirupsen/logrus"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
+	"runtime"
+	"time"
 )
 
 type UUID string
@@ -47,6 +49,14 @@ func NewServer(c *Config) *Server {
 
 	s.metadata = NewMetadataStore(c)
 	s.broker = NewBroker(s.metadata)
+
+	// print up some server stats
+	go func() {
+		for {
+			time.Sleep(10 * time.Second)
+			log.Infof("Number of active goroutines %v", runtime.NumGoroutine())
+		}
+	}()
 	return s
 }
 
@@ -127,12 +137,5 @@ func (s *Server) handleSubscribe(query string, dec *msgpack.Decoder, conn net.Co
 }
 
 func (s *Server) handlePublish(first *Message, dec *msgpack.Decoder, conn net.Conn) {
-
 	s.broker.HandleProducer(first, dec, conn)
-	//s.broker.ForwardMessage(first)
-
-	//TODO: start reading socket and parse more packets
-
-	//TODO: update subscriptions
-	//TODO: forward to clients
 }

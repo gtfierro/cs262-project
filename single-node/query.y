@@ -79,7 +79,14 @@ func (nn notNode) MongoQuery() bson.M {
     return nn.Clause.MongoQuery()
 }
 
-var root Node
+type rootNode struct {
+	Keys	[]string
+	Tree	Node
+	String	string
+}
+
+//TODO: root node is an interface with "getkeys" method
+
 %}
 
 %union{
@@ -98,7 +105,7 @@ var root Node
 %%
 root   :    predicate
             {
-                root = $1
+                cqbslex.(*Lexer).root = rootNode{Keys: keys, Tree: $1}
             }
             ;
 
@@ -158,7 +165,7 @@ value       : VALUE
 const eof = 0
 var keys = []string{}
 
-func Parse(querystring string) Node {
+func Parse(querystring string) rootNode {
     lexer := &Lexer{query: querystring}
     lexer.scanner = toki.NewScanner(
         []toki.Def{
@@ -177,11 +184,13 @@ func Parse(querystring string) Node {
     })
 	lexer.scanner.SetInput(querystring)
     cqbsParse(lexer)
+    root := lexer.root
     lexer.keys = keys
     log.WithFields(logrus.Fields{
-        "keys": keys, "query": lexer.query,
+        "string": querystring, "keys": keys, "query": lexer.query, "root": root,
     }).Info("Finished parsing query")
     keys = []string{}
+	root.String = lexer.query
     return root
 }
 
@@ -190,6 +199,7 @@ type Lexer struct {
     scanner *toki.Scanner
     keys    []string
     node    *Node
+    root    rootNode
     lasttoken string
 }
 
@@ -205,6 +215,6 @@ func (l *Lexer) Lex(lval *cqbsSymType) int {
 
 func (l *Lexer) Error(s string) {
     log.WithFields(logrus.Fields{
-        "token": l.lasttoken, "query": l.query, "error": s, 
+        "token": l.lasttoken, "query": l.query, "error": s,
     }).Error("Error parsing query")
 }

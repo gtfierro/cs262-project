@@ -22,6 +22,10 @@ type Broker struct {
 	// index of producers
 	producers_lock sync.RWMutex
 	producers      map[UUID]*Producer
+
+	// map query string to query struct
+	query_lock sync.RWMutex
+	queries    map[string]*Query
 }
 
 //TODO: config for broker?
@@ -31,6 +35,7 @@ func NewBroker(metadata *MetadataStore) *Broker {
 		subscribers: make(map[string][]Client),
 		forwarding:  make(map[UUID][]string),
 		producers:   make(map[UUID]*Producer),
+		queries:     make(map[string]*Query),
 	}
 }
 
@@ -45,38 +50,35 @@ func (b *Broker) mapQueryToClient(query string, c *Client) {
 				return
 			}
 		}
+		// if we aren't in the list, but list exists, append to the end
 		b.subscribers[query] = append(list, *c)
 	} else {
+		// otherwise, create a new list with us in it
 		b.subscribers[query] = []Client{*c}
 	}
 	b.subscriber_lock.Unlock()
 }
 
-// for any producer ID, we want to be able to quickly find which queries
-// it maps to. From the query, we can easily find the list of clients
-func (b *Broker) producerMatchesQuery(query string, producerIDs ...UUID) {
-	log.WithFields(logrus.Fields{
-		"producers": producerIDs, "query": query,
-	}).Debug("Trying to match producers to queries")
+func (b *Broker) updateForwardingTable(query *Query) {
 	b.forwarding_lock.Lock()
 Loop:
-	for _, producerID := range producerIDs {
+	for producerID, _ := range query.MatchingProducers {
 		if list, found := b.forwarding[producerID]; found {
 			// check if we are already in the list
 			for _, q2 := range list {
-				if q2 == query {
+				if q2 == query.Query {
 					continue Loop
 				}
 			}
 			log.WithFields(logrus.Fields{
-				"producerID": producerID, "query": query, "list": list,
+				"producerID": producerID, "query": query.Query, "list": list,
 			}).Debug("Adding query to existing query list")
-			b.forwarding[producerID] = append(list, query)
+			b.forwarding[producerID] = append(list, query.Query)
 		} else {
 			log.WithFields(logrus.Fields{
-				"producerID": producerID, "query": query,
+				"producerID": producerID, "query": query.Query,
 			}).Debug("Adding query to NEW query list")
-			b.forwarding[producerID] = []string{query}
+			b.forwarding[producerID] = []string{query.Query}
 		}
 	}
 	log.Debugf("forwarding table %v", b.forwarding)
@@ -117,27 +119,43 @@ func (b *Broker) ForwardMessage(m *Message) {
 
 // Evaluates the query and establishes the forwarding decisions.
 // Returns the client
-func (b *Broker) NewSubscription(query string, conn net.Conn) *Client {
-	// parse it!
-	queryAST := Parse(query)
-	producerIDs, err := b.metadata.Query(queryAST)
-	if err != nil {
+func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
+	var (
+		query *Query
+		found bool
+		err   error
+	)
+	b.query_lock.RLock()
+	query, found = b.queries[querystring]
+	b.query_lock.RUnlock()
+
+	if !found {
+		// parse it!
+		queryAST := Parse(querystring)
+		query, err = b.metadata.Query(queryAST)
+		if err != nil {
+			log.WithFields(logrus.Fields{
+				"error": err, "query": querystring,
+			}).Error("Error evaluating mongo query")
+		}
+
+		// add to our map of queries
+		b.query_lock.Lock()
+		b.queries[querystring] = query
+		b.query_lock.Unlock()
+
 		log.WithFields(logrus.Fields{
-			"error": err, "query": query,
-		}).Error("Error evaluating mongo query")
+			"query": querystring, "results": query.MatchingProducers,
+		}).Debug("Evaluated query")
 	}
 
-	log.WithFields(logrus.Fields{
-		"query": query, "results": producerIDs,
-	}).Debug("Evaluated query")
-
-	c := NewClient(query, &conn)
+	c := NewClient(querystring, &conn)
 	go c.dosend()
 
 	// set up forwarding for all initial producers
-	b.producerMatchesQuery(query, producerIDs...)
-	b.mapQueryToClient(query, c)
-	c.Send(producerIDs)
+	b.updateForwardingTable(query)
+	b.mapQueryToClient(querystring, c)
+	c.Send(query.MatchingProducers)
 
 	return c
 }
@@ -202,18 +220,16 @@ func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Con
 func (b *Broker) RemapProducer(p *Producer, newMetadata *Message) {
 	if newMetadata == nil || true { // reevaluate ALL queries
 		b.subscriber_lock.RLock()
-		for query, _ := range b.subscribers {
-			queryAST := Parse(query)
-			producerIDs, err := b.metadata.Query(queryAST)
-			if err != nil {
-				log.WithFields(logrus.Fields{
-					"error": err, "query": query,
-				}).Error("Error evaluating mongo query")
-				continue
-			}
-			log.Debugf("remapped? %v %v %v", p, query, producerIDs)
-			//TODO: add MYSELF to this?
-			b.producerMatchesQuery(query, producerIDs...)
+		for querystring, _ := range b.subscribers {
+			b.query_lock.RLock()
+			query := b.queries[querystring]
+			b.query_lock.RUnlock()
+			added, removed := b.metadata.Reevaluate(query)
+			log.WithFields(logrus.Fields{
+				"query": query.Query, "added": added, "removed": removed,
+			}).Info("Reevaluated query")
+			log.Debugf("remapped? %v %v %v", p, query)
+			b.updateForwardingTable(query)
 		}
 		b.subscriber_lock.RUnlock()
 	}

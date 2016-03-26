@@ -81,9 +81,15 @@ func (nn notNode) MongoQuery() bson.M {
 	return nn.Clause.MongoQuery()
 }
 
-var root Node
+type rootNode struct {
+	Keys   []string
+	Tree   Node
+	String string
+}
 
-//line query.y:85
+//TODO: root node is an interface with "getkeys" method
+
+//line query.y:92
 type cqbsSymType struct {
 	yys  int
 	str  string
@@ -124,12 +130,12 @@ const cqbsEofCode = 1
 const cqbsErrCode = 2
 const cqbsInitialStackSize = 16
 
-//line query.y:156
+//line query.y:163
 const eof = 0
 
 var keys = []string{}
 
-func Parse(querystring string) Node {
+func Parse(querystring string) rootNode {
 	lexer := &Lexer{query: querystring}
 	lexer.scanner = toki.NewScanner(
 		[]toki.Def{
@@ -148,11 +154,13 @@ func Parse(querystring string) Node {
 		})
 	lexer.scanner.SetInput(querystring)
 	cqbsParse(lexer)
+	root := lexer.root
 	lexer.keys = keys
 	log.WithFields(logrus.Fields{
-		"keys": keys, "query": lexer.query,
+		"string": querystring, "keys": keys, "query": lexer.query, "root": root,
 	}).Info("Finished parsing query")
 	keys = []string{}
+	root.String = lexer.query
 	return root
 }
 
@@ -161,6 +169,7 @@ type Lexer struct {
 	scanner   *toki.Scanner
 	keys      []string
 	node      *Node
+	root      rootNode
 	lasttoken string
 }
 
@@ -586,74 +595,74 @@ cqbsdefault:
 
 	case 1:
 		cqbsDollar = cqbsS[cqbspt-1 : cqbspt+1]
-		//line query.y:100
+		//line query.y:107
 		{
-			root = cqbsDollar[1].node
+			cqbslex.(*Lexer).root = rootNode{Keys: keys, Tree: cqbsDollar[1].node}
 		}
 	case 2:
 		cqbsDollar = cqbsS[cqbspt-3 : cqbspt+1]
-		//line query.y:106
+		//line query.y:113
 		{
 			cqbsVAL.node = andNode{Left: cqbsDollar[1].node, Right: cqbsDollar[3].node}
 		}
 	case 3:
 		cqbsDollar = cqbsS[cqbspt-3 : cqbspt+1]
-		//line query.y:110
+		//line query.y:117
 		{
 			cqbsVAL.node = orNode{Left: cqbsDollar[1].node, Right: cqbsDollar[3].node}
 		}
 	case 4:
 		cqbsDollar = cqbsS[cqbspt-2 : cqbspt+1]
-		//line query.y:114
+		//line query.y:121
 		{
 			cqbsVAL.node = notNode{Clause: cqbsDollar[2].node}
 		}
 	case 5:
 		cqbsDollar = cqbsS[cqbspt-1 : cqbspt+1]
-		//line query.y:118
+		//line query.y:125
 		{
 			cqbsVAL.node = cqbsDollar[1].node
 		}
 	case 6:
 		cqbsDollar = cqbsS[cqbspt-3 : cqbspt+1]
-		//line query.y:124
+		//line query.y:131
 		{
 			cqbsVAL.node = likeNode{Key: cqbsDollar[1].str, Value: cqbsDollar[3].str}
 		}
 	case 7:
 		cqbsDollar = cqbsS[cqbspt-3 : cqbspt+1]
-		//line query.y:128
+		//line query.y:135
 		{
 			cqbsVAL.node = equalNode{Key: cqbsDollar[1].str, Value: cqbsDollar[3].str}
 		}
 	case 8:
 		cqbsDollar = cqbsS[cqbspt-3 : cqbspt+1]
-		//line query.y:132
+		//line query.y:139
 		{
 			cqbsVAL.node = nequalNode{Key: cqbsDollar[1].str, Value: cqbsDollar[3].str}
 		}
 	case 9:
 		cqbsDollar = cqbsS[cqbspt-2 : cqbspt+1]
-		//line query.y:136
+		//line query.y:143
 		{
 			cqbsVAL.node = hasNode{Key: cqbsDollar[2].str}
 		}
 	case 10:
 		cqbsDollar = cqbsS[cqbspt-3 : cqbspt+1]
-		//line query.y:140
+		//line query.y:147
 		{
 			cqbsVAL.node = cqbsDollar[2].node
 		}
 	case 11:
 		cqbsDollar = cqbsS[cqbspt-1 : cqbspt+1]
-		//line query.y:146
+		//line query.y:153
 		{
 			keys = append(keys, cqbsDollar[1].str)
 			cqbsVAL.str = cqbsDollar[1].str
 		}
 	case 12:
 		cqbsDollar = cqbsS[cqbspt-1 : cqbspt+1]
-		//line query.y:153
+		//line query.y:160
 		{
 			cqbsVAL.str = cqbsDollar[1].str[1 : len(cqbsDollar[1].str)-1]
 		}

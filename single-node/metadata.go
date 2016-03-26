@@ -6,6 +6,7 @@ import (
 	"github.com/Sirupsen/logrus"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+	"sync"
 )
 
 // This struct handles all communication with the Mongo database that provides
@@ -77,20 +78,130 @@ func (ms *MetadataStore) Save(msg *Message) error {
 	return err
 }
 
-func (ms *MetadataStore) Query(node Node) ([]UUID, error) {
-	var (
-		results = []UUID{}
-	)
-	query := node.MongoQuery()
+func (ms *MetadataStore) Query(node rootNode) (*Query, error) {
+	query := node.Tree.MongoQuery()
 	log.WithFields(logrus.Fields{
 		"query": query,
 	}).Debug("Running mongo query")
 
+	var q = NewQuery(node.String, node.Keys, node.Tree)
+
 	iter := ms.metadata.Find(query).Select(selectID).Iter()
 	var r map[string]string
 	for iter.Next(&r) {
-		results = append(results, UUID(r["uuid"]))
+		uuid := UUID(r["uuid"])
+		q.MatchingProducers[uuid] = NEW
 	}
 	err := iter.Close()
-	return results, err
+	return q, err
+}
+
+func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []UUID) {
+	//TODO: cache the mongo query generation
+	iter := ms.metadata.Find(query.Mongo).Select(selectID).Iter()
+	var r map[string]string
+	// mark new UUIDs
+	query.Lock()
+	for iter.Next(&r) {
+		uuid := UUID(r["uuid"])
+		if _, found := query.MatchingProducers[uuid]; found {
+			query.MatchingProducers[uuid] = SAME
+		} else {
+			query.MatchingProducers[uuid] = NEW
+			added = append(added, uuid)
+		}
+	}
+	// remove old ones
+	for uuid, status := range query.MatchingProducers {
+		if status == OLD {
+			removed = append(removed, uuid)
+			delete(query.MatchingProducers, uuid)
+		}
+	}
+
+	// prepare statuses
+	for uuid, _ := range query.MatchingProducers {
+		query.MatchingProducers[uuid] = OLD
+	}
+	query.Unlock()
+	return
+}
+
+type PRODUCERSTATE uint
+
+const (
+	OLD PRODUCERSTATE = iota
+	NEW
+	SAME
+)
+
+// TODO: change Query to return a Query struct, modeled after
+// giles2 cqbs.go
+type Query struct {
+	Query             string
+	Keys              []string
+	MatchingProducers map[UUID]PRODUCERSTATE
+	Clients           *clientList
+	Mongo             bson.M
+	sync.RWMutex
+}
+
+func NewQuery(query string, keys []string, root Node) *Query {
+	return &Query{
+		Query:             query,
+		Keys:              keys,
+		MatchingProducers: make(map[UUID]PRODUCERSTATE),
+		Clients:           new(clientList),
+		Mongo:             root.MongoQuery(),
+	}
+}
+
+// updates internal list of qualified streams. Returns the lists of added and removed UUIDs
+func (q *Query) changeUUIDs(uuids []UUID) (added, removed []UUID) {
+	// mark the UUIDs that are new
+	q.Lock()
+	for _, uuid := range uuids {
+		if _, found := q.MatchingProducers[uuid]; found {
+			q.MatchingProducers[uuid] = SAME
+		} else {
+			q.MatchingProducers[uuid] = NEW
+			added = append(added, uuid)
+		}
+	}
+
+	// remove the old ones
+	for uuid, status := range q.MatchingProducers {
+		if status == OLD {
+			removed = append(removed, uuid)
+			delete(q.MatchingProducers, uuid)
+		}
+	}
+
+	for uuid, _ := range q.MatchingProducers {
+		q.MatchingProducers[uuid] = OLD
+	}
+	q.Unlock()
+	return
+}
+
+// TODO: more efficient implementation?
+type clientList []*Client
+
+func (sl *clientList) addClient(sub *Client) {
+	for _, oldSub := range *sl {
+		if oldSub == sub {
+			return
+		}
+	}
+
+	*sl = append(*sl, sub)
+}
+
+func (sl *clientList) removeClient(sub *Client) {
+	for i, oldSub := range *sl {
+		if oldSub == sub {
+			*sl = append((*sl)[:i], (*sl)[i+1:]...)
+			return
+		}
+	}
 }

@@ -25,6 +25,12 @@ type Config struct {
 		Port *int
 		Host *string
 	}
+
+	// Debugging configuration
+	Debug struct {
+		Enable        bool
+		ProfileLength *int
+	}
 }
 
 func LoadConfig(filename string) (config *Config) {

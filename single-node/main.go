@@ -4,7 +4,9 @@ package main
 import (
 	"flag"
 	"github.com/Sirupsen/logrus"
+	"github.com/pkg/profile"
 	"os"
+	"time"
 )
 
 // global logging instance
@@ -31,6 +33,14 @@ func main() {
 		loglevel = logrus.InfoLevel // default to Info
 	}
 	log.Level = loglevel
+
+	if config.Debug.Enable {
+		p := profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+		time.AfterFunc(time.Duration(*config.Debug.ProfileLength)*time.Second, func() {
+			p.Stop()
+			os.Exit(0)
+		})
+	}
 
 	server := NewServer(config)
 	server.listenAndDispatch()

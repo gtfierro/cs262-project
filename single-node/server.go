@@ -53,7 +53,7 @@ func NewServer(c *Config) *Server {
 	// print up some server stats
 	go func() {
 		for {
-			time.Sleep(10 * time.Second)
+			time.Sleep(5 * time.Second)
 			log.Infof("Number of active goroutines %v", runtime.NumGoroutine())
 		}
 	}()

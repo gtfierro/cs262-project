@@ -194,11 +194,11 @@ func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Con
 	// queue first message to be sent
 	b.ForwardMessage(msg)
 
-	go p.dorecv()
-
 	go func(p *Producer) {
 		for p.C != nil {
 			select {
+			case <-p.stop:
+				return
 			case msg := <-p.C:
 				if len(msg.Metadata) > 0 {
 					err = b.metadata.Save(msg)

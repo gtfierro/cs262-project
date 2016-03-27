@@ -9,15 +9,17 @@ import (
 type Producer struct {
 	ID UUID
 	// decoder
-	dec *msgpack.Decoder
-	C   chan *Message
+	dec  *msgpack.Decoder
+	C    chan *Message
+	stop chan bool
 }
 
 func NewProducer(id UUID, decoder *msgpack.Decoder) *Producer {
 	p := &Producer{
-		ID:  id,
-		dec: decoder,
-		C:   make(chan *Message, 10),
+		ID:   id,
+		dec:  decoder,
+		C:    make(chan *Message, 10),
+		stop: make(chan bool),
 	}
 
 	go p.dorecv()
@@ -32,7 +34,11 @@ func (p *Producer) dorecv() {
 	)
 	for {
 		err = msg.DecodeMsgpack(p.dec)
-		if err == io.EOF || msg.isEmpty() {
+		if err == io.EOF {
+			p.stop <- true
+			return // connection is closed
+		}
+		if msg.isEmpty() {
 			continue
 		}
 		if err != nil {
@@ -42,7 +48,6 @@ func (p *Producer) dorecv() {
 		}
 		select {
 		case p.C <- msg: // buffer message
-			log.Debugf("producer msg %v", msg)
 		default:
 			continue // drop if buffer is full
 		}

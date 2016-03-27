@@ -205,3 +205,24 @@ func (sl *clientList) removeClient(sub *Client) {
 		}
 	}
 }
+
+type queryList []string
+
+func (ql *queryList) addQuery(q string) {
+	for _, oldSub := range *ql {
+		if oldSub == q {
+			return
+		}
+	}
+
+	*ql = append(*ql, q)
+}
+
+func (ql *queryList) removeQuery(q string) {
+	for i, oldSub := range *ql {
+		if oldSub == q {
+			*ql = append((*ql)[:i], (*ql)[i+1:]...)
+			return
+		}
+	}
+}

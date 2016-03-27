@@ -7,6 +7,8 @@ import (
 	"sync"
 )
 
+var emptyList = []UUID{}
+
 // Handles the subscriptions, updates, forwarding
 type Broker struct {
 	metadata *MetadataStore
@@ -17,7 +19,7 @@ type Broker struct {
 
 	// map of producer ids to queries
 	forwarding_lock sync.RWMutex
-	forwarding      map[UUID][]string
+	forwarding      map[UUID]*queryList
 
 	// index of producers
 	producers_lock sync.RWMutex
@@ -33,7 +35,7 @@ func NewBroker(metadata *MetadataStore) *Broker {
 	return &Broker{
 		metadata:    metadata,
 		subscribers: make(map[string][]Client),
-		forwarding:  make(map[UUID][]string),
+		forwarding:  make(map[UUID]*queryList),
 		producers:   make(map[UUID]*Producer),
 		queries:     make(map[string]*Query),
 	}
@@ -65,7 +67,7 @@ Loop:
 	for producerID, _ := range query.MatchingProducers {
 		if list, found := b.forwarding[producerID]; found {
 			// check if we are already in the list
-			for _, q2 := range list {
+			for _, q2 := range *list {
 				if q2 == query.Query {
 					continue Loop
 				}
@@ -73,21 +75,49 @@ Loop:
 			log.WithFields(logrus.Fields{
 				"producerID": producerID, "query": query.Query, "list": list,
 			}).Debug("Adding query to existing query list")
-			b.forwarding[producerID] = append(list, query.Query)
+			b.forwarding[producerID].addQuery(query.Query)
 		} else {
 			log.WithFields(logrus.Fields{
 				"producerID": producerID, "query": query.Query,
 			}).Debug("Adding query to NEW query list")
-			b.forwarding[producerID] = []string{query.Query}
+			b.forwarding[producerID] = &queryList{query.Query}
 		}
 	}
 	log.Debugf("forwarding table %v", b.forwarding)
 	b.forwarding_lock.Unlock()
 }
 
+// we have the list of new and removed UUIDs for a query,
+// so we update the forwarding table to match that
+func (b *Broker) updateForwardingDiffs(query *Query, added, removed []UUID) {
+	var (
+		list  *queryList
+		found bool
+	)
+	if len(removed) > 0 {
+		b.forwarding_lock.Lock()
+		for _, rm_uuid := range removed {
+			if list, found = b.forwarding[rm_uuid]; !found {
+				// no subscribers for this uuid
+				continue
+			}
+			for _, tmp_query := range *list {
+				if tmp_query == query.Query {
+					list.removeQuery(query.Query)
+					continue
+				}
+			}
+			b.forwarding[rm_uuid] = list
+
+		}
+		b.forwarding_lock.Unlock()
+	}
+	b.updateForwardingTable(query)
+}
+
 func (b *Broker) ForwardMessage(m *Message) {
 	var (
-		matchingQueries []string
+		matchingQueries *queryList
 		found           bool
 	)
 	log.Debugf("forwarding msg? %v", m)
@@ -96,14 +126,13 @@ func (b *Broker) ForwardMessage(m *Message) {
 	matchingQueries, found = b.forwarding[m.UUID]
 	b.forwarding_lock.RUnlock()
 
-	log.Debug("forward to: %v", matchingQueries)
-	if !found || len(matchingQueries) == 0 {
+	if !found || (matchingQueries != nil && len(*matchingQueries) == 0) {
 		log.Debugf("no forwarding targets")
 		return
 	}
 
 	var clientList []Client
-	for _, query := range matchingQueries {
+	for _, query := range *matchingQueries {
 		b.subscriber_lock.RLock()
 		clientList, found = b.subscribers[query]
 		b.subscriber_lock.RUnlock()
@@ -114,6 +143,25 @@ func (b *Broker) ForwardMessage(m *Message) {
 		for _, client := range clientList {
 			go client.Send(m)
 		}
+	}
+}
+
+func (b *Broker) SendSubscriptionDiffs(query string, added, removed []UUID) {
+	// if we don't do this, then empty lists show up as None
+	// when we pack them
+	if len(added) == 0 {
+		added = emptyList
+	}
+	if len(removed) == 0 {
+		removed = emptyList
+	}
+	msg := map[string][]UUID{"New": added, "Del": removed}
+	// send to subscribers
+	b.subscriber_lock.RLock()
+	subscribers := b.subscribers[query]
+	b.subscriber_lock.RUnlock()
+	for _, sub := range subscribers {
+		go sub.Send(msg)
 	}
 }
 
@@ -218,19 +266,31 @@ func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Con
 // producer metadata across *all* queries, else it can use metadata in the provided
 // Message to filter which queries to reevaluate
 func (b *Broker) RemapProducer(p *Producer, newMetadata *Message) {
+	//TODO: make a list of queries to update so that its unique THEN actually reevaluate
+	//      to get added/removed lists. Once we have added/removed lists we use
+	//      that to update the forwarding table.
+	//      Question: Do i save the loop over to make OLD until after the forwarding table
+	//      is updated? NO this should be encapsulated?
+	var queriesToReevaluate = make(map[string]*Query)
 	if newMetadata == nil || true { // reevaluate ALL queries
 		b.subscriber_lock.RLock()
 		for querystring, _ := range b.subscribers {
-			b.query_lock.RLock()
-			query := b.queries[querystring]
-			b.query_lock.RUnlock()
+			if _, found := queriesToReevaluate[querystring]; !found {
+				b.query_lock.RLock()
+				queriesToReevaluate[querystring] = b.queries[querystring]
+				b.query_lock.RUnlock()
+			}
+		}
+		b.subscriber_lock.RUnlock()
+
+		for _, query := range queriesToReevaluate {
 			added, removed := b.metadata.Reevaluate(query)
 			log.WithFields(logrus.Fields{
 				"query": query.Query, "added": added, "removed": removed,
 			}).Info("Reevaluated query")
 			log.Debugf("remapped? %v %v %v", p, query)
-			b.updateForwardingTable(query)
+			b.updateForwardingDiffs(query, added, removed)
+			b.SendSubscriptionDiffs(query.Query, added, removed)
 		}
-		b.subscriber_lock.RUnlock()
 	}
 }

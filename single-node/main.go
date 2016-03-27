@@ -26,7 +26,7 @@ func main() {
 
 	if config.Debug.Enable {
 		p := profile.Start(profile.CPUProfile, profile.ProfilePath("."))
-		time.AfterFunc(time.Duration(*config.Debug.ProfileLength)*time.Second, func() {
+		time.AfterFunc(time.Duration(config.Debug.ProfileLength)*time.Second, func() {
 			p.Stop()
 			os.Exit(0)
 		})

@@ -29,7 +29,7 @@ func NewMetadataStore(c *common.Config) *MetadataStore {
 		err error
 	)
 
-	address := fmt.Sprintf("%s:%d", *c.Mongo.Host, *c.Mongo.Port)
+	address := fmt.Sprintf("%s:%d", c.Mongo.Host, c.Mongo.Port)
 
 	m.session, err = mgo.Dial(address)
 	if err != nil {

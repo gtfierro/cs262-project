@@ -25,9 +25,9 @@ func NewServer(c *common.Config) *Server {
 		s       = &Server{}
 	)
 	if c.Server.Global {
-		address = fmt.Sprintf("0.0.0.0:%d", *c.Server.Port)
+		address = fmt.Sprintf("0.0.0.0:%d", c.Server.Port)
 	} else {
-		address = fmt.Sprintf(":%d", *c.Server.Port)
+		address = fmt.Sprintf(":%d", c.Server.Port)
 	}
 
 	// parse the config into an address

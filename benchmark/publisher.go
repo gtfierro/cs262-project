@@ -5,7 +5,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"net"
 	"fmt"
-	"cs262-project/common"
+	"github.com/gtfierro/cs262-project/common"
 	"time"
 )
 
@@ -29,8 +29,7 @@ func (p *Publisher) publishContinuously() {
 	spacingMs := 60e3 / float64(p.Frequency)
 
 	enc := msgpack.NewEncoder(conn)
-	i := 1
-	msg := common.Message{UUID: p.uuid, Metadata: p.Metadata, Value: i}
+	msg := common.PublishMessage{UUID: p.uuid, Metadata: p.Metadata, Value: time.Now().UnixNano()}
 	msg.EncodeMsgpack(enc)
 	msg.Metadata = nil // Only send metadata on initial connection
 	Loop:
@@ -39,8 +38,7 @@ func (p *Publisher) publishContinuously() {
 		case <-p.stop:
 			break Loop
 		case <-time.After(time.Millisecond * time.Duration(spacingMs)):
-			i += 1
-			msg.Value = i
+			msg.Value = time.Now().UnixNano()
 			msg.EncodeMsgpack(enc)
 		}
 	}

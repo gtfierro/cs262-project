@@ -114,7 +114,7 @@ func (b *Broker) updateForwardingDiffs(query *Query, added, removed []common.UUI
 	b.updateForwardingTable(query)
 }
 
-func (b *Broker) ForwardMessage(m *common.Message) {
+func (b *Broker) ForwardMessage(m *common.PublishMessage) {
 	var (
 		matchingQueries *queryList
 		found           bool
@@ -154,13 +154,13 @@ func (b *Broker) SendSubscriptionDiffs(query string, added, removed []common.UUI
 	if len(removed) == 0 {
 		removed = emptyList
 	}
-	msg := map[string][]common.UUID{"New": added, "Del": removed}
+	msg := common.SubscriptionDiffMessage{"New": added, "Del": removed}
 	// send to subscribers
 	b.subscriber_lock.RLock()
 	subscribers := b.subscribers[query]
 	b.subscriber_lock.RUnlock()
 	for _, sub := range subscribers {
-		go sub.Send(msg)
+		go sub.Send(&msg)
 	}
 }
 
@@ -202,12 +202,13 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 	// set up forwarding for all initial producers
 	b.updateForwardingTable(query)
 	b.mapQueryToClient(querystring, c)
-	c.Send(query.MatchingProducers)
+	msg := common.MatchingProducersMessage(query.MatchingProducers)
+	c.Send(&msg)
 
 	return c
 }
 
-func (b *Broker) HandleProducer(msg *common.Message, dec *msgpack.Decoder, conn net.Conn) {
+func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgpack.Decoder, conn net.Conn) {
 	// use uuid to find old producer or create new one
 	// add producer.C to a list of channels to select from
 	// when we receive a message from a producer, save the
@@ -242,12 +243,6 @@ func (b *Broker) HandleProducer(msg *common.Message, dec *msgpack.Decoder, conn 
 	b.ForwardMessage(msg)
 
 	go func(p *Producer) {
-		// Normally, for looping over a channel, we'd use a regular
-		//  for msg := range p.C { etc etc }
-		// but we also want to stop this go routine if the producer crashes or disappears,
-		// else we will leak the goroutine and it will continue on alone, orphaned.
-		// The select {} case allows us to wait until we either receive a stop signal or
-		// a new message
 		for p.C != nil {
 			select {
 			case <-p.stop:
@@ -270,7 +265,7 @@ func (b *Broker) HandleProducer(msg *common.Message, dec *msgpack.Decoder, conn 
 // tables that match. If newMetadata is nil, it will just reevaluate using current
 // producer metadata across *all* queries, else it can use metadata in the provided
 // Message to filter which queries to reevaluate
-func (b *Broker) RemapProducer(p *Producer, newMetadata *common.Message) {
+func (b *Broker) RemapProducer(p *Producer, newMetadata *common.PublishMessage) {
 	//TODO: make a list of queries to update so that its unique THEN actually reevaluate
 	//      to get added/removed lists. Once we have added/removed lists we use
 	//      that to update the forwarding table.

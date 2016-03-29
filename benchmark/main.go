@@ -1,7 +1,7 @@
 package main
 
 import (
-	"cs262-project/common"
+	"github.com/gtfierro/cs262-project/common"
 	log "github.com/Sirupsen/logrus"
 	"github.com/nu7hatch/gouuid"
 	"flag"
@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 	"sync"
+	"sync/atomic"
 )
 
 const FastPublishFrequency = 100 // per minute
@@ -58,7 +59,7 @@ func main() {
 		}
 	}
 
-	msgCountChan := make(chan int, 50)
+	latencyChan := make(chan int64, 1e6) // TODO proper sizing?
 	if layout.clientsUseSameQuery {
 		// Generate one query for all of them
 		query = genQueryString(layout.tenthsOfClientsTouchedByQuery)
@@ -73,7 +74,7 @@ func main() {
 			BrokerURL: *config.Benchmark.BrokerURL,
 			BrokerPort: *config.Benchmark.BrokerPort,
 			Query: query,
-			msgCount: msgCountChan,
+			latencyChan: latencyChan,
 		}
 	}
 
@@ -94,14 +95,33 @@ func main() {
 			publishers[index].publishContinuously()
 		}(i)
 	}
-	time.Sleep(time.Second * time.Duration(*config.Benchmark.StepSpacing))
 
+	var latencySum *int64 = new(int64)
+	var latencyCount *int32 = new(int32)
 	go func() {
 		for {
-			amt := <-msgCountChan
-			log.WithField("count", amt).Debug("Some client received messages!")
+			time.Sleep(time.Second)
+			oldLatencySum := atomic.SwapInt64(latencySum, 0)
+			oldLatencyCount := atomic.SwapInt32(latencyCount, 0)
+			log.WithFields(log.Fields{
+				"messageCount": oldLatencyCount,
+				"averageLatencyNS": float64(oldLatencySum) / float64(oldLatencyCount),
+			}, ).Info("Received message count and average latency over the last second")
 		}
 	}()
+	// TODO starting multiple in the hopes of keeping up, no idea if that's
+	// necessary or helpful
+	for i := 0; i < 5; i++ {
+		go func() {
+			for {
+				newLatency := <-latencyChan
+				atomic.AddInt64(latencySum, newLatency)
+				atomic.AddInt32(latencyCount, 1)
+			}
+		}()
+	}
+
+	time.Sleep(time.Second * time.Duration(*config.Benchmark.StepSpacing))
 
 	// Every StepSpacing seconds, spin up more publishers and clients
 	// until the max is reached

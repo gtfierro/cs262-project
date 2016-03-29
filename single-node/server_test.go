@@ -23,11 +23,12 @@ func BenchmarkDispatchNoMetadata(b *testing.B) {
 		b.Fatal(err)
 	}
 	encoder := msgpack.NewEncoder(conn)
-	message := &common.Message{UUID: "cd47df06-f451-11e5-873b-9b450be7df8d", Value: 0}
+	message := &common.PublishMessage{UUID: "cd47df06-f451-11e5-873b-9b450be7df8d", Value: 0}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		message.Value = i
-		encoder.Encode(message)
+		//encoder.Encode(message)
+		message.EncodeMsgpack(encoder)
 	}
 	go func() {
 		s.stop()
@@ -44,12 +45,13 @@ func BenchmarkDispatchWithMetadata(b *testing.B) {
 		b.Fatal(err)
 	}
 	encoder := msgpack.NewEncoder(conn)
-	message := &common.Message{UUID: "cd47df06-f451-11e5-873b-9b450be7df8d", Value: 0, Metadata: map[string]interface{}{"ABC": "123"}}
+	message := &common.PublishMessage{UUID: "cd47df06-f451-11e5-873b-9b450be7df8d", Value: 0, Metadata: map[string]interface{}{"ABC": "123"}}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		message.Value = i
-		encoder.Encode(message)
+		//encoder.Encode(message)
+		message.EncodeMsgpack(encoder)
 	}
 	go func() {
 		s.stop()

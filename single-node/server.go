@@ -34,7 +34,7 @@ func NewServer(c *common.Config) *Server {
 	s.address, err = net.ResolveTCPAddr("tcp", address)
 	if err != nil {
 		log.WithFields(log.Fields{
-			"port": *c.Server.Port, "global": c.Server.Global, "error": err.Error(),
+			"port": c.Server.Port, "global": c.Server.Global, "error": err.Error(),
 		}).Fatal("Could not resolve the generated TCP address")
 	}
 

@@ -15,23 +15,23 @@ type Config struct {
 
 	// server configuration
 	Server struct {
-		Port *int
+		Port int
 		// if true, listens on 0.0.0.0
 		Global bool
 	}
 
 	// MongoDB configuration
 	Mongo struct {
-		Port *int
-		Host *string
+		Port int
+		Host string
 	}
 
 	// Debugging configuration
 	Debug struct {
 		Enable        bool
-		ProfileLength *int
+		ProfileLength int
 	}
-	
+
 	Benchmark struct {
 		BrokerURL         *string
 		BrokerPort        *int
@@ -46,7 +46,7 @@ func LoadConfig(filename string) (config *Config) {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"location": filename,
-			"error": err,
+			"error":    err,
 		}).Error("Couldn't load configuration file at given location. Trying local ./config.ini")
 	} else {
 		return
@@ -64,6 +64,7 @@ func SetupLogging(config *Config) {
 	}
 	loglevel, err := log.ParseLevel(*config.Logging.Level)
 	if err != nil {
+		log.Error(err)
 		loglevel = log.InfoLevel // default to Info
 	}
 	log.SetLevel(loglevel)

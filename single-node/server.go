@@ -94,7 +94,7 @@ func (s *Server) dispatch(conn net.Conn) {
 	}).Debug("Got a new message!")
 
 	var dec = msgpack.NewDecoder(conn)
-	thing, err := dec.DecodeInterface()
+	msg, err := common.MessageFromDecoder(dec)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "address": conn.RemoteAddr(),
@@ -103,38 +103,27 @@ func (s *Server) dispatch(conn net.Conn) {
 		conn.Close()
 		return
 	}
-	// TODO: implement "parse message" method that
-	// outputs both the query and the message and you check for nil?
-	if query, ok := thing.(string); ok {
-		log.Debugf("its a string %v", query)
-		s.handleSubscribe(query, dec, conn)
-	} else if array, ok := thing.([]interface{}); ok {
-		var first = new(common.Message)
-		err := first.FromArray(array)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"error": err, "UUID": first.UUID, "Metadata": first.Metadata,
-				"Value": first.Value, "From": conn.RemoteAddr(),
-			}).Error("Could not decode first publisher msg")
-			conn.Close()
-			return
-		}
-		log.Debugf("got msg %v", first)
-		s.handlePublish(first, dec, conn)
+	switch m := msg.(type) {
+	case *common.QueryMessage:
+		s.handleSubscribe(*m, dec, conn)
+	case *common.PublishMessage:
+		s.handlePublish(m, dec, conn)
+	default:
+		log.WithField("message", msg).Warn("Server received unexpected message type!")
 	}
 }
 
 // We have buffered the initial contents into bufio.Reader, so we pass that
 // to this handler so we can finish decoding it. We also pass in the connection
 // so that we can transmit back to the client.
-func (s *Server) handleSubscribe(query string, dec *msgpack.Decoder, conn net.Conn) {
+func (s *Server) handleSubscribe(query common.QueryMessage, dec *msgpack.Decoder, conn net.Conn) {
 	// decode string
 	log.WithFields(log.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
-	s.broker.NewSubscription(query, conn)
+	s.broker.NewSubscription(query.Query, conn)
 }
 
-func (s *Server) handlePublish(first *common.Message, dec *msgpack.Decoder, conn net.Conn) {
+func (s *Server) handlePublish(first *common.PublishMessage, dec *msgpack.Decoder, conn net.Conn) {
 	s.broker.HandleProducer(first, dec, conn)
 }

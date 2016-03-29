@@ -11,7 +11,7 @@ type Producer struct {
 	ID common.UUID
 	// decoder
 	dec  *msgpack.Decoder
-	C    chan *common.Message
+	C    chan *common.PublishMessage
 	stop chan bool
 }
 
@@ -19,7 +19,7 @@ func NewProducer(id common.UUID, decoder *msgpack.Decoder) *Producer {
 	p := &Producer{
 		ID:   id,
 		dec:  decoder,
-		C:    make(chan *common.Message, 10),
+		C:    make(chan *common.PublishMessage, 100), // TODO buffer size?
 		stop: make(chan bool),
 	}
 
@@ -31,9 +31,18 @@ func NewProducer(id common.UUID, decoder *msgpack.Decoder) *Producer {
 func (p *Producer) dorecv() {
 	var (
 		err error
-		msg = new(common.Message)
+		msg = new(common.PublishMessage)
 	)
 	for {
+		if msgtype, err := p.dec.DecodeUint8();
+		common.MessageType(msgtype) != common.PUBLISHMSG || err != nil {
+			log.WithFields(log.Fields{
+				"error": err,
+				"msgtype": msgtype,
+			}).Error("Error decoding incoming PublishMessage")
+			return
+		}
+
 		err = msg.DecodeMsgpack(p.dec)
 		if err == io.EOF {
 			p.stop <- true
@@ -50,6 +59,7 @@ func (p *Producer) dorecv() {
 		select {
 		case p.C <- msg: // buffer message
 		default:
+			log.Warn("Dropping incoming message from publisher")
 			continue // drop if buffer is full
 		}
 	}

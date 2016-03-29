@@ -63,7 +63,7 @@ func NewMetadataStore(c *common.Config) *MetadataStore {
 	return m
 }
 
-func (ms *MetadataStore) Save(msg *common.Message) error {
+func (ms *MetadataStore) Save(msg *common.PublishMessage) error {
 	if msg == nil {
 		return errors.New("Message is null")
 	}
@@ -91,7 +91,7 @@ func (ms *MetadataStore) Query(node rootNode) (*Query, error) {
 	var r map[string]string
 	for iter.Next(&r) {
 		uuid := common.UUID(r["uuid"])
-		q.MatchingProducers[uuid] = NEW
+		q.MatchingProducers[uuid] = common.ProdStateNew
 	}
 	err := iter.Close()
 	return q, err
@@ -106,15 +106,15 @@ func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []common.UUID)
 	for iter.Next(&r) {
 		uuid := common.UUID(r["uuid"])
 		if _, found := query.MatchingProducers[uuid]; found {
-			query.MatchingProducers[uuid] = SAME
+			query.MatchingProducers[uuid] = common.ProdStateSame
 		} else {
-			query.MatchingProducers[uuid] = NEW
+			query.MatchingProducers[uuid] = common.ProdStateNew
 			added = append(added, uuid)
 		}
 	}
 	// remove old ones
 	for uuid, status := range query.MatchingProducers {
-		if status == OLD {
+		if status == common.ProdStateOld {
 			removed = append(removed, uuid)
 			delete(query.MatchingProducers, uuid)
 		}
@@ -122,26 +122,18 @@ func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []common.UUID)
 
 	// prepare statuses
 	for uuid, _ := range query.MatchingProducers {
-		query.MatchingProducers[uuid] = OLD
+		query.MatchingProducers[uuid] = common.ProdStateOld
 	}
 	query.Unlock()
 	return
 }
-
-type PRODUCERSTATE uint
-
-const (
-	OLD PRODUCERSTATE = iota
-	NEW
-	SAME
-)
 
 // TODO: change Query to return a Query struct, modeled after
 // giles2 cqbs.go
 type Query struct {
 	Query             string
 	Keys              []string
-	MatchingProducers map[common.UUID]PRODUCERSTATE
+	MatchingProducers map[common.UUID]common.ProducerState
 	Clients           *clientList
 	Mongo             bson.M
 	sync.RWMutex
@@ -151,7 +143,7 @@ func NewQuery(query string, keys []string, root Node) *Query {
 	return &Query{
 		Query:             query,
 		Keys:              keys,
-		MatchingProducers: make(map[common.UUID]PRODUCERSTATE),
+		MatchingProducers: make(map[common.UUID]common.ProducerState),
 		Clients:           new(clientList),
 		Mongo:             root.MongoQuery(),
 	}
@@ -163,23 +155,23 @@ func (q *Query) changeUUIDs(uuids []common.UUID) (added, removed []common.UUID) 
 	q.Lock()
 	for _, uuid := range uuids {
 		if _, found := q.MatchingProducers[uuid]; found {
-			q.MatchingProducers[uuid] = SAME
+			q.MatchingProducers[uuid] = common.ProdStateSame
 		} else {
-			q.MatchingProducers[uuid] = NEW
+			q.MatchingProducers[uuid] = common.ProdStateNew
 			added = append(added, uuid)
 		}
 	}
 
 	// remove the old ones
 	for uuid, status := range q.MatchingProducers {
-		if status == OLD {
+		if status == common.ProdStateOld {
 			removed = append(removed, uuid)
 			delete(q.MatchingProducers, uuid)
 		}
 	}
 
 	for uuid, _ := range q.MatchingProducers {
-		q.MatchingProducers[uuid] = OLD
+		q.MatchingProducers[uuid] = common.ProdStateOld
 	}
 	q.Unlock()
 	return

@@ -13,7 +13,7 @@ type Layout struct {
 }
 
 var Standard = Layout{
-	fractionPublishersFast: 0.01,
+	fractionPublishersFast: 0.1,
 	clientsUseSameQuery: false,
 	tenthsOfClientsTouchedByQuery: 1,
 	minPublisherCount: 50,

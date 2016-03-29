@@ -2,8 +2,8 @@ package main
 
 import (
 	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
 	"gopkg.in/vmihailenco/msgpack.v2"
-	"cs262-project/common"
 	"net"
 	"sync"
 )

@@ -4,7 +4,7 @@ package main
 import (
 	"flag"
 	log "github.com/Sirupsen/logrus"
-	"cs262-project/common"
+	"github.com/gtfierro/cs262-project/common"
 	"github.com/pkg/profile"
 	"os"
 	"time"

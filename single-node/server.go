@@ -3,11 +3,11 @@ package main
 import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 	"runtime"
 	"time"
-	"cs262-project/common"
 )
 
 type Server struct {

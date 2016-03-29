@@ -2,9 +2,9 @@ package main
 
 import (
 	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"io"
-	"cs262-project/common"
 )
 
 type Producer struct {

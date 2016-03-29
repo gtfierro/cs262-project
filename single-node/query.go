@@ -131,7 +131,6 @@ const cqbsErrCode = 2
 const cqbsInitialStackSize = 16
 
 //line query.y:163
-
 const eof = 0
 
 var keys = []string{}

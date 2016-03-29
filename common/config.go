@@ -5,39 +5,44 @@ import (
 	"gopkg.in/gcfg.v1"
 )
 
+// configuration for the logging
+type LoggingConfig struct {
+	// whether or not log outputs in JSON
+	UseJSON bool
+	Level   string
+}
+
+// server configuration
+type ServerConfig struct {
+	Port int
+	// if true, listens on 0.0.0.0
+	Global bool
+}
+
+// MongoDB configuration
+type MongoConfig struct {
+	Port int
+	Host string
+}
+
+// Debugging configuration
+type DebugConfig struct {
+	Enable        bool
+	ProfileLength int
+}
+type BenchmarkConfig struct {
+	BrokerURL         *string
+	BrokerPort        *int
+	StepSpacing       *int    // How long between increasing client/producer counts (seconds)
+	ConfigurationName *string // Named bundle of query/metadata
+}
+
 type Config struct {
-	// configuration for the logging
-	Logging struct {
-		// whether or not log outputs in JSON
-		UseJSON bool
-		Level   *string
-	}
-
-	// server configuration
-	Server struct {
-		Port int
-		// if true, listens on 0.0.0.0
-		Global bool
-	}
-
-	// MongoDB configuration
-	Mongo struct {
-		Port int
-		Host string
-	}
-
-	// Debugging configuration
-	Debug struct {
-		Enable        bool
-		ProfileLength int
-	}
-
-	Benchmark struct {
-		BrokerURL         *string
-		BrokerPort        *int
-		StepSpacing       *int    // How long between increasing client/producer counts (seconds)
-		ConfigurationName *string // Named bundle of query/metadata
-	}
+	Logging   LoggingConfig
+	Server    ServerConfig
+	Mongo     MongoConfig
+	Debug     DebugConfig
+	Benchmark BenchmarkConfig
 }
 
 func LoadConfig(filename string) (config *Config) {
@@ -62,7 +67,7 @@ func SetupLogging(config *Config) {
 	if config.Logging.UseJSON {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
-	loglevel, err := log.ParseLevel(*config.Logging.Level)
+	loglevel, err := log.ParseLevel(config.Logging.Level)
 	if err != nil {
 		log.Error(err)
 		loglevel = log.InfoLevel // default to Info

@@ -108,8 +108,6 @@ func (b *Broker) updateForwardingDiffs(query *Query, added, removed []common.UUI
 					continue
 				}
 			}
-			b.forwarding[rm_uuid] = list // TODO ETK why is this step necessary?
-
 		}
 		b.forwarding_lock.Unlock()
 	}

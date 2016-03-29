@@ -5,7 +5,7 @@ import __yyfmt__ "fmt"
 
 //line query.y:3
 import (
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	"github.com/taylorchu/toki"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -131,6 +131,7 @@ const cqbsErrCode = 2
 const cqbsInitialStackSize = 16
 
 //line query.y:163
+
 const eof = 0
 
 var keys = []string{}
@@ -156,7 +157,7 @@ func Parse(querystring string) rootNode {
 	cqbsParse(lexer)
 	root := lexer.root
 	lexer.keys = keys
-	log.WithFields(logrus.Fields{
+	log.WithFields(log.Fields{
 		"string": querystring, "keys": keys, "query": lexer.query, "root": root,
 	}).Info("Finished parsing query")
 	keys = []string{}
@@ -184,7 +185,7 @@ func (l *Lexer) Lex(lval *cqbsSymType) int {
 }
 
 func (l *Lexer) Error(s string) {
-	log.WithFields(logrus.Fields{
+	log.WithFields(log.Fields{
 		"token": l.lasttoken, "query": l.query, "error": s,
 	}).Error("Error parsing query")
 }

@@ -3,7 +3,7 @@
 package main
 
 import (
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	"github.com/taylorchu/toki"
 	"gopkg.in/mgo.v2/bson"
 )
@@ -186,7 +186,7 @@ func Parse(querystring string) rootNode {
     cqbsParse(lexer)
     root := lexer.root
     lexer.keys = keys
-    log.WithFields(logrus.Fields{
+    log.WithFields(log.Fields{
         "string": querystring, "keys": keys, "query": lexer.query, "root": root,
     }).Info("Finished parsing query")
     keys = []string{}
@@ -214,7 +214,7 @@ func (l *Lexer) Lex(lval *cqbsSymType) int {
 }
 
 func (l *Lexer) Error(s string) {
-    log.WithFields(logrus.Fields{
+    log.WithFields(log.Fields{
         "token": l.lasttoken, "query": l.query, "error": s,
     }).Error("Error parsing query")
 }

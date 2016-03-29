@@ -2,14 +2,13 @@ package main
 
 import (
 	"fmt"
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 	"runtime"
 	"time"
+	"cs262-project/common"
 )
-
-type UUID string
 
 type Server struct {
 	address  *net.TCPAddr
@@ -19,7 +18,7 @@ type Server struct {
 }
 
 // Create a new server instance using the configuration
-func NewServer(c *Config) *Server {
+func NewServer(c *common.Config) *Server {
 	var (
 		address string
 		err     error
@@ -34,7 +33,7 @@ func NewServer(c *Config) *Server {
 	// parse the config into an address
 	s.address, err = net.ResolveTCPAddr("tcp", address)
 	if err != nil {
-		log.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"port": *c.Server.Port, "global": c.Server.Global, "error": err.Error(),
 		}).Fatal("Could not resolve the generated TCP address")
 	}
@@ -42,7 +41,7 @@ func NewServer(c *Config) *Server {
 	// listen on the address
 	s.listener, err = net.ListenTCP("tcp", s.address)
 	if err != nil {
-		log.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"address": s.address, "error": err.Error(),
 		}).Fatal("Could not listen on the provided address")
 	}
@@ -66,7 +65,7 @@ func (s *Server) listenAndDispatch() {
 		conn net.Conn
 		err  error
 	)
-	log.WithFields(logrus.Fields{
+	log.WithFields(log.Fields{
 		"address": s.address,
 	}).Info("Broker Listening!")
 
@@ -74,7 +73,7 @@ func (s *Server) listenAndDispatch() {
 	for {
 		conn, err = s.listener.Accept()
 		if err != nil {
-			log.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"error": err.Error(),
 			}).Error("Error accepting connection")
 		}
@@ -90,14 +89,14 @@ func (s *Server) listenAndDispatch() {
 // structure, we can just look at the first byte of a connection:
 // If it's a string, its a subscribe. If it's an array, its a publish.
 func (s *Server) dispatch(conn net.Conn) {
-	log.WithFields(logrus.Fields{
+	log.WithFields(log.Fields{
 		"from": conn.RemoteAddr(),
 	}).Debug("Got a new message!")
 
 	var dec = msgpack.NewDecoder(conn)
 	thing, err := dec.DecodeInterface()
 	if err != nil {
-		log.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"error": err, "address": conn.RemoteAddr(),
 		}).Error("Could not decode msgpack on connection. Closing!")
 		// close connection
@@ -110,10 +109,10 @@ func (s *Server) dispatch(conn net.Conn) {
 		log.Debugf("its a string %v", query)
 		s.handleSubscribe(query, dec, conn)
 	} else if array, ok := thing.([]interface{}); ok {
-		var first = new(Message)
-		err := first.fromArray(array)
+		var first = new(common.Message)
+		err := first.FromArray(array)
 		if err != nil {
-			log.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"error": err, "UUID": first.UUID, "Metadata": first.Metadata,
 				"Value": first.Value, "From": conn.RemoteAddr(),
 			}).Error("Could not decode first publisher msg")
@@ -130,12 +129,12 @@ func (s *Server) dispatch(conn net.Conn) {
 // so that we can transmit back to the client.
 func (s *Server) handleSubscribe(query string, dec *msgpack.Decoder, conn net.Conn) {
 	// decode string
-	log.WithFields(logrus.Fields{
+	log.WithFields(log.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
 	s.broker.NewSubscription(query, conn)
 }
 
-func (s *Server) handlePublish(first *Message, dec *msgpack.Decoder, conn net.Conn) {
+func (s *Server) handlePublish(first *common.Message, dec *msgpack.Decoder, conn net.Conn) {
 	s.broker.HandleProducer(first, dec, conn)
 }

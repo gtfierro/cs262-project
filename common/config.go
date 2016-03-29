@@ -1,7 +1,7 @@
-package main
+package common
 
 import (
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	"gopkg.in/gcfg.v1"
 )
 
@@ -31,13 +31,26 @@ type Config struct {
 		Enable        bool
 		ProfileLength *int
 	}
+	
+	Benchmark struct {
+		MinProducerCount  int
+		MaxProducerCount  int
+		ProducerStepSize  int
+		MinClientCount    int
+		MaxClientCount    int
+		ClientStepSize    int
+		StepFrequency     int    // How often to increase client/producer counts
+		ConfigurationName string // Named bundle of query/metadata
+	}
 }
 
 func LoadConfig(filename string) (config *Config) {
 	config = new(Config)
 	err := gcfg.ReadFileInto(config, filename)
 	if err != nil {
-		log.WithFields(logrus.Fields{"location": filename}).Error("No configuration file found at given location. Trying local ./config.ini")
+		log.WithFields(log.Fields{
+			"location": filename,
+		}).Error("No configuration file found at given location. Trying local ./config.ini")
 	} else {
 		return
 	}

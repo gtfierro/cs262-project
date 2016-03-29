@@ -1,10 +1,12 @@
-package main
+package common
 
 import (
 	"errors"
 	"fmt"
 	"gopkg.in/vmihailenco/msgpack.v2"
 )
+
+type UUID string
 
 type Sendable interface {
 	EncodeMsgpack(enc *msgpack.Encoder)
@@ -68,7 +70,7 @@ func (m *Message) EncodeMsgpack(enc *msgpack.Encoder) error {
 	return enc.Encode(m.UUID, m.Metadata, m.Value)
 }
 
-func (m *Message) fromArray(array []interface{}) error {
+func (m *Message) FromArray(array []interface{}) error {
 	var (
 		ok     bool
 		uuid_s string // temporary for decoding
@@ -104,10 +106,10 @@ func (m *Message) fromArray(array []interface{}) error {
 	return nil
 }
 
-func (m *Message) isEmpty() bool {
+func (m *Message) IsEmpty() bool {
 	return m.UUID == ""
 }
 
-// another type of mesage
+// another type of message
 type ProducerList struct {
 }

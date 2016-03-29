@@ -1,24 +1,25 @@
 package main
 
 import (
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"io"
+	"cs262-project/common"
 )
 
 type Producer struct {
-	ID UUID
+	ID common.UUID
 	// decoder
 	dec  *msgpack.Decoder
-	C    chan *Message
+	C    chan *common.Message
 	stop chan bool
 }
 
-func NewProducer(id UUID, decoder *msgpack.Decoder) *Producer {
+func NewProducer(id common.UUID, decoder *msgpack.Decoder) *Producer {
 	p := &Producer{
 		ID:   id,
 		dec:  decoder,
-		C:    make(chan *Message, 10),
+		C:    make(chan *common.Message, 10),
 		stop: make(chan bool),
 	}
 
@@ -30,7 +31,7 @@ func NewProducer(id UUID, decoder *msgpack.Decoder) *Producer {
 func (p *Producer) dorecv() {
 	var (
 		err error
-		msg = new(Message)
+		msg = new(common.Message)
 	)
 	for {
 		err = msg.DecodeMsgpack(p.dec)
@@ -38,11 +39,11 @@ func (p *Producer) dorecv() {
 			p.stop <- true
 			return // connection is closed
 		}
-		if msg.isEmpty() {
+		if msg.IsEmpty() {
 			continue
 		}
 		if err != nil {
-			log.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"error": err,
 			}).Error("Error decoding msgpack producer")
 		}

@@ -3,7 +3,8 @@ package main
 import (
 	"errors"
 	"fmt"
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
+	"cs262-project/common"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
 	"sync"
@@ -22,7 +23,7 @@ type MetadataStore struct {
 
 var selectID = bson.M{"uuid": 1}
 
-func NewMetadataStore(c *Config) *MetadataStore {
+func NewMetadataStore(c *common.Config) *MetadataStore {
 	var (
 		m   = new(MetadataStore)
 		err error
@@ -32,13 +33,13 @@ func NewMetadataStore(c *Config) *MetadataStore {
 
 	m.session, err = mgo.Dial(address)
 	if err != nil {
-		log.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"address": address, "error": err.Error(),
 		}).Fatal("Could not connect to MongoDB")
 		// exits
 	}
 
-	log.WithFields(logrus.Fields{
+	log.WithFields(log.Fields{
 		"address": address,
 	}).Info("Connected to MongoDB")
 
@@ -54,7 +55,7 @@ func NewMetadataStore(c *Config) *MetadataStore {
 	}
 	err = m.metadata.EnsureIndex(index)
 	if err != nil {
-		log.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"error": err.Error(),
 		}).Fatal("Could not create index on metadata.uuid")
 	}
@@ -62,13 +63,13 @@ func NewMetadataStore(c *Config) *MetadataStore {
 	return m
 }
 
-func (ms *MetadataStore) Save(msg *Message) error {
+func (ms *MetadataStore) Save(msg *common.Message) error {
 	if msg == nil {
 		return errors.New("Message is null")
 	}
 
 	if len(msg.Metadata) == 0 { // nothing to save
-		log.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"UUID": msg.UUID, "value": msg.Value,
 		}).Debug("No message metadata to save")
 		return nil
@@ -80,7 +81,7 @@ func (ms *MetadataStore) Save(msg *Message) error {
 
 func (ms *MetadataStore) Query(node rootNode) (*Query, error) {
 	query := node.Tree.MongoQuery()
-	log.WithFields(logrus.Fields{
+	log.WithFields(log.Fields{
 		"query": query,
 	}).Debug("Running mongo query")
 
@@ -89,21 +90,21 @@ func (ms *MetadataStore) Query(node rootNode) (*Query, error) {
 	iter := ms.metadata.Find(query).Select(selectID).Iter()
 	var r map[string]string
 	for iter.Next(&r) {
-		uuid := UUID(r["uuid"])
+		uuid := common.UUID(r["uuid"])
 		q.MatchingProducers[uuid] = NEW
 	}
 	err := iter.Close()
 	return q, err
 }
 
-func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []UUID) {
+func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []common.UUID) {
 	//TODO: cache the mongo query generation
 	iter := ms.metadata.Find(query.Mongo).Select(selectID).Iter()
 	var r map[string]string
 	// mark new UUIDs
 	query.Lock()
 	for iter.Next(&r) {
-		uuid := UUID(r["uuid"])
+		uuid := common.UUID(r["uuid"])
 		if _, found := query.MatchingProducers[uuid]; found {
 			query.MatchingProducers[uuid] = SAME
 		} else {
@@ -140,7 +141,7 @@ const (
 type Query struct {
 	Query             string
 	Keys              []string
-	MatchingProducers map[UUID]PRODUCERSTATE
+	MatchingProducers map[common.UUID]PRODUCERSTATE
 	Clients           *clientList
 	Mongo             bson.M
 	sync.RWMutex
@@ -150,14 +151,14 @@ func NewQuery(query string, keys []string, root Node) *Query {
 	return &Query{
 		Query:             query,
 		Keys:              keys,
-		MatchingProducers: make(map[UUID]PRODUCERSTATE),
+		MatchingProducers: make(map[common.UUID]PRODUCERSTATE),
 		Clients:           new(clientList),
 		Mongo:             root.MongoQuery(),
 	}
 }
 
 // updates internal list of qualified streams. Returns the lists of added and removed UUIDs
-func (q *Query) changeUUIDs(uuids []UUID) (added, removed []UUID) {
+func (q *Query) changeUUIDs(uuids []common.UUID) (added, removed []common.UUID) {
 	// mark the UUIDs that are new
 	q.Lock()
 	for _, uuid := range uuids {

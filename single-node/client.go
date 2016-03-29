@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 )
@@ -24,7 +24,7 @@ func NewClient(query string, conn *net.Conn) *Client {
 		query:   query,
 		conn:    conn,
 		buffer:  make(chan interface{}, 10),
-		active:  false,
+		active:  false, // TODO ETK shouldn't this be true here?
 		stop:    make(chan bool),
 		encoder: msgpack.NewEncoder(*conn),
 	}
@@ -46,7 +46,7 @@ func (c *Client) dosend() {
 			c.active = false
 			break
 		case m := <-c.buffer:
-			log.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"query": c.query, "message": m,
 			}).Debug("Forwarding message")
 			c.encoder.Encode(m)

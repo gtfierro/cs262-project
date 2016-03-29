@@ -1,13 +1,14 @@
 package main
 
 import (
-	"github.com/Sirupsen/logrus"
+	log "github.com/Sirupsen/logrus"
 	"gopkg.in/vmihailenco/msgpack.v2"
+	"cs262-project/common"
 	"net"
 	"sync"
 )
 
-var emptyList = []UUID{}
+var emptyList = []common.UUID{}
 
 // Handles the subscriptions, updates, forwarding
 type Broker struct {
@@ -19,11 +20,11 @@ type Broker struct {
 
 	// map of producer ids to queries
 	forwarding_lock sync.RWMutex
-	forwarding      map[UUID]*queryList
+	forwarding      map[common.UUID]*queryList
 
 	// index of producers
 	producers_lock sync.RWMutex
-	producers      map[UUID]*Producer
+	producers      map[common.UUID]*Producer
 
 	// map query string to query struct
 	query_lock sync.RWMutex
@@ -35,8 +36,8 @@ func NewBroker(metadata *MetadataStore) *Broker {
 	return &Broker{
 		metadata:    metadata,
 		subscribers: make(map[string][]Client),
-		forwarding:  make(map[UUID]*queryList),
-		producers:   make(map[UUID]*Producer),
+		forwarding:  make(map[common.UUID]*queryList),
+		producers:   make(map[common.UUID]*Producer),
 		queries:     make(map[string]*Query),
 	}
 }
@@ -72,12 +73,12 @@ Loop:
 					continue Loop
 				}
 			}
-			log.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"producerID": producerID, "query": query.Query, "list": list,
 			}).Debug("Adding query to existing query list")
 			b.forwarding[producerID].addQuery(query.Query)
 		} else {
-			log.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"producerID": producerID, "query": query.Query,
 			}).Debug("Adding query to NEW query list")
 			b.forwarding[producerID] = &queryList{query.Query}
@@ -89,7 +90,7 @@ Loop:
 
 // we have the list of new and removed UUIDs for a query,
 // so we update the forwarding table to match that
-func (b *Broker) updateForwardingDiffs(query *Query, added, removed []UUID) {
+func (b *Broker) updateForwardingDiffs(query *Query, added, removed []common.UUID) {
 	var (
 		list  *queryList
 		found bool
@@ -107,7 +108,7 @@ func (b *Broker) updateForwardingDiffs(query *Query, added, removed []UUID) {
 					continue
 				}
 			}
-			b.forwarding[rm_uuid] = list
+			b.forwarding[rm_uuid] = list // TODO ETK why is this step necessary?
 
 		}
 		b.forwarding_lock.Unlock()
@@ -115,7 +116,7 @@ func (b *Broker) updateForwardingDiffs(query *Query, added, removed []UUID) {
 	b.updateForwardingTable(query)
 }
 
-func (b *Broker) ForwardMessage(m *Message) {
+func (b *Broker) ForwardMessage(m *common.Message) {
 	var (
 		matchingQueries *queryList
 		found           bool
@@ -146,7 +147,7 @@ func (b *Broker) ForwardMessage(m *Message) {
 	}
 }
 
-func (b *Broker) SendSubscriptionDiffs(query string, added, removed []UUID) {
+func (b *Broker) SendSubscriptionDiffs(query string, added, removed []common.UUID) {
 	// if we don't do this, then empty lists show up as None
 	// when we pack them
 	if len(added) == 0 {
@@ -155,7 +156,7 @@ func (b *Broker) SendSubscriptionDiffs(query string, added, removed []UUID) {
 	if len(removed) == 0 {
 		removed = emptyList
 	}
-	msg := map[string][]UUID{"New": added, "Del": removed}
+	msg := map[string][]common.UUID{"New": added, "Del": removed}
 	// send to subscribers
 	b.subscriber_lock.RLock()
 	subscribers := b.subscribers[query]
@@ -182,7 +183,7 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 		queryAST := Parse(querystring)
 		query, err = b.metadata.Query(queryAST)
 		if err != nil {
-			log.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"error": err, "query": querystring,
 			}).Error("Error evaluating mongo query")
 		}
@@ -192,7 +193,7 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 		b.queries[querystring] = query
 		b.query_lock.Unlock()
 
-		log.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"query": querystring, "results": query.MatchingProducers,
 		}).Debug("Evaluated query")
 	}
@@ -208,7 +209,7 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 	return c
 }
 
-func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Conn) {
+func (b *Broker) HandleProducer(msg *common.Message, dec *msgpack.Decoder, conn net.Conn) {
 	// use uuid to find old producer or create new one
 	// add producer.C to a list of channels to select from
 	// when we receive a message from a producer, save the
@@ -223,7 +224,7 @@ func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Con
 	// save the metadata
 	err = b.metadata.Save(msg)
 	if err != nil {
-		log.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"message": msg, "error": err,
 		}).Error("Could not save metadata")
 		conn.Close()
@@ -243,7 +244,7 @@ func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Con
 	b.ForwardMessage(msg)
 
 	go func(p *Producer) {
-		for p.C != nil {
+		for p.C != nil { // TODO ETK not sure what this for-loop achieves
 			select {
 			case <-p.stop:
 				return
@@ -265,13 +266,14 @@ func (b *Broker) HandleProducer(msg *Message, dec *msgpack.Decoder, conn net.Con
 // tables that match. If newMetadata is nil, it will just reevaluate using current
 // producer metadata across *all* queries, else it can use metadata in the provided
 // Message to filter which queries to reevaluate
-func (b *Broker) RemapProducer(p *Producer, newMetadata *Message) {
+func (b *Broker) RemapProducer(p *Producer, newMetadata *common.Message) {
 	//TODO: make a list of queries to update so that its unique THEN actually reevaluate
 	//      to get added/removed lists. Once we have added/removed lists we use
 	//      that to update the forwarding table.
 	//      Question: Do i save the loop over to make OLD until after the forwarding table
 	//      is updated? NO this should be encapsulated?
 	var queriesToReevaluate = make(map[string]*Query)
+	// TODO ETK this `true` shouldn't be here, right? Debugging purposes?
 	if newMetadata == nil || true { // reevaluate ALL queries
 		b.subscriber_lock.RLock()
 		for querystring, _ := range b.subscribers {
@@ -285,7 +287,7 @@ func (b *Broker) RemapProducer(p *Producer, newMetadata *Message) {
 
 		for _, query := range queriesToReevaluate {
 			added, removed := b.metadata.Reevaluate(query)
-			log.WithFields(logrus.Fields{
+			log.WithFields(log.Fields{
 				"query": query.Query, "added": added, "removed": removed,
 			}).Info("Reevaluated query")
 			log.Debugf("remapped? %v %v %v", p, query)

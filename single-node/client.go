@@ -24,7 +24,7 @@ func NewClient(query string, conn *net.Conn) *Client {
 		query:   query,
 		conn:    conn,
 		buffer:  make(chan interface{}, 10),
-		active:  false, // TODO ETK shouldn't this be true here?
+		active:  true,
 		stop:    make(chan bool),
 		encoder: msgpack.NewEncoder(*conn),
 	}

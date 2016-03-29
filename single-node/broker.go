@@ -242,7 +242,13 @@ func (b *Broker) HandleProducer(msg *common.Message, dec *msgpack.Decoder, conn 
 	b.ForwardMessage(msg)
 
 	go func(p *Producer) {
-		for p.C != nil { // TODO ETK not sure what this for-loop achieves
+		// Normally, for looping over a channel, we'd use a regular
+		//  for msg := range p.C { etc etc }
+		// but we also want to stop this go routine if the producer crashes or disappears,
+		// else we will leak the goroutine and it will continue on alone, orphaned.
+		// The select {} case allows us to wait until we either receive a stop signal or
+		// a new message
+		for p.C != nil {
 			select {
 			case <-p.stop:
 				return
@@ -271,7 +277,7 @@ func (b *Broker) RemapProducer(p *Producer, newMetadata *common.Message) {
 	//      Question: Do i save the loop over to make OLD until after the forwarding table
 	//      is updated? NO this should be encapsulated?
 	var queriesToReevaluate = make(map[string]*Query)
-	// TODO ETK this `true` shouldn't be here, right? Debugging purposes?
+	// TODO: remove this TRUE statement when we implement key-informed reevaluation
 	if newMetadata == nil || true { // reevaluate ALL queries
 		b.subscriber_lock.RLock()
 		for querystring, _ := range b.subscribers {

@@ -34,7 +34,7 @@ type nequalNode struct {
 }
 
 func (nen nequalNode) MongoQuery() bson.M {
-	return bson.M{nen.Key: bson.M{"$neq": nen.Value}}
+	return bson.M{nen.Key: bson.M{"$ne": nen.Value}}
 }
 
 type likeNode struct {

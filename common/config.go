@@ -33,14 +33,10 @@ type Config struct {
 	}
 	
 	Benchmark struct {
-		MinProducerCount  int
-		MaxProducerCount  int
-		ProducerStepSize  int
-		MinClientCount    int
-		MaxClientCount    int
-		ClientStepSize    int
-		StepFrequency     int    // How often to increase client/producer counts
-		ConfigurationName string // Named bundle of query/metadata
+		BrokerURL         *string
+		BrokerPort        *int
+		StepSpacing       *int    // How long between increasing client/producer counts (seconds)
+		ConfigurationName *string // Named bundle of query/metadata
 	}
 }
 
@@ -50,13 +46,25 @@ func LoadConfig(filename string) (config *Config) {
 	if err != nil {
 		log.WithFields(log.Fields{
 			"location": filename,
-		}).Error("No configuration file found at given location. Trying local ./config.ini")
+			"error": err,
+		}).Error("Couldn't load configuration file at given location. Trying local ./config.ini")
 	} else {
 		return
 	}
 	err = gcfg.ReadFileInto(config, "./config.ini")
 	if err != nil {
-		log.Fatal("No configuration file found at ./config.ini")
+		log.WithField("error", err).Fatal("Couldn't load configuration file at ./config.ini")
 	}
 	return
+}
+
+func SetupLogging(config *Config) {
+	if config.Logging.UseJSON {
+		log.SetFormatter(&log.JSONFormatter{})
+	}
+	loglevel, err := log.ParseLevel(*config.Logging.Level)
+	if err != nil {
+		loglevel = log.InfoLevel // default to Info
+	}
+	log.SetLevel(loglevel)
 }

@@ -67,7 +67,7 @@ func (m *Message) DecodeMsgpack(dec *msgpack.Decoder) error {
 }
 
 func (m *Message) EncodeMsgpack(enc *msgpack.Encoder) error {
-	return enc.Encode(m.UUID, m.Metadata, m.Value)
+	return enc.Encode([]interface{}{m.UUID, m.Metadata, m.Value})
 }
 
 func (m *Message) FromArray(array []interface{}) error {

@@ -22,14 +22,7 @@ func main() {
 	flag.Parse()
 	// configure logging instance
 	config := common.LoadConfig(*configfile)
-	if config.Logging.UseJSON {
-		log.SetFormatter(&log.JSONFormatter{})
-	}
-	loglevel, err := log.ParseLevel(*config.Logging.Level)
-	if err != nil {
-		loglevel = log.InfoLevel // default to Info
-	}
-	log.SetLevel(loglevel)
+	common.SetupLogging(config)
 
 	if config.Debug.Enable {
 		p := profile.Start(profile.CPUProfile, profile.ProfilePath("."))

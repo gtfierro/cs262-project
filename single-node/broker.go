@@ -290,7 +290,9 @@ func (b *Broker) RemapProducer(p *Producer, newMetadata *common.Message) {
 			log.WithFields(log.Fields{
 				"query": query.Query, "added": added, "removed": removed,
 			}).Info("Reevaluated query")
+			query.RWMutex.RLock()
 			log.Debugf("remapped? %v %v %v", p, query)
+			query.RWMutex.RUnlock()
 			b.updateForwardingDiffs(query, added, removed)
 			b.SendSubscriptionDiffs(query.Query, added, removed)
 		}

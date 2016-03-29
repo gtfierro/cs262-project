@@ -15,6 +15,9 @@ type Server struct {
 	listener *net.TCPListener
 	metadata *MetadataStore
 	broker   *Broker
+	// server signals on this channel when it has stopped
+	stopped chan bool
+	closed  bool
 }
 
 // Create a new server instance using the configuration
@@ -48,6 +51,8 @@ func NewServer(c *common.Config) *Server {
 
 	s.metadata = NewMetadataStore(c)
 	s.broker = NewBroker(s.metadata)
+	s.stopped = make(chan bool)
+	s.closed = false
 
 	// print up some server stats
 	go func() {
@@ -57,6 +62,15 @@ func NewServer(c *common.Config) *Server {
 		}
 	}()
 	return s
+}
+
+func (s *Server) stop() {
+	log.Info("Stopping Server")
+	s.closed = true
+	s.listener.Close()
+	time.Sleep(50 * time.Millisecond) // brief pause to let TCP close
+	log.Info("Stopped Server")
+	s.stopped <- true
 }
 
 // This method listens for incoming connections and handles them. It does NOT return
@@ -73,6 +87,9 @@ func (s *Server) listenAndDispatch() {
 	for {
 		conn, err = s.listener.Accept()
 		if err != nil {
+			if s.closed {
+				return // exit
+			}
 			log.WithFields(log.Fields{
 				"error": err.Error(),
 			}).Error("Error accepting connection")
@@ -103,10 +120,7 @@ func (s *Server) dispatch(conn net.Conn) {
 		conn.Close()
 		return
 	}
-	// TODO: implement "parse message" method that
-	// outputs both the query and the message and you check for nil?
 	if query, ok := thing.(string); ok {
-		log.Debugf("its a string %v", query)
 		s.handleSubscribe(query, dec, conn)
 	} else if array, ok := thing.([]interface{}); ok {
 		var first = new(common.Message)
@@ -119,7 +133,6 @@ func (s *Server) dispatch(conn net.Conn) {
 			conn.Close()
 			return
 		}
-		log.Debugf("got msg %v", first)
 		s.handlePublish(first, dec, conn)
 	}
 }
@@ -128,7 +141,6 @@ func (s *Server) dispatch(conn net.Conn) {
 // to this handler so we can finish decoding it. We also pass in the connection
 // so that we can transmit back to the client.
 func (s *Server) handleSubscribe(query string, dec *msgpack.Decoder, conn net.Conn) {
-	// decode string
 	log.WithFields(log.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")

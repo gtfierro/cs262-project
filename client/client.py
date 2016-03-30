@@ -18,7 +18,7 @@ class Client:
         self.s.connect((self.host, self.port))
 
     def subscribe(self, query):
-        self.s.send(msgpack.packb(query))
+        self.s.send(chr(0x01)+msgpack.packb(query))
         self.unpacker = msgpack.Unpacker()
         while 1:
             data = self.s.recv(1024)
@@ -36,7 +36,7 @@ class Client:
     def publish(self, value):
         message = [self.uuid, self._dirty_metadata, value]
         print map(hex, map(ord, msgpack.packb(message)))
-        self.s.send(msgpack.packb(message))
+        self.s.send(chr(0x00)+msgpack.packb(message))
         self._dirty_metadata = {}
 
 if __name__ == '__main__':

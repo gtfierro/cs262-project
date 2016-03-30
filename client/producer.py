@@ -27,7 +27,7 @@ class Client:
     def publish(self, value):
         message = [self.uuid, self._dirty_metadata, value]
         print map(hex, map(ord, msgpack.packb(message)))
-        self.s.send(msgpack.packb(message))
+        self.s.send(chr(0x00)+msgpack.packb(message))
         self._dirty_metadata = {}
 
 if __name__ == '__main__':

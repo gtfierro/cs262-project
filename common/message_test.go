@@ -2,6 +2,7 @@ package common
 
 import (
 	"gopkg.in/vmihailenco/msgpack.v2"
+	"io/ioutil"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,15 @@ func BenchmarkDecodeQueryShort(b *testing.B) {
 	}
 }
 
+func BenchmarkEncodeQueryShort(b *testing.B) {
+	query := QueryMessage{Query: "Key1 = 'Val1'"}
+	encoder := msgpack.NewEncoder(ioutil.Discard)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encoder.Encode(query)
+	}
+}
+
 func BenchmarkDecodeQueryLong(b *testing.B) {
 	var query = strings.Repeat("Key1 = 'Val1'", 50)
 	bytes, _ := msgpack.Marshal(query)
@@ -39,6 +49,16 @@ func BenchmarkDecodeQueryLong(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dec := msgpack.NewDecoder(c)
 		MessageFromDecoder(dec)
+	}
+}
+
+func BenchmarkEncodeQueryLong(b *testing.B) {
+	var query_string = strings.Repeat("Key1 = 'Val1'", 50)
+	query := QueryMessage{Query: query_string}
+	encoder := msgpack.NewEncoder(ioutil.Discard)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encoder.Encode(query)
 	}
 }
 
@@ -52,6 +72,16 @@ func BenchmarkDecodePublishNoMetadata(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dec := msgpack.NewDecoder(c)
 		MessageFromDecoder(dec)
+	}
+}
+
+func BenchmarkEncodePublishNoMetadata(b *testing.B) {
+	var msg = PublishMessage{UUID: "f58c8216-fa71-11e5-b77e-1002b58053c7",
+		Value: 1459780334680233928}
+	encoder := msgpack.NewEncoder(ioutil.Discard)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encoder.Encode(msg)
 	}
 }
 
@@ -80,5 +110,16 @@ func BenchmarkDecodePublishWithMetadata(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		dec := msgpack.NewDecoder(c)
 		MessageFromDecoder(dec)
+	}
+}
+
+func BenchmarkEncodePublishWithMetadata(b *testing.B) {
+	var msg = PublishMessage{UUID: "f58c8216-fa71-11e5-b77e-1002b58053c7",
+		Metadata: testmetadata,
+		Value:    1459780334680233928}
+	encoder := msgpack.NewEncoder(ioutil.Discard)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		encoder.Encode(msg)
 	}
 }

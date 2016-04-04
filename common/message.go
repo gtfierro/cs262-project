@@ -142,10 +142,10 @@ func (m *SubscriptionDiffMessage) EncodeMsgpack(enc *msgpack.Encoder) (err error
 
 func (sdm *SubscriptionDiffMessage) DecodeMsgpack(dec *msgpack.Decoder) (err error) {
 	var (
-		len int
-		key string
+		len  int
+		key  string
 		len2 int
-		val string
+		val  string
 	)
 	if len, err = dec.DecodeMapLen(); err != nil {
 		return
@@ -158,7 +158,7 @@ func (sdm *SubscriptionDiffMessage) DecodeMsgpack(dec *msgpack.Decoder) (err err
 			return
 		}
 		tmpslice := make([]UUID, len2)
-		for i := 0; i < len2; i ++ {
+		for i := 0; i < len2; i++ {
 			if val, err = dec.DecodeString(); err != nil {
 				return
 			}

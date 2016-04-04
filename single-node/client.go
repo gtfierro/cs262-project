@@ -2,9 +2,9 @@ package main
 
 import (
 	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
-	"github.com/gtfierro/cs262-project/common"
 )
 
 type Client struct {
@@ -15,12 +15,14 @@ type Client struct {
 	// buffer of messages to send out
 	buffer chan common.Sendable
 	// whether or not client is actively sending messages
-	active  bool
-	stop    chan bool
+	active bool
+	stop   chan bool
+	// send on this channel when we die
+	death   chan<- *Client
 	encoder *msgpack.Encoder
 }
 
-func NewClient(query string, conn *net.Conn) *Client {
+func NewClient(query string, conn *net.Conn, death chan<- *Client) *Client {
 	return &Client{
 		query:   query,
 		conn:    conn,
@@ -28,6 +30,7 @@ func NewClient(query string, conn *net.Conn) *Client {
 		active:  true,
 		stop:    make(chan bool),
 		encoder: msgpack.NewEncoder(*conn),
+		death:   death,
 	}
 }
 
@@ -53,9 +56,11 @@ func (c *Client) dosend() {
 			err := m.EncodeMsgpack(c.encoder)
 			if err != nil {
 				log.WithFields(log.Fields{
-					"error": err,
+					"error":   err,
 					"message": m,
 				}).Error("Error sending Message to client!")
+				c.death <- c
+				return
 			}
 		}
 	}

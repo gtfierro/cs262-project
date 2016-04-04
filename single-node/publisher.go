@@ -34,10 +34,9 @@ func (p *Producer) dorecv() {
 		msg = new(common.PublishMessage)
 	)
 	for {
-		if msgtype, err := p.dec.DecodeUint8();
-		common.MessageType(msgtype) != common.PUBLISHMSG || err != nil && err != io.EOF {
+		if msgtype, err := p.dec.DecodeUint8(); common.MessageType(msgtype) != common.PUBLISHMSG || err != nil && err != io.EOF {
 			log.WithFields(log.Fields{
-				"error": err,
+				"error":   err,
 				"msgtype": msgtype,
 			}).Error("Error decoding incoming PublishMessage")
 			return

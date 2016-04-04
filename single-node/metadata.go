@@ -178,9 +178,9 @@ func (q *Query) changeUUIDs(uuids []common.UUID) (added, removed []common.UUID) 
 }
 
 // TODO: more efficient implementation?
-type clientList []*Client
+type clientList []Client
 
-func (sl *clientList) addClient(sub *Client) {
+func (sl *clientList) addClient(sub Client) {
 	for _, oldSub := range *sl {
 		if oldSub == sub {
 			return
@@ -190,10 +190,14 @@ func (sl *clientList) addClient(sub *Client) {
 	*sl = append(*sl, sub)
 }
 
-func (sl *clientList) removeClient(sub *Client) {
+func (sl *clientList) removeClient(sub Client) {
 	for i, oldSub := range *sl {
 		if oldSub == sub {
-			*sl = append((*sl)[:i], (*sl)[i+1:]...)
+			*sl, (*sl)[len(*sl)-1] = append((*sl)[:i], (*sl)[i+1:]...), Client{}
+			// above: this is supposedly a better delete method for slices because
+			// it avoids leaving references to "deleted" objects at the end of the list
+			// below is the "normal" one
+			//*sl = append((*sl)[:i], (*sl)[i+1:]...)
 			return
 		}
 	}

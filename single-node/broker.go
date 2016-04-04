@@ -16,7 +16,7 @@ type Broker struct {
 
 	// map queries to clients
 	subscriber_lock sync.RWMutex
-	subscribers     map[string][]Client
+	subscribers     map[string]clientList
 
 	// map of producer ids to queries
 	forwarding_lock sync.RWMutex
@@ -29,17 +29,36 @@ type Broker struct {
 	// map query string to query struct
 	query_lock sync.RWMutex
 	queries    map[string]*Query
+
+	// dead client notification
+	killClient chan *Client
 }
 
 //TODO: config for broker?
 func NewBroker(metadata *MetadataStore) *Broker {
-	return &Broker{
+	b := &Broker{
 		metadata:    metadata,
-		subscribers: make(map[string][]Client),
+		subscribers: make(map[string]clientList),
 		forwarding:  make(map[common.UUID]*queryList),
 		producers:   make(map[common.UUID]*Producer),
 		queries:     make(map[string]*Query),
+		killClient:  make(chan *Client),
 	}
+
+	go func(b *Broker) {
+		for deadClient := range b.killClient {
+			log.WithFields(log.Fields{
+				"client": deadClient,
+			}).Info("Removing dead client")
+			b.subscriber_lock.Lock()
+			for _, cl := range b.subscribers {
+				cl.removeClient(*deadClient)
+			}
+			b.subscriber_lock.Unlock()
+		}
+	}(b)
+
+	return b
 }
 
 // safely adds entry to map[query][]Client map
@@ -196,7 +215,7 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 		}).Debug("Evaluated query")
 	}
 
-	c := NewClient(querystring, &conn)
+	c := NewClient(querystring, &conn, b.killClient)
 	go c.dosend()
 
 	// set up forwarding for all initial producers

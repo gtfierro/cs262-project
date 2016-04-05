@@ -34,10 +34,10 @@ type DebugConfig struct {
 	ProfileLength int
 }
 type BenchmarkConfig struct {
-	BrokerURL         *string
-	BrokerPort        *int
-	StepSpacing       *int    // How long between increasing client/producer counts (seconds)
-	ConfigurationName *string // Named bundle of query/metadata
+	BrokerURL         string
+	BrokerPort        int
+	StepSpacing       int    // How long between increasing client/producer counts (seconds)
+	ConfigurationName string // Named bundle of query/metadata
 }
 
 type Config struct {

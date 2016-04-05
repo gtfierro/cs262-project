@@ -52,10 +52,10 @@ func main() {
 		})
 	}
 
-	publishers := initializePublishers(layout, *config.Benchmark.BrokerURL, *config.Benchmark.BrokerPort)
+	publishers := initializePublishers(layout, config.Benchmark.BrokerURL, config.Benchmark.BrokerPort)
 
 	latencyChan := make(chan int64, 1e4) // TODO proper sizing?
-	clients := initializeClients(layout, *config.Benchmark.BrokerURL, *config.Benchmark.BrokerPort, latencyChan)
+	clients := initializeClients(layout, config.Benchmark.BrokerURL, config.Benchmark.BrokerPort, latencyChan)
 
 	var wg sync.WaitGroup
 
@@ -69,7 +69,7 @@ func main() {
 	go pollAndIncrementLatencyValues(latencyChan, latencySum, latencyCount)
 	go logLatencyAverages(latencySum, latencyCount)
 
-	time.Sleep(time.Second * time.Duration(*config.Benchmark.StepSpacing))
+	time.Sleep(time.Second * time.Duration(config.Benchmark.StepSpacing))
 
 	// Every StepSpacing seconds, spin up more publishers and clients
 	// until the max is reached
@@ -79,7 +79,7 @@ func main() {
 		startClientsAndPublishers(clientsRunning, clientGoal, publishersRunning, publisherGoal, clients, publishers, wg)
 		clientsRunning = clientGoal
 		publishersRunning = publisherGoal
-		time.Sleep(time.Second * time.Duration(*config.Benchmark.StepSpacing))
+		time.Sleep(time.Second * time.Duration(config.Benchmark.StepSpacing))
 	}
 
 	for _, p := range publishers {

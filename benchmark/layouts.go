@@ -32,9 +32,9 @@ var Standard = Layout{
 
 var allLayouts = []Layout{Standard}
 
-func GetLayoutByName(name *string) (layout *Layout) {
+func GetLayoutByName(name string) (layout *Layout) {
 	for _, l := range allLayouts {
-		if l.name == *name {
+		if l.name == name {
 			return &l
 		}
 	}

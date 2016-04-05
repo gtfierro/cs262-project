@@ -1,6 +1,8 @@
 package common
 
 import (
+	"bytes"
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/vmihailenco/msgpack.v2"
 	"io/ioutil"
 	"strings"
@@ -24,6 +26,7 @@ func BenchmarkDecodeQueryShort(b *testing.B) {
 	bytes, _ := msgpack.Marshal("Key1 = 'Val1'")
 	bytes = append([]byte{byte(QUERYMSG)}, bytes...)
 	c := NewCopyReader(bytes)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		dec := msgpack.NewDecoder(c)
@@ -31,9 +34,27 @@ func BenchmarkDecodeQueryShort(b *testing.B) {
 	}
 }
 
+func BenchmarkMsgpDecodeQueryShort(b *testing.B) {
+	v := QueryMessage{Query: "Key1 = 'Val1'"}
+	var buf bytes.Buffer
+	msgp.Encode(&buf, &v)
+	b.SetBytes(int64(buf.Len()))
+	rd := msgp.NewEndlessReader(buf.Bytes(), b)
+	dc := msgp.NewReader(rd)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := v.DecodeMsg(dc)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkEncodeQueryShort(b *testing.B) {
 	query := QueryMessage{Query: "Key1 = 'Val1'"}
 	encoder := msgpack.NewEncoder(ioutil.Discard)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		encoder.Encode(query)
@@ -45,6 +66,7 @@ func BenchmarkDecodeQueryLong(b *testing.B) {
 	bytes, _ := msgpack.Marshal(query)
 	bytes = append([]byte{byte(QUERYMSG)}, bytes...)
 	c := NewCopyReader(bytes)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		dec := msgpack.NewDecoder(c)
@@ -52,10 +74,28 @@ func BenchmarkDecodeQueryLong(b *testing.B) {
 	}
 }
 
+func BenchmarkMsgpDecodeQueryLong(b *testing.B) {
+	v := QueryMessage{Query: strings.Repeat("Key1 = 'Val1'", 50)}
+	var buf bytes.Buffer
+	msgp.Encode(&buf, &v)
+	b.SetBytes(int64(buf.Len()))
+	rd := msgp.NewEndlessReader(buf.Bytes(), b)
+	dc := msgp.NewReader(rd)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		err := v.DecodeMsg(dc)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
 func BenchmarkEncodeQueryLong(b *testing.B) {
 	var query_string = strings.Repeat("Key1 = 'Val1'", 50)
 	query := QueryMessage{Query: query_string}
 	encoder := msgpack.NewEncoder(ioutil.Discard)
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		encoder.Encode(query)

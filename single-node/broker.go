@@ -3,7 +3,8 @@ package main
 import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
-	"gopkg.in/vmihailenco/msgpack.v2"
+	"github.com/tinylib/msgp/msgp"
+	_ "gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 	"sync"
 )
@@ -227,7 +228,7 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 	return c
 }
 
-func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgpack.Decoder, conn net.Conn) {
+func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {
 	// use uuid to find old producer or create new one
 	// add producer.C to a list of channels to select from
 	// when we receive a message from a producer, save the
@@ -267,11 +268,13 @@ func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgpack.Decoder
 			case <-p.stop:
 				return
 			case msg := <-p.C:
+				msg.RLock()
 				if len(msg.Metadata) > 0 {
 					err = b.metadata.Save(msg)
 					b.RemapProducer(p, msg)
 				}
 				b.ForwardMessage(msg)
+				msg.RUnlock()
 			}
 		}
 	}(p)

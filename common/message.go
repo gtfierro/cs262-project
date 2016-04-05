@@ -4,7 +4,9 @@ package common
 import (
 	"errors"
 	"fmt"
+	"github.com/tinylib/msgp/msgp"
 	"gopkg.in/vmihailenco/msgpack.v2"
+	"sync"
 )
 
 type UUID string
@@ -12,6 +14,7 @@ type UUID string
 type Sendable interface {
 	EncodeMsgpack(enc *msgpack.Encoder) error
 	DecodeMsgpack(dec *msgpack.Decoder) error
+	Encode(enc *msgp.Writer) error
 }
 
 type MessageType uint8
@@ -174,6 +177,7 @@ type PublishMessage struct {
 	UUID     UUID
 	Metadata map[string]interface{}
 	Value    interface{}
+	sync.RWMutex
 }
 
 func (m *PublishMessage) EncodeMsgpack(enc *msgpack.Encoder) error {
@@ -276,4 +280,33 @@ func (m *PublishMessage) IsEmpty() bool {
 
 // another type of message
 type ProducerList struct {
+}
+
+func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
+	msgtype_tmp, err := dec.ReadByte()
+	if err != nil {
+		fmt.Printf("what %v", err)
+		return nil, err
+	}
+	msgtype := uint8(msgtype_tmp)
+	switch MessageType(msgtype) {
+	case PUBLISHMSG:
+		msg := new(PublishMessage)
+		err = msg.DecodeMsg(dec)
+		return msg, err
+	case QUERYMSG:
+		qm := new(QueryMessage)
+		qm.DecodeMsg(dec)
+		return qm, err
+	case SUBSCRIPDIFFMSG:
+		sdm := make(SubscriptionDiffMessage)
+		sdm.DecodeMsg(dec)
+		return &sdm, err
+	//case MATCHPRODMSG:
+	//	mpm := make(MatchingProducersMessage)
+	//	mpm.DecodeMsg(dec)
+	//	return &mpm, err
+	default:
+		return nil, errors.New(fmt.Sprintf("MessageType unknown: %v", msgtype))
+	}
 }

@@ -68,6 +68,7 @@ func SetupLogging(config *Config) {
 		log.SetFormatter(&log.JSONFormatter{})
 	}
 	loglevel, err := log.ParseLevel(config.Logging.Level)
+	log.Infof("Using log level %v", loglevel)
 	if err != nil {
 		log.Error(err)
 		loglevel = log.InfoLevel // default to Info

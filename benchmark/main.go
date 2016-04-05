@@ -64,16 +64,33 @@ func main() {
 	clientsRunning := layout.minClientCount
 	publishersRunning := layout.minPublisherCount
 
-	var latencySum *int64 = new(int64)
-	var latencyCount *int32 = new(int32)
-	go pollAndIncrementLatencyValues(latencyChan, latencySum, latencyCount)
-	go logLatencyAverages(latencySum, latencyCount)
+	var latencyLastSecondSum *int64 = new(int64) // tracks avg latency over the last second
+	var latencyLastSecondCount *int32 = new(int32)
+	var latencySinceChangeSum *int64 = new(int64) // tracks avg latency since the client/prod count last changed
+	var latencySinceChangeCount *int32 = new(int32)
+	go pollAndIncrementLatencyValues(latencyChan, latencyLastSecondSum, latencyLastSecondCount,
+		latencySinceChangeSum, latencySinceChangeCount)
+	go logLastSecondLatencyAverages(latencyLastSecondSum, latencyLastSecondCount)
 
 	time.Sleep(time.Second * time.Duration(config.Benchmark.StepSpacing))
 
 	// Every StepSpacing seconds, spin up more publishers and clients
 	// until the max is reached
 	for clientsRunning < layout.maxClientCount || publishersRunning < layout.maxPublisherCount {
+		oldLatencySum := atomic.SwapInt64(latencySinceChangeSum, 0)
+		oldLatencyCount := atomic.SwapInt32(latencySinceChangeCount, 0)
+		if oldLatencyCount != 0 {
+			log.WithFields(log.Fields{
+				"interval":          "sincechange",
+				"clientsRunning":    clientsRunning,
+				"publishersRunning": publishersRunning,
+				"messageCount":      oldLatencyCount,
+				"averageLatencyNS":  int64(float64(oldLatencySum) / float64(oldLatencyCount)),
+				"averageLatencyMS":  int64(float64(oldLatencySum) / float64(oldLatencyCount) / 1e6),
+			}).Info("Received message count and average latency for the current configuration")
+		} else {
+			log.Info("No latency information available for the current configuration")
+		}
 		clientGoal := min(clientsRunning+layout.clientStepSize, layout.maxClientCount)
 		publisherGoal := min(publishersRunning+layout.publisherStepSize, layout.maxPublisherCount)
 		startClientsAndPublishers(clientsRunning, clientGoal, publishersRunning, publisherGoal, clients, publishers, wg)
@@ -159,32 +176,39 @@ func initializePublishers(layout *Layout, brokerURL string, brokerPort int) []Pu
 		metadata["Room"] = string('a' + (roomNumber % 10)) // to easily select fractions of publishers
 		metadata["Type"] = "Counter"
 		publishers[i] = Publisher{
-			BrokerURL:  brokerURL,
-			BrokerPort: brokerPort,
-			Metadata:   metadata,
-			Frequency:  freq,
-			uuid:       common.UUID(u.String()),
-			stop:       make(chan bool),
+			BrokerURL:               brokerURL,
+			BrokerPort:              brokerPort,
+			BaseMetadata:            metadata,
+			MetadataRefreshInterval: layout.publisherMDRefreshInterval,
+			MetadataRefreshRandom:   layout.publisherMDRefreshRandom,
+			AdditionalMetadataSize:  layout.publisherMDSize,
+			Frequency:               freq,
+			uuid:                    common.UUID(u.String()),
+			stop:                    make(chan bool),
 		}
 	}
 	return publishers
 }
 
-func pollAndIncrementLatencyValues(latencyChan chan int64, latencySum *int64, latencyCount *int32) {
+func pollAndIncrementLatencyValues(latencyChan chan int64, latencySum1 *int64, latencyCount1 *int32,
+	latencySum2 *int64, latencyCount2 *int32) {
 	for {
 		newLatency := <-latencyChan
-		atomic.AddInt64(latencySum, newLatency)
-		atomic.AddInt32(latencyCount, 1)
+		atomic.AddInt64(latencySum1, newLatency)
+		atomic.AddInt32(latencyCount1, 1)
+		atomic.AddInt64(latencySum2, newLatency)
+		atomic.AddInt32(latencyCount2, 1)
 	}
 }
 
-func logLatencyAverages(latencySum *int64, latencyCount *int32) {
+func logLastSecondLatencyAverages(latencySum *int64, latencyCount *int32) {
 	for {
 		time.Sleep(time.Second)
 		oldLatencySum := atomic.SwapInt64(latencySum, 0)
 		oldLatencyCount := atomic.SwapInt32(latencyCount, 0)
 		if oldLatencyCount != 0 {
 			log.WithFields(log.Fields{
+				"interval":         "lastsecond",
 				"messageCount":     oldLatencyCount,
 				"averageLatencyNS": int64(float64(oldLatencySum) / float64(oldLatencyCount)),
 				"averageLatencyMS": int64(float64(oldLatencySum) / float64(oldLatencyCount) / 1e6),

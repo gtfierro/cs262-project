@@ -1,6 +1,8 @@
 package main
 
 import (
+	"strings"
+
 	log "github.com/Sirupsen/logrus"
 )
 
@@ -12,30 +14,44 @@ type Layout struct {
 	minPublisherCount             int
 	maxPublisherCount             int
 	publisherStepSize             int
-	minClientCount                int
-	maxClientCount                int
-	clientStepSize                int
+	publisherMDRefreshInterval    int  // seconds between publisher MD updates; set to -1 to never refresh
+	publisherMDRefreshRandom      bool // if true, refreshes after a random interval between
+	// [0, publisherMDRefreshInterval)
+	publisherMDSize int // The number of key-value pairs to pad the publisher MD with
+	minClientCount  int
+	maxClientCount  int
+	clientStepSize  int
 }
 
-var Standard = Layout{
-	name: "standard",
-	fractionPublishersFast:        0.1,
-	clientsUseSameQuery:           false,
-	tenthsOfClientsTouchedByQuery: 1,
-	minPublisherCount:             50,
-	maxPublisherCount:             200,
-	publisherStepSize:             50,
-	minClientCount:                50,
-	maxClientCount:                200,
-	clientStepSize:                50,
-}
+var allLayouts = make([]*Layout, 0)
 
-var allLayouts = []Layout{Standard}
+func init() {
+	var standard = Layout{
+		name: "Standard",
+		fractionPublishersFast:        0.1,
+		clientsUseSameQuery:           false,
+		tenthsOfClientsTouchedByQuery: 1,
+		minPublisherCount:             50,
+		maxPublisherCount:             200,
+		publisherStepSize:             50,
+		publisherMDRefreshInterval:    -1,
+		publisherMDSize:               5,
+		minClientCount:                50,
+		maxClientCount:                200,
+		clientStepSize:                50,
+	}
+	allLayouts = append(allLayouts, &standard)
+	var standardMDRefresh = standard
+	standardMDRefresh.name = "StandardMDRefresh"
+	standardMDRefresh.publisherMDRefreshInterval = 10
+	standardMDRefresh.publisherMDRefreshRandom = true
+	allLayouts = append(allLayouts, &standardMDRefresh)
+}
 
 func GetLayoutByName(name string) (layout *Layout) {
 	for _, l := range allLayouts {
-		if l.name == name {
-			return &l
+		if strings.EqualFold(l.name, name) {
+			return l
 		}
 	}
 	return nil
@@ -51,6 +67,9 @@ func (l *Layout) logSelf() {
 		"minPublisherCount":            l.minPublisherCount,
 		"maxPublisherCount":            l.maxPublisherCount,
 		"publisherStepSize":            l.publisherStepSize,
+		"publisherMDRefreshInterval":   l.publisherMDRefreshInterval,
+		"publisherMDRefreshRandom":     l.publisherMDRefreshRandom,
+		"publisherMDSize":              l.publisherMDSize,
 		"minClientCount":               l.minClientCount,
 		"maxClientCount":               l.maxClientCount,
 		"clientStepSize":               l.clientStepSize,

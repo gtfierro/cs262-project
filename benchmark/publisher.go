@@ -1,21 +1,22 @@
 package main
 
 import (
-	"gopkg.in/vmihailenco/msgpack.v2"
-	log "github.com/Sirupsen/logrus"
-	"net"
 	"fmt"
-	"github.com/gtfierro/cs262-project/common"
+	"net"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
+	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 type Publisher struct {
-	BrokerURL string
+	BrokerURL  string
 	BrokerPort int
-	Metadata map[string]interface{}
-	uuid common.UUID
-	Frequency int // per minute
-	stop chan bool
+	Metadata   map[string]interface{}
+	uuid       common.UUID
+	Frequency  int // per minute
+	stop       chan bool
 }
 
 func (p *Publisher) publishContinuously() {
@@ -32,7 +33,7 @@ func (p *Publisher) publishContinuously() {
 	msg := common.PublishMessage{UUID: p.uuid, Metadata: p.Metadata, Value: time.Now().UnixNano()}
 	msg.EncodeMsgpack(enc)
 	msg.Metadata = nil // Only send metadata on initial connection
-	Loop:
+Loop:
 	for {
 		select {
 		case <-p.stop:

@@ -13,15 +13,15 @@ type Layout struct {
 }
 
 var Standard = Layout{
-	fractionPublishersFast: 0.1,
-	clientsUseSameQuery: false,
+	fractionPublishersFast:        0.1,
+	clientsUseSameQuery:           false,
 	tenthsOfClientsTouchedByQuery: 1,
-	minPublisherCount: 50,
-	maxPublisherCount: 200,
-	publisherStepSize: 50,
-	minClientCount: 50,
-	maxClientCount: 200,
-	clientStepSize: 50,
+	minPublisherCount:             50,
+	maxPublisherCount:             200,
+	publisherStepSize:             50,
+	minClientCount:                50,
+	maxClientCount:                200,
+	clientStepSize:                50,
 }
 
 func GetLayoutByName(name *string) (layout *Layout) {

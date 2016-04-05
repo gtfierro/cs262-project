@@ -1,19 +1,20 @@
 package main
 
 import (
-	"github.com/gtfierro/cs262-project/common"
-	"net"
 	"fmt"
-	log "github.com/Sirupsen/logrus"
-	"gopkg.in/vmihailenco/msgpack.v2"
 	"io"
+	"net"
 	"time"
+
+	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
+	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 type Client struct {
-	BrokerURL string
-	BrokerPort int
-	Query string
+	BrokerURL   string
+	BrokerPort  int
+	Query       string
 	latencyChan chan int64
 }
 

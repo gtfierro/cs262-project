@@ -3,11 +3,12 @@ package main
 
 import (
 	"flag"
+	"os"
+	"time"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/pkg/profile"
-	"os"
-	"time"
 )
 
 // config flags
@@ -25,7 +26,17 @@ func main() {
 	common.SetupLogging(config)
 
 	if config.Debug.Enable {
-		p := profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+		var p interface {
+			Stop()
+		}
+		switch config.Debug.ProfileType {
+		case "cpu", "profile":
+			p = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+		case "block":
+			p = profile.Start(profile.BlockProfile, profile.ProfilePath("."))
+		case "mem":
+			p = profile.Start(profile.MemProfile, profile.ProfilePath("."))
+		}
 		time.AfterFunc(time.Duration(config.Debug.ProfileLength)*time.Second, func() {
 			p.Stop()
 			os.Exit(0)

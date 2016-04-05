@@ -28,6 +28,7 @@ type MongoConfig struct {
 // Debugging configuration
 type DebugConfig struct {
 	Enable        bool
+	ProfileType   string
 	ProfileLength int
 }
 type BenchmarkConfig struct {
@@ -47,18 +48,29 @@ type Config struct {
 
 func LoadConfig(filename string) (config *Config) {
 	config = new(Config)
-	err := gcfg.ReadFileInto(config, filename)
+	defaultConfigFound := false
+	err := gcfg.ReadFileInto(config, "./default_config.ini")
 	if err != nil {
 		log.WithFields(log.Fields{
 			"location": filename,
 			"error":    err,
-		}).Error("Couldn't load configuration file at given location. Trying local ./config.ini")
+		}).Info("Couldn't load configuration file ./default_config.ini; continuing to try given location")
+	} else {
+		defaultConfigFound = true
+		log.Info("Using default values from ./default_config.ini")
+	}
+	err = gcfg.ReadFileInto(config, filename)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"location": filename,
+			"error":    err,
+		}).Warn("Couldn't load configuration file at given location. Trying local ./config.ini")
 	} else {
 		return
 	}
 	err = gcfg.ReadFileInto(config, "./config.ini")
-	if err != nil {
-		log.WithField("error", err).Fatal("Couldn't load configuration file at ./config.ini")
+	if err != nil && !defaultConfigFound {
+		log.WithField("error", err).Warn("Couldn't load configuration file at ./config.ini")
 	}
 	return
 }

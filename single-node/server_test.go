@@ -1,10 +1,11 @@
 package main
 
 import (
-	"github.com/gtfierro/cs262-project/common"
-	"gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 	"testing"
+
+	"github.com/gtfierro/cs262-project/common"
+	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 var testConfig = common.Config{

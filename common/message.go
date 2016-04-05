@@ -3,6 +3,7 @@ package common
 import (
 	"errors"
 	"fmt"
+
 	"gopkg.in/vmihailenco/msgpack.v2"
 )
 

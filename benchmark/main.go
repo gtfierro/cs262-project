@@ -13,6 +13,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/nu7hatch/gouuid"
+	"github.com/pkg/profile"
 )
 
 const FastPublishFrequency = 100 // per minute
@@ -31,9 +32,27 @@ func main() {
 	common.SetupLogging(config)
 	layout := GetLayoutByName(config.Benchmark.ConfigurationName)
 
+	if config.Debug.Enable {
+		var p interface {
+			Stop()
+		}
+		switch config.Debug.ProfileType {
+		case "cpu", "profile":
+			p = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+		case "block":
+			p = profile.Start(profile.BlockProfile, profile.ProfilePath("."))
+		case "mem":
+			p = profile.Start(profile.MemProfile, profile.ProfilePath("."))
+		}
+		time.AfterFunc(time.Duration(config.Debug.ProfileLength)*time.Second, func() {
+			p.Stop()
+			os.Exit(0)
+		})
+	}
+
 	publishers := initializePublishers(layout, *config.Benchmark.BrokerURL, *config.Benchmark.BrokerPort)
 
-	latencyChan := make(chan int64, 1e6) // TODO proper sizing?
+	latencyChan := make(chan int64, 1e4) // TODO proper sizing?
 	clients := initializeClients(layout, *config.Benchmark.BrokerURL, *config.Benchmark.BrokerPort, latencyChan)
 
 	var wg sync.WaitGroup
@@ -45,13 +64,8 @@ func main() {
 
 	var latencySum *int64 = new(int64)
 	var latencyCount *int32 = new(int32)
+	go pollAndIncrementLatencyValues(latencyChan, latencySum, latencyCount)
 	go logLatencyAverages(latencySum, latencyCount)
-
-	// TODO starting multiple in the hopes of keeping up, no idea if that's
-	// necessary or helpful
-	for i := 0; i < 5; i++ {
-		go pollAndIncrementLatencyValues(latencyChan, latencySum, latencyCount)
-	}
 
 	time.Sleep(time.Second * time.Duration(*config.Benchmark.StepSpacing))
 

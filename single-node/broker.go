@@ -1,11 +1,12 @@
 package main
 
 import (
+	"net"
+	"sync"
+
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"gopkg.in/vmihailenco/msgpack.v2"
-	"net"
-	"sync"
 )
 
 var emptyList = []common.UUID{}

@@ -1,10 +1,11 @@
 package common
 
 import (
-	"gopkg.in/vmihailenco/msgpack.v2"
 	"io/ioutil"
 	"strings"
 	"testing"
+
+	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 type CopyReader struct {

@@ -22,8 +22,9 @@ func init() {
 func main() {
 	flag.Parse()
 	// configure logging instance
-	config := common.LoadConfig(*configfile)
+	config, configLogmsg := common.LoadConfig(*configfile)
 	common.SetupLogging(config)
+	log.Info(configLogmsg)
 
 	if config.Debug.Enable {
 		var p interface {

@@ -28,9 +28,11 @@ func init() {
 }
 
 func main() {
-	config := common.LoadConfig(*configfile)
+	config, configLogmsg := common.LoadConfig(*configfile)
 	common.SetupLogging(config)
+	log.Info(configLogmsg)
 	layout := GetLayoutByName(config.Benchmark.ConfigurationName)
+	layout.logSelf()
 
 	if config.Debug.Enable {
 		var p interface {
@@ -109,6 +111,10 @@ func startClientsAndPublishers(clientsRunning int, clientGoal int, publishersRun
 			publishers[i].publishContinuously()
 		}(currentPublishers)
 	}
+	log.WithFields(log.Fields{
+		"publisherCount": publisherGoal,
+		"clientCount":    clientGoal,
+	}).Info("Updated running client and publisher counts")
 }
 
 func initializeClients(layout *Layout, brokerURL string, brokerPort int, latencyChan chan int64) []Client {
@@ -177,10 +183,15 @@ func logLatencyAverages(latencySum *int64, latencyCount *int32) {
 		time.Sleep(time.Second)
 		oldLatencySum := atomic.SwapInt64(latencySum, 0)
 		oldLatencyCount := atomic.SwapInt32(latencyCount, 0)
-		log.WithFields(log.Fields{
-			"messageCount":     oldLatencyCount,
-			"averageLatencyNS": float64(oldLatencySum) / float64(oldLatencyCount),
-		}).Info("Received message count and average latency over the last second")
+		if oldLatencyCount != 0 {
+			log.WithFields(log.Fields{
+				"messageCount":     oldLatencyCount,
+				"averageLatencyNS": int64(float64(oldLatencySum) / float64(oldLatencyCount)),
+				"averageLatencyMS": int64(float64(oldLatencySum) / float64(oldLatencyCount) / 1e6),
+			}).Info("Received message count and average latency over the last second")
+		} else {
+			log.Info("No latency information available in the last second")
+		}
 	}
 }
 

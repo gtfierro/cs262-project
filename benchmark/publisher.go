@@ -36,7 +36,7 @@ func (p *Publisher) publishContinuously() {
 
 	enc := msgp.NewWriter(conn)
 	msg := common.PublishMessage{UUID: p.uuid, Metadata: metadata, Value: time.Now().UnixNano()}
-	msg.EncodeMsg(enc)
+	msg.Encode(enc)
 	msg.Metadata = nil // Clear MD after sending
 
 	mdRefreshStop := make(chan bool)

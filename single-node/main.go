@@ -37,6 +37,8 @@ func main() {
 			p = profile.Start(profile.BlockProfile, profile.ProfilePath("."))
 		case "mem":
 			p = profile.Start(profile.MemProfile, profile.ProfilePath("."))
+		default:
+			p = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
 		}
 		time.AfterFunc(time.Duration(config.Debug.ProfileLength)*time.Second, func() {
 			p.Stop()

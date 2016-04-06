@@ -52,8 +52,7 @@ func (c *Client) subscribe() {
 		}
 		switch m := msg.(type) {
 		case *common.PublishMessage:
-			c.latencyChan <- arrivalTime - int64(m.Value.(int64)) // TODO ETK weird thing is happening -
-		// I'm sending this as an int64 but it's arriving as a uint64???
+			c.latencyChan <- arrivalTime - m.Value.(int64)
 		case *common.SubscriptionDiffMessage:
 		case *common.MatchingProducersMessage:
 			// Can safely ignore both of these

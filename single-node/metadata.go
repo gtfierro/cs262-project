@@ -130,8 +130,6 @@ func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []common.UUID)
 	return
 }
 
-// TODO: change Query to return a Query struct, modeled after
-// giles2 cqbs.go
 type Query struct {
 	Query             string
 	Keys              []string

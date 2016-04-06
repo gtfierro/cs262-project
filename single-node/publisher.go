@@ -43,9 +43,9 @@ func (p *Producer) dorecv() {
 			return
 		}
 
-		msg.Lock()
+		msg.L.Lock()
 		err = msg.DecodeMsg(p.dec)
-		msg.Unlock()
+		msg.L.Unlock()
 		if err == io.EOF {
 			p.stop <- true
 			return // connection is closed

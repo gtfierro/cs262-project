@@ -5,7 +5,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/tinylib/msgp/msgp"
-	_ "gopkg.in/vmihailenco/msgpack.v2"
+	"io"
 	"net"
 	"runtime"
 	"time"
@@ -112,8 +112,11 @@ func (s *Server) dispatch(conn net.Conn) {
 	}).Debug("Got a new message!")
 
 	var dec = msgp.NewReader(conn)
-	//var dec = msgpack.NewDecoder(conn)
 	msg, err := common.MessageFromDecoderMsgp(dec)
+	if err == io.EOF {
+		conn.Close()
+		return
+	}
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "address": conn.RemoteAddr(),
@@ -139,7 +142,7 @@ func (s *Server) handleSubscribe(query common.QueryMessage, dec *msgp.Reader, co
 	log.WithFields(log.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
-	s.broker.NewSubscription(query.Query, conn)
+	s.broker.NewSubscription(string(query), conn)
 }
 
 func (s *Server) handlePublish(first *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {

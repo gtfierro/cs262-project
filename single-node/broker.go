@@ -268,13 +268,13 @@ func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, co
 			case <-p.stop:
 				return
 			case msg := <-p.C:
-				msg.RLock()
+				msg.L.RLock()
 				if len(msg.Metadata) > 0 {
 					err = b.metadata.Save(msg)
 					b.RemapProducer(p, msg)
 				}
 				b.ForwardMessage(msg)
-				msg.RUnlock()
+				msg.L.RUnlock()
 			}
 		}
 	}(p)

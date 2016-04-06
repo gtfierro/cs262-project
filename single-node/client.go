@@ -3,7 +3,7 @@ package main
 import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
-	"gopkg.in/vmihailenco/msgpack.v2"
+	"github.com/tinylib/msgp/msgp"
 	"net"
 )
 
@@ -19,7 +19,7 @@ type Client struct {
 	stop   chan bool
 	// send on this channel when we die
 	death   chan<- *Client
-	encoder *msgpack.Encoder
+	encoder *msgp.Writer
 }
 
 func NewClient(query string, conn *net.Conn, death chan<- *Client) *Client {
@@ -29,7 +29,7 @@ func NewClient(query string, conn *net.Conn, death chan<- *Client) *Client {
 		buffer:  make(chan common.Sendable, 10), // TODO buffer size?
 		active:  true,
 		stop:    make(chan bool),
-		encoder: msgpack.NewEncoder(*conn),
+		encoder: msgp.NewWriter(*conn),
 		death:   death,
 	}
 }
@@ -53,7 +53,14 @@ func (c *Client) dosend() {
 			log.WithFields(log.Fields{
 				"query": c.query, "message": m,
 			}).Debug("Forwarding message")
-			err := m.EncodeMsgpack(c.encoder)
+			err := m.Encode(c.encoder)
+			if err != nil {
+				log.WithFields(log.Fields{
+					"error":   err,
+					"message": m,
+				}).Error("Error serializing message")
+			}
+			err = c.encoder.Flush()
 			if err != nil {
 				log.WithFields(log.Fields{
 					"error":   err,

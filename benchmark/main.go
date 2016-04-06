@@ -1,17 +1,17 @@
 package main
 
 import (
-	"github.com/gtfierro/cs262-project/common"
-	log "github.com/Sirupsen/logrus"
-	"github.com/nu7hatch/gouuid"
 	"flag"
-	"os"
-	"math/rand"
 	"fmt"
+	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
+	"github.com/nu7hatch/gouuid"
+	"math/rand"
+	"os"
 	"strings"
-	"time"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const FastPublishFrequency = 100 // per minute
@@ -27,10 +27,10 @@ func init() {
 
 func main() {
 	var (
-		freq int
-		u *uuid.UUID
+		freq     int
+		u        *uuid.UUID
 		metadata = make(map[string]interface{})
-		query string
+		query    string
 	)
 	config := common.LoadConfig(*configfile)
 	common.SetupLogging(config)
@@ -50,12 +50,12 @@ func main() {
 		metadata["Room"] = string('a' + (roomNumber % 10)) // to easily select fractions of publishers
 		metadata["Type"] = "Counter"
 		publishers[i] = Publisher{
-			BrokerURL: *config.Benchmark.BrokerURL,
+			BrokerURL:  *config.Benchmark.BrokerURL,
 			BrokerPort: *config.Benchmark.BrokerPort,
-			Metadata: metadata,
-			Frequency: freq,
-			uuid: common.UUID(u.String()),
-			stop: make(chan bool),
+			Metadata:   metadata,
+			Frequency:  freq,
+			uuid:       common.UUID(u.String()),
+			stop:       make(chan bool),
 		}
 	}
 
@@ -71,9 +71,9 @@ func main() {
 			query = genQueryString(layout.tenthsOfClientsTouchedByQuery)
 		}
 		clients[i] = Client{
-			BrokerURL: *config.Benchmark.BrokerURL,
-			BrokerPort: *config.Benchmark.BrokerPort,
-			Query: query,
+			BrokerURL:   *config.Benchmark.BrokerURL,
+			BrokerPort:  *config.Benchmark.BrokerPort,
+			Query:       query,
 			latencyChan: latencyChan,
 		}
 	}
@@ -90,7 +90,7 @@ func main() {
 	publishersRunning = layout.minPublisherCount
 	for i := 0; i < layout.minPublisherCount; i++ {
 		wg.Add(1)
-		go func (index int) {
+		go func(index int) {
 			defer wg.Done()
 			publishers[index].publishContinuously()
 		}(i)
@@ -104,9 +104,9 @@ func main() {
 			oldLatencySum := atomic.SwapInt64(latencySum, 0)
 			oldLatencyCount := atomic.SwapInt32(latencyCount, 0)
 			log.WithFields(log.Fields{
-				"messageCount": oldLatencyCount,
+				"messageCount":     oldLatencyCount,
 				"averageLatencyNS": float64(oldLatencySum) / float64(oldLatencyCount),
-			}, ).Info("Received message count and average latency over the last second")
+			}).Info("Received message count and average latency over the last second")
 		}
 	}()
 	// TODO starting multiple in the hopes of keeping up, no idea if that's
@@ -126,7 +126,7 @@ func main() {
 	// Every StepSpacing seconds, spin up more publishers and clients
 	// until the max is reached
 	for clientsRunning < layout.maxClientCount ||
-	publishersRunning < layout.maxPublisherCount {
+		publishersRunning < layout.maxPublisherCount {
 		nextClientGoal := clientsRunning + layout.clientStepSize
 		for clientsRunning < nextClientGoal && clientsRunning < layout.maxClientCount {
 			go clients[clientsRunning].subscribe()
@@ -157,7 +157,7 @@ func genQueryString(tenthsOfPublishers int) string {
 	//the broker
 	randChars := make([]string, 20)
 	for i := 0; i < len(randChars); i++ {
-		randChars[i] = string('A' + rand.Int31n('Z' - 'A'))
+		randChars[i] = string('A' + rand.Int31n('Z'-'A'))
 	}
 	randStr := strings.Join(randChars, "")
 	if tenthsOfPublishers == 0 {

@@ -1,21 +1,21 @@
 package main
 
 import (
-	"gopkg.in/vmihailenco/msgpack.v2"
-	log "github.com/Sirupsen/logrus"
-	"net"
 	"fmt"
+	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
+	"github.com/tinylib/msgp/msgp"
+	"net"
 	"time"
 )
 
 type Publisher struct {
-	BrokerURL string
+	BrokerURL  string
 	BrokerPort int
-	Metadata map[string]interface{}
-	uuid common.UUID
-	Frequency int // per minute
-	stop chan bool
+	Metadata   map[string]interface{}
+	uuid       common.UUID
+	Frequency  int // per minute
+	stop       chan bool
 }
 
 func (p *Publisher) publishContinuously() {
@@ -28,18 +28,20 @@ func (p *Publisher) publishContinuously() {
 
 	spacingMs := 60e3 / float64(p.Frequency)
 
-	enc := msgpack.NewEncoder(conn)
+	enc := msgp.NewWriter(conn)
 	msg := common.PublishMessage{UUID: p.uuid, Metadata: p.Metadata, Value: time.Now().UnixNano()}
-	msg.EncodeMsgpack(enc)
+	msg.Encode(enc)
+	enc.Flush()
 	msg.Metadata = nil // Only send metadata on initial connection
-	Loop:
+Loop:
 	for {
 		select {
 		case <-p.stop:
 			break Loop
 		case <-time.After(time.Millisecond * time.Duration(spacingMs)):
 			msg.Value = time.Now().UnixNano()
-			msg.EncodeMsgpack(enc)
+			msg.Encode(enc)
+			enc.Flush()
 		}
 	}
 	conn.Close()

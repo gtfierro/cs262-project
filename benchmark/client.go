@@ -1,19 +1,19 @@
 package main
 
 import (
-	"github.com/gtfierro/cs262-project/common"
-	"net"
 	"fmt"
 	log "github.com/Sirupsen/logrus"
-	"gopkg.in/vmihailenco/msgpack.v2"
+	"github.com/gtfierro/cs262-project/common"
+	"github.com/tinylib/msgp/msgp"
 	"io"
+	"net"
 	"time"
 )
 
 type Client struct {
-	BrokerURL string
-	BrokerPort int
-	Query string
+	BrokerURL   string
+	BrokerPort  int
+	Query       string
 	latencyChan chan int64
 }
 
@@ -25,19 +25,25 @@ func (c *Client) subscribe() {
 		}).Fatalf("Error creating connection to %v:%v", c.BrokerURL, c.BrokerPort)
 	}
 
-	enc := msgpack.NewEncoder(conn)
+	enc := msgp.NewWriter(conn)
 	log.WithField("query", c.Query).Debug("Submitting query")
-	qmsg := common.QueryMessage{c.Query}
-	err = (&qmsg).EncodeMsgpack(enc)
+	qmsg := common.QueryMessage(c.Query)
+	err = qmsg.Encode(enc)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err.Error(),
+		}).Error("Error marshalling query")
+	}
+	err = enc.Flush()
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err.Error(),
 		}).Error("Error sending subscription query to broker")
 	}
 
-	dec := msgpack.NewDecoder(conn)
+	dec := msgp.NewReader(conn)
 	for {
-		msg, err := common.MessageFromDecoder(dec)
+		msg, err := common.MessageFromDecoderMsgp(dec)
 		arrivalTime := time.Now().UnixNano()
 		if err == io.EOF {
 			return // connection is closed
@@ -46,7 +52,7 @@ func (c *Client) subscribe() {
 		}
 		switch m := msg.(type) {
 		case *common.PublishMessage:
-			c.latencyChan <- arrivalTime - int64(m.Value.(uint64)) // TODO ETK weird thing is happening -
+			c.latencyChan <- arrivalTime - int64(m.Value.(int64)) // TODO ETK weird thing is happening -
 		// I'm sending this as an int64 but it's arriving as a uint64???
 		case *common.SubscriptionDiffMessage:
 		case *common.MatchingProducersMessage:

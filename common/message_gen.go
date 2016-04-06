@@ -4,7 +4,9 @@ package common
 // MSGP CODE GENERATION TOOL (github.com/tinylib/msgp)
 // DO NOT EDIT
 
-import "github.com/tinylib/msgp/msgp"
+import (
+	"github.com/tinylib/msgp/msgp"
+)
 
 // DecodeMsg implements msgp.Decodable
 func (z *MessageType) DecodeMsg(dc *msgp.Reader) (err error) {
@@ -320,44 +322,20 @@ func (z *PublishMessage) Msgsize() (s int) {
 
 // DecodeMsg implements msgp.Decodable
 func (z *QueryMessage) DecodeMsg(dc *msgp.Reader) (err error) {
-	var field []byte
-	_ = field
-	var isz uint32
-	isz, err = dc.ReadMapHeader()
+	{
+		var tmp string
+		tmp, err = dc.ReadString()
+		(*z) = QueryMessage(tmp)
+	}
 	if err != nil {
 		return
-	}
-	for isz > 0 {
-		isz--
-		field, err = dc.ReadMapKeyPtr()
-		if err != nil {
-			return
-		}
-		switch msgp.UnsafeString(field) {
-		case "Query":
-			z.Query, err = dc.ReadString()
-			if err != nil {
-				return
-			}
-		default:
-			err = dc.Skip()
-			if err != nil {
-				return
-			}
-		}
 	}
 	return
 }
 
 // EncodeMsg implements msgp.Encodable
 func (z QueryMessage) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 1
-	// write "Query"
-	err = en.Append(0x81, 0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
-	if err != nil {
-		return err
-	}
-	err = en.WriteString(z.Query)
+	err = en.WriteString(string(z))
 	if err != nil {
 		return
 	}
@@ -367,47 +345,26 @@ func (z QueryMessage) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z QueryMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 1
-	// string "Query"
-	o = append(o, 0x81, 0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
-	o = msgp.AppendString(o, z.Query)
+	o = msgp.AppendString(o, string(z))
 	return
 }
 
 // UnmarshalMsg implements msgp.Unmarshaler
 func (z *QueryMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
-	var field []byte
-	_ = field
-	var isz uint32
-	isz, bts, err = msgp.ReadMapHeaderBytes(bts)
+	{
+		var tmp string
+		tmp, bts, err = msgp.ReadStringBytes(bts)
+		(*z) = QueryMessage(tmp)
+	}
 	if err != nil {
 		return
-	}
-	for isz > 0 {
-		isz--
-		field, bts, err = msgp.ReadMapKeyZC(bts)
-		if err != nil {
-			return
-		}
-		switch msgp.UnsafeString(field) {
-		case "Query":
-			z.Query, bts, err = msgp.ReadStringBytes(bts)
-			if err != nil {
-				return
-			}
-		default:
-			bts, err = msgp.Skip(bts)
-			if err != nil {
-				return
-			}
-		}
 	}
 	o = bts
 	return
 }
 
 func (z QueryMessage) Msgsize() (s int) {
-	s = 1 + 6 + msgp.StringPrefixSize + len(z.Query)
+	s = msgp.StringPrefixSize + len(string(z))
 	return
 }
 

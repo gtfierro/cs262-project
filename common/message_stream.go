@@ -17,8 +17,26 @@ func (m *MatchingProducersMessage) Encode(enc *msgp.Writer) error {
 	if err != nil {
 		return err
 	}
-	return nil
-	//return m.EncodeMsg(enc)
+	err = enc.WriteArrayHeader(uint32(len(*m)))
+	for uuid, _ := range *m {
+		err = enc.WriteString(string(uuid))
+	}
+	return err
+}
+
+func (m *MatchingProducersMessage) DecodeMsg(dec *msgp.Reader) error {
+	size, err := dec.ReadArrayHeader()
+	if err != nil {
+		return err
+	}
+	for i := 0; uint32(i) < size; i++ {
+		uuid, err := dec.ReadString()
+		if err != nil {
+			return err
+		}
+		(*m)[UUID(uuid)] = ProdStateSame
+	}
+	return err
 }
 
 func (m *SubscriptionDiffMessage) Encode(enc *msgp.Writer) error {

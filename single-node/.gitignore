@@ -1,5 +1,11 @@
 # binary
 single-node
 
+# pprof output
+*.pprof
+
+# local config
+config.ini
+
 # yacc output
 y.output

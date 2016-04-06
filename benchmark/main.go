@@ -6,6 +6,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/nu7hatch/gouuid"
+	"github.com/pkg/profile"
 	"math/rand"
 	"os"
 	"strings"
@@ -26,16 +27,140 @@ func init() {
 }
 
 func main() {
+	config, configLogmsg := common.LoadConfig(*configfile)
+	common.SetupLogging(config)
+	log.Info(configLogmsg)
+	layout := GetLayoutByName(config.Benchmark.ConfigurationName)
+	layout.logSelf()
+
+	if config.Debug.Enable {
+		var p interface {
+			Stop()
+		}
+		switch config.Debug.ProfileType {
+		case "cpu", "profile":
+			p = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+		case "block":
+			p = profile.Start(profile.BlockProfile, profile.ProfilePath("."))
+		case "mem":
+			p = profile.Start(profile.MemProfile, profile.ProfilePath("."))
+		}
+		time.AfterFunc(time.Duration(config.Debug.ProfileLength)*time.Second, func() {
+			p.Stop()
+			os.Exit(0)
+		})
+	}
+
+	publishers := initializePublishers(layout, config.Benchmark.BrokerURL, config.Benchmark.BrokerPort)
+
+	latencyChan := make(chan int64, 1e4) // TODO proper sizing?
+	clients := initializeClients(layout, config.Benchmark.BrokerURL, config.Benchmark.BrokerPort, latencyChan)
+
+	var wg sync.WaitGroup
+
+	// Start up the initial clients and publishers
+	startClientsAndPublishers(0, layout.minClientCount, 0, layout.minPublisherCount, clients, publishers, wg)
+	clientsRunning := layout.minClientCount
+	publishersRunning := layout.minPublisherCount
+
+	var latencyLastSecondSum *int64 = new(int64) // tracks avg latency over the last second
+	var latencyLastSecondCount *int32 = new(int32)
+	var latencySinceChangeSum *int64 = new(int64) // tracks avg latency since the client/prod count last changed
+	var latencySinceChangeCount *int32 = new(int32)
+	go pollAndIncrementLatencyValues(latencyChan, latencyLastSecondSum, latencyLastSecondCount,
+		latencySinceChangeSum, latencySinceChangeCount)
+	go logLastSecondLatencyAverages(latencyLastSecondSum, latencyLastSecondCount)
+
+	time.Sleep(time.Second * time.Duration(config.Benchmark.StepSpacing))
+
+	// Every StepSpacing seconds, spin up more publishers and clients
+	// until the max is reached
+	for clientsRunning < layout.maxClientCount || publishersRunning < layout.maxPublisherCount {
+		oldLatencySum := atomic.SwapInt64(latencySinceChangeSum, 0)
+		oldLatencyCount := atomic.SwapInt32(latencySinceChangeCount, 0)
+		if oldLatencyCount != 0 {
+			log.WithFields(log.Fields{
+				"interval":          "sincechange",
+				"clientsRunning":    clientsRunning,
+				"publishersRunning": publishersRunning,
+				"messageCount":      oldLatencyCount,
+				"averageLatencyNS":  int64(float64(oldLatencySum) / float64(oldLatencyCount)),
+				"averageLatencyMS":  int64(float64(oldLatencySum) / float64(oldLatencyCount) / 1e6),
+			}).Info("Received message count and average latency for the current configuration")
+		} else {
+			log.Info("No latency information available for the current configuration")
+		}
+		clientGoal := min(clientsRunning+layout.clientStepSize, layout.maxClientCount)
+		publisherGoal := min(publishersRunning+layout.publisherStepSize, layout.maxPublisherCount)
+		startClientsAndPublishers(clientsRunning, clientGoal, publishersRunning, publisherGoal, clients, publishers, wg)
+		clientsRunning = clientGoal
+		publishersRunning = publisherGoal
+		time.Sleep(time.Second * time.Duration(config.Benchmark.StepSpacing))
+	}
+
+	for _, p := range publishers {
+		p.stop <- true
+	}
+
+	wg.Wait()
+}
+
+func min(a int, b int) int {
+	if a <= b {
+		return a
+	} else {
+		return b
+	}
+}
+
+// Start up clients and publishers as necessary until there are clientGoal clients and
+// publisherGoal publishers running.
+func startClientsAndPublishers(clientsRunning int, clientGoal int, publishersRunning int,
+	publisherGoal int, clients []Client, publishers []Publisher, wg sync.WaitGroup) {
+	for currentClients := clientsRunning; currentClients < clientGoal; currentClients++ {
+		go clients[currentClients].subscribe()
+	}
+	for currentPublishers := publishersRunning; currentPublishers < publisherGoal; currentPublishers++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			publishers[i].publishContinuously()
+		}(currentPublishers)
+	}
+	log.WithFields(log.Fields{
+		"publisherCount": publisherGoal,
+		"clientCount":    clientGoal,
+	}).Info("Updated running client and publisher counts")
+}
+
+func initializeClients(layout *Layout, brokerURL string, brokerPort int, latencyChan chan int64) []Client {
+	var query string
+	if layout.clientsUseSameQuery {
+		// Generate one query for all of them
+		query = genQueryString(layout.tenthsOfClientsTouchedByQuery)
+	}
+	clients := make([]Client, layout.maxClientCount)
+	for i := 0; i < layout.maxClientCount; i++ {
+		if !layout.clientsUseSameQuery {
+			// New query each time
+			query = genQueryString(layout.tenthsOfClientsTouchedByQuery)
+		}
+		clients[i] = Client{
+			BrokerURL:   brokerURL,
+			BrokerPort:  brokerPort,
+			Query:       query,
+			latencyChan: latencyChan,
+		}
+	}
+	return clients
+}
+
+func initializePublishers(layout *Layout, brokerURL string, brokerPort int) []Publisher {
 	var (
 		freq     int
 		u        *uuid.UUID
 		metadata = make(map[string]interface{})
-		query    string
 	)
-	config := common.LoadConfig(*configfile)
-	common.SetupLogging(config)
-	layout := GetLayoutByName(config.Benchmark.ConfigurationName)
-
 	roomNumber := 0
 	publishers := make([]Publisher, layout.maxPublisherCount)
 	for i := 0; i < layout.maxPublisherCount; i++ {
@@ -50,105 +175,47 @@ func main() {
 		metadata["Room"] = string('a' + (roomNumber % 10)) // to easily select fractions of publishers
 		metadata["Type"] = "Counter"
 		publishers[i] = Publisher{
-			BrokerURL:  *config.Benchmark.BrokerURL,
-			BrokerPort: *config.Benchmark.BrokerPort,
-			Metadata:   metadata,
-			Frequency:  freq,
-			uuid:       common.UUID(u.String()),
-			stop:       make(chan bool),
+			BrokerURL:               brokerURL,
+			BrokerPort:              brokerPort,
+			BaseMetadata:            metadata,
+			MetadataRefreshInterval: layout.publisherMDRefreshInterval,
+			MetadataRefreshRandom:   layout.publisherMDRefreshRandom,
+			AdditionalMetadataSize:  layout.publisherMDSize,
+			Frequency:               freq,
+			uuid:                    common.UUID(u.String()),
+			stop:                    make(chan bool),
 		}
 	}
+	return publishers
+}
 
-	latencyChan := make(chan int64, 1e6) // TODO proper sizing?
-	if layout.clientsUseSameQuery {
-		// Generate one query for all of them
-		query = genQueryString(layout.tenthsOfClientsTouchedByQuery)
+func pollAndIncrementLatencyValues(latencyChan chan int64, latencySum1 *int64, latencyCount1 *int32,
+	latencySum2 *int64, latencyCount2 *int32) {
+	for {
+		newLatency := <-latencyChan
+		atomic.AddInt64(latencySum1, newLatency)
+		atomic.AddInt32(latencyCount1, 1)
+		atomic.AddInt64(latencySum2, newLatency)
+		atomic.AddInt32(latencyCount2, 1)
 	}
-	clients := make([]Client, layout.maxClientCount)
-	for i := 0; i < layout.maxClientCount; i++ {
-		if !layout.clientsUseSameQuery {
-			// New query each time
-			query = genQueryString(layout.tenthsOfClientsTouchedByQuery)
-		}
-		clients[i] = Client{
-			BrokerURL:   *config.Benchmark.BrokerURL,
-			BrokerPort:  *config.Benchmark.BrokerPort,
-			Query:       query,
-			latencyChan: latencyChan,
-		}
-	}
+}
 
-	var wg sync.WaitGroup
-	//wg.Add(layout.maxPublisherCount)
-
-	// Start up the initial clients and publishers
-	clientsRunning := layout.minClientCount
-	for i := 0; i < layout.minClientCount; i++ {
-		go clients[i].subscribe()
-	}
-	publishersRunning := 0
-	publishersRunning = layout.minPublisherCount
-	for i := 0; i < layout.minPublisherCount; i++ {
-		wg.Add(1)
-		go func(index int) {
-			defer wg.Done()
-			publishers[index].publishContinuously()
-		}(i)
-	}
-
-	var latencySum *int64 = new(int64)
-	var latencyCount *int32 = new(int32)
-	go func() {
-		for {
-			time.Sleep(time.Second)
-			oldLatencySum := atomic.SwapInt64(latencySum, 0)
-			oldLatencyCount := atomic.SwapInt32(latencyCount, 0)
+func logLastSecondLatencyAverages(latencySum *int64, latencyCount *int32) {
+	for {
+		time.Sleep(time.Second)
+		oldLatencySum := atomic.SwapInt64(latencySum, 0)
+		oldLatencyCount := atomic.SwapInt32(latencyCount, 0)
+		if oldLatencyCount != 0 {
 			log.WithFields(log.Fields{
+				"interval":         "lastsecond",
 				"messageCount":     oldLatencyCount,
-				"averageLatencyNS": float64(oldLatencySum) / float64(oldLatencyCount),
+				"averageLatencyNS": int64(float64(oldLatencySum) / float64(oldLatencyCount)),
+				"averageLatencyMS": int64(float64(oldLatencySum) / float64(oldLatencyCount) / 1e6),
 			}).Info("Received message count and average latency over the last second")
+		} else {
+			log.Info("No latency information available in the last second")
 		}
-	}()
-	// TODO starting multiple in the hopes of keeping up, no idea if that's
-	// necessary or helpful
-	for i := 0; i < 5; i++ {
-		go func() {
-			for {
-				newLatency := <-latencyChan
-				atomic.AddInt64(latencySum, newLatency)
-				atomic.AddInt32(latencyCount, 1)
-			}
-		}()
 	}
-
-	time.Sleep(time.Second * time.Duration(*config.Benchmark.StepSpacing))
-
-	// Every StepSpacing seconds, spin up more publishers and clients
-	// until the max is reached
-	for clientsRunning < layout.maxClientCount ||
-		publishersRunning < layout.maxPublisherCount {
-		nextClientGoal := clientsRunning + layout.clientStepSize
-		for clientsRunning < nextClientGoal && clientsRunning < layout.maxClientCount {
-			go clients[clientsRunning].subscribe()
-			clientsRunning++
-		}
-		nextPublisherGoal := publishersRunning + layout.publisherStepSize
-		for publishersRunning < nextPublisherGoal && publishersRunning < layout.maxPublisherCount {
-			wg.Add(1)
-			go func(i int) {
-				defer wg.Done()
-				publishers[i].publishContinuously()
-			}(publishersRunning)
-			publishersRunning++
-		}
-		time.Sleep(time.Second * time.Duration(*config.Benchmark.StepSpacing))
-	}
-
-	for _, p := range publishers {
-		p.stop <- true
-	}
-
-	wg.Wait()
 }
 
 func genQueryString(tenthsOfPublishers int) string {

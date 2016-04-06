@@ -4,7 +4,6 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/tinylib/msgp/msgp"
-	_ "gopkg.in/vmihailenco/msgpack.v2"
 	"net"
 	"sync"
 )

@@ -1,1 +1,8 @@
+# binary
 benchmark
+
+# pprof output
+*.pprof
+
+# local config
+config.ini

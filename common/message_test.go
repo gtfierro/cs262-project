@@ -3,9 +3,10 @@ package common
 import (
 	"bytes"
 	"github.com/tinylib/msgp/msgp"
-	_ "io/ioutil"
 	"strings"
 	"testing"
+
+	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 type CopyReader struct {

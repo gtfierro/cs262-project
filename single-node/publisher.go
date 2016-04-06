@@ -1,22 +1,21 @@
 package main
 
 import (
-	"io"
-
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
-	"gopkg.in/vmihailenco/msgpack.v2"
+	"github.com/tinylib/msgp/msgp"
+	"io"
 )
 
 type Producer struct {
 	ID common.UUID
 	// decoder
-	dec  *msgpack.Decoder
+	dec  *msgp.Reader
 	C    chan *common.PublishMessage
 	stop chan bool
 }
 
-func NewProducer(id common.UUID, decoder *msgpack.Decoder) *Producer {
+func NewProducer(id common.UUID, decoder *msgp.Reader) *Producer {
 	p := &Producer{
 		ID:   id,
 		dec:  decoder,
@@ -35,7 +34,7 @@ func (p *Producer) dorecv() {
 		msg = new(common.PublishMessage)
 	)
 	for {
-		if msgtype, err := p.dec.DecodeUint8(); common.MessageType(msgtype) != common.PUBLISHMSG || err != nil && err != io.EOF {
+		if msgtype, err := p.dec.ReadByte(); common.MessageType(uint8(msgtype)) != common.PUBLISHMSG || err != nil && err != io.EOF {
 			log.WithFields(log.Fields{
 				"error":   err,
 				"msgtype": msgtype,
@@ -43,7 +42,9 @@ func (p *Producer) dorecv() {
 			return
 		}
 
-		err = msg.DecodeMsgpack(p.dec)
+		msg.L.Lock()
+		err = msg.DecodeMsg(p.dec)
+		msg.L.Unlock()
 		if err == io.EOF {
 			p.stop <- true
 			return // connection is closed
@@ -59,7 +60,7 @@ func (p *Producer) dorecv() {
 		select {
 		case p.C <- msg: // buffer message
 		default:
-			log.Warn("Dropping incoming message from publisher")
+			//log.Warn("Dropping incoming message from publisher")
 			continue // drop if buffer is full
 		}
 	}

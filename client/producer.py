@@ -1,3 +1,4 @@
+import sys
 import msgpack
 import socket
 import uuid as uuidlib
@@ -25,14 +26,15 @@ class Client:
         self._dirty_metadata = strd
 
     def publish(self, value):
-        message = [self.uuid, self._dirty_metadata, value]
+        message = {"UUID": self.uuid, "Metadata": self._dirty_metadata, "Value": value}
         print map(hex, map(ord, msgpack.packb(message)))
         self.s.send(chr(0x00)+msgpack.packb(message))
         self._dirty_metadata = {}
 
 if __name__ == '__main__':
+    room = int(sys.argv[1]) if len(sys.argv) > 1 else '410'
     c = Client("localhost", "4444", uuid="4600a1f2-ef35-11e5-9fe7-271a9f80bc76")
-    c.add_metadata({"Room": "410", "Building": "Soda", "Device": "Temperature Sensor"})
+    c.add_metadata({"Room":str(room), "Building": "Soda", "Device": "Temperature Sensor"})
 
     import time
     i = 0

@@ -2,14 +2,12 @@ package main
 
 import (
 	"fmt"
-	"net"
-	"time"
-
-	"math/rand"
-
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
-	"gopkg.in/vmihailenco/msgpack.v2"
+	"github.com/tinylib/msgp/msgp"
+	"math/rand"
+	"net"
+	"time"
 )
 
 type Publisher struct {
@@ -36,9 +34,9 @@ func (p *Publisher) publishContinuously() {
 
 	metadata := createFullMetadata(p.BaseMetadata, p.AdditionalMetadataSize)
 
-	enc := msgpack.NewEncoder(conn)
+	enc := msgp.NewWriter(conn)
 	msg := common.PublishMessage{UUID: p.uuid, Metadata: metadata, Value: time.Now().UnixNano()}
-	msg.EncodeMsgpack(enc)
+	msg.Encode(enc)
 	msg.Metadata = nil // Clear MD after sending
 
 	mdRefreshStop := make(chan bool)
@@ -77,7 +75,8 @@ Loop:
 				msg.Metadata = nil
 			}
 			msg.Value = time.Now().UnixNano()
-			msg.EncodeMsgpack(enc)
+			msg.Encode(enc)
+			enc.Flush()
 		}
 	}
 	conn.Close()

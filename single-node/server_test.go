@@ -1,15 +1,14 @@
 package main
 
 import (
+	"github.com/gtfierro/cs262-project/common"
+	"github.com/tinylib/msgp/msgp"
 	"net"
 	"testing"
-
-	"github.com/gtfierro/cs262-project/common"
-	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 var testConfig = common.Config{
-	Logging: common.LoggingConfig{UseJSON: false, Level: "debug"},
+	Logging: common.LoggingConfig{UseJSON: false, Level: "critical"},
 	Server:  common.ServerConfig{Port: 4444, Global: false},
 	Mongo:   common.MongoConfig{Port: 27017, Host: "0.0.0.0"},
 	Debug:   common.DebugConfig{Enable: false, ProfileLength: 0},
@@ -23,13 +22,13 @@ func BenchmarkDispatchNoMetadata(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	encoder := msgpack.NewEncoder(conn)
+	encoder := msgp.NewWriter(conn)
 	message := &common.PublishMessage{UUID: "cd47df06-f451-11e5-873b-9b450be7df8d", Value: 0}
+	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		message.Value = i
-		//encoder.Encode(message)
-		message.EncodeMsgpack(encoder)
+		message.Encode(encoder)
 	}
 	go func() {
 		s.stop()
@@ -45,14 +44,13 @@ func BenchmarkDispatchWithMetadata(b *testing.B) {
 	if err != nil {
 		b.Fatal(err)
 	}
-	encoder := msgpack.NewEncoder(conn)
+	encoder := msgp.NewWriter(conn)
 	message := &common.PublishMessage{UUID: "cd47df06-f451-11e5-873b-9b450be7df8d", Value: 0, Metadata: map[string]interface{}{"ABC": "123"}}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		message.Value = i
-		//encoder.Encode(message)
-		message.EncodeMsgpack(encoder)
+		message.Encode(encoder)
 	}
 	go func() {
 		s.stop()

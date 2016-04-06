@@ -70,8 +70,10 @@ func (ms *MetadataStore) Save(msg *common.PublishMessage) error {
 	}
 
 	if len(msg.Metadata) == 0 { // nothing to save
+		uuid := msg.UUID
+		val := msg.Value
 		log.WithFields(log.Fields{
-			"UUID": msg.UUID, "value": msg.Value,
+			"UUID": uuid, "value": val,
 		}).Debug("No message metadata to save")
 		return nil
 	}
@@ -129,8 +131,6 @@ func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []common.UUID)
 	return
 }
 
-// TODO: change Query to return a Query struct, modeled after
-// giles2 cqbs.go
 type Query struct {
 	Query             string
 	Keys              []string

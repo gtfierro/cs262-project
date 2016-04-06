@@ -3,17 +3,16 @@ package main
 import (
 	"flag"
 	"fmt"
+	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
+	"github.com/nu7hatch/gouuid"
+	"github.com/pkg/profile"
 	"math/rand"
 	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	log "github.com/Sirupsen/logrus"
-	"github.com/gtfierro/cs262-project/common"
-	"github.com/nu7hatch/gouuid"
-	"github.com/pkg/profile"
 )
 
 const FastPublishFrequency = 100 // per minute

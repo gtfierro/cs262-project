@@ -2,13 +2,13 @@ package main
 
 import (
 	"fmt"
+	log "github.com/Sirupsen/logrus"
+	"github.com/gtfierro/cs262-project/common"
+	"github.com/tinylib/msgp/msgp"
+	"io"
 	"net"
 	"runtime"
 	"time"
-
-	log "github.com/Sirupsen/logrus"
-	"github.com/gtfierro/cs262-project/common"
-	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 type Server struct {
@@ -111,8 +111,12 @@ func (s *Server) dispatch(conn net.Conn) {
 		"from": conn.RemoteAddr(),
 	}).Debug("Got a new message!")
 
-	var dec = msgpack.NewDecoder(conn)
-	msg, err := common.MessageFromDecoder(dec)
+	var dec = msgp.NewReader(conn)
+	msg, err := common.MessageFromDecoderMsgp(dec)
+	if err == io.EOF {
+		conn.Close()
+		return
+	}
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "address": conn.RemoteAddr(),
@@ -134,13 +138,13 @@ func (s *Server) dispatch(conn net.Conn) {
 // We have buffered the initial contents into bufio.Reader, so we pass that
 // to this handler so we can finish decoding it. We also pass in the connection
 // so that we can transmit back to the client.
-func (s *Server) handleSubscribe(query common.QueryMessage, dec *msgpack.Decoder, conn net.Conn) {
+func (s *Server) handleSubscribe(query common.QueryMessage, dec *msgp.Reader, conn net.Conn) {
 	log.WithFields(log.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
-	s.broker.NewSubscription(query.Query, conn)
+	s.broker.NewSubscription(string(query), conn)
 }
 
-func (s *Server) handlePublish(first *common.PublishMessage, dec *msgpack.Decoder, conn net.Conn) {
+func (s *Server) handlePublish(first *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {
 	s.broker.HandleProducer(first, dec, conn)
 }

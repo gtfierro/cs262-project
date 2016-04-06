@@ -173,6 +173,9 @@ func (b *Broker) SendSubscriptionDiffs(query string, added, removed []common.UUI
 	if len(removed) == 0 {
 		removed = emptyList
 	}
+	if len(added) == 0 && len(removed) == 0 {
+		return
+	}
 	msg := common.SubscriptionDiffMessage{"New": added, "Del": removed}
 	// send to subscribers
 	b.subscriber_lock.RLock()

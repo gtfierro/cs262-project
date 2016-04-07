@@ -65,29 +65,22 @@ func NewBroker(metadata *MetadataStore) *Broker {
 func (b *Broker) mapQueryToClient(query string, c *Client) {
 	b.subscriber_lock.Lock()
 	if list, found := b.subscribers[query]; found {
-		// check if we are already in the list
-		for _, c2 := range list {
-			if c2 == *c {
-				b.subscriber_lock.Unlock()
-				return
-			}
-		}
-		// if we aren't in the list, but list exists, append to the end
-		b.subscribers[query] = append(list, *c)
+		list.addClient(*c)
 	} else {
 		// otherwise, create a new list with us in it
-		b.subscribers[query] = []Client{*c}
+		b.subscribers[query] = clientList{*c}
 	}
 	b.subscriber_lock.Unlock()
 }
 
 func (b *Broker) updateForwardingTable(query *Query) {
 	b.forwarding_lock.Lock()
+	query.RLock()
 Loop:
 	for producerID, _ := range query.MatchingProducers {
 		if list, found := b.forwarding[producerID]; found {
 			// check if we are already in the list
-			for _, q2 := range *list {
+			for _, q2 := range list.queries {
 				if q2 == query.Query {
 					continue Loop
 				}
@@ -100,10 +93,11 @@ Loop:
 			log.WithFields(log.Fields{
 				"producerID": producerID, "query": query.Query,
 			}).Debug("Adding query to NEW query list")
-			b.forwarding[producerID] = &queryList{query.Query}
+			b.forwarding[producerID] = &queryList{queries: []string{query.Query}}
 		}
 	}
 	log.Debugf("forwarding table %v", b.forwarding)
+	query.RUnlock()
 	b.forwarding_lock.Unlock()
 }
 
@@ -121,7 +115,7 @@ func (b *Broker) updateForwardingDiffs(query *Query, added, removed []common.UUI
 				// no subscribers for this uuid
 				continue
 			}
-			for _, tmp_query := range *list {
+			for _, tmp_query := range list.queries {
 				if tmp_query == query.Query {
 					list.removeQuery(query.Query)
 					continue
@@ -144,13 +138,13 @@ func (b *Broker) ForwardMessage(m *common.PublishMessage) {
 	matchingQueries, found = b.forwarding[m.UUID]
 	b.forwarding_lock.RUnlock()
 
-	if !found || (matchingQueries != nil && len(*matchingQueries) == 0) {
+	if !found || matchingQueries.empty() {
 		log.Debugf("no forwarding targets")
 		return
 	}
 
 	var clientList []Client
-	for _, query := range *matchingQueries {
+	for _, query := range matchingQueries.queries {
 		b.subscriber_lock.RLock()
 		clientList, found = b.subscribers[query]
 		b.subscriber_lock.RUnlock()

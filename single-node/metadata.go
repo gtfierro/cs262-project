@@ -204,23 +204,41 @@ func (sl *clientList) removeClient(sub Client) {
 	}
 }
 
-type queryList []string
+type queryList struct {
+	queries []string
+	sync.RWMutex
+}
 
 func (ql *queryList) addQuery(q string) {
-	for _, oldSub := range *ql {
+	ql.Lock()
+	for _, oldSub := range ql.queries {
 		if oldSub == q {
+			ql.Unlock()
 			return
 		}
 	}
-
-	*ql = append(*ql, q)
+	ql.queries = append(ql.queries, q)
+	ql.Unlock()
 }
 
 func (ql *queryList) removeQuery(q string) {
-	for i, oldSub := range *ql {
+	ql.Lock()
+	for i, oldSub := range ql.queries {
 		if oldSub == q {
-			*ql = append((*ql)[:i], (*ql)[i+1:]...)
+			ql.queries = append(ql.queries[:i], ql.queries[i+1:]...)
+			ql.Unlock()
 			return
 		}
 	}
+	ql.Unlock()
+}
+
+func (ql *queryList) empty() bool {
+	if ql == nil {
+		return true
+	}
+	ql.RLock()
+	empty := len(ql.queries) == 0
+	ql.RUnlock()
+	return empty
 }

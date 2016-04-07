@@ -52,7 +52,7 @@ func NewBroker(metadata *MetadataStore) *Broker {
 			}).Info("Removing dead client")
 			b.subscriber_lock.Lock()
 			for _, cl := range b.subscribers {
-				cl.removeClient(*deadClient)
+				cl.removeClient(deadClient)
 			}
 			b.subscriber_lock.Unlock()
 		}
@@ -65,10 +65,10 @@ func NewBroker(metadata *MetadataStore) *Broker {
 func (b *Broker) mapQueryToClient(query string, c *Client) {
 	b.subscriber_lock.Lock()
 	if list, found := b.subscribers[query]; found {
-		list.addClient(*c)
+		list.addClient(c)
 	} else {
 		// otherwise, create a new list with us in it
-		b.subscribers[query] = clientList{*c}
+		b.subscribers[query] = clientList{c}
 	}
 	b.subscriber_lock.Unlock()
 }
@@ -143,7 +143,7 @@ func (b *Broker) ForwardMessage(m *common.PublishMessage) {
 		return
 	}
 
-	var clientList []Client
+	var clientList []*Client
 	for _, query := range matchingQueries.queries {
 		b.subscriber_lock.RLock()
 		clientList, found = b.subscribers[query]
@@ -213,7 +213,6 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 	}
 
 	c := NewClient(querystring, &conn, b.killClient)
-	go c.dosend()
 
 	// set up forwarding for all initial producers
 	b.updateForwardingTable(query)

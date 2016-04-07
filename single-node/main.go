@@ -3,12 +3,12 @@ package main
 
 import (
 	"flag"
-	"os"
-	"time"
-
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/pkg/profile"
+	"os"
+	"runtime/trace"
+	"time"
 )
 
 // config flags
@@ -37,11 +37,21 @@ func main() {
 			p = profile.Start(profile.BlockProfile, profile.ProfilePath("."))
 		case "mem":
 			p = profile.Start(profile.MemProfile, profile.ProfilePath("."))
-		default:
-			p = profile.Start(profile.CPUProfile, profile.ProfilePath("."))
+		case "trace":
+			f, err := os.Create("trace.out")
+			if err != nil {
+				log.Fatal(err)
+			}
+			trace.Start(f)
 		}
 		time.AfterFunc(time.Duration(config.Debug.ProfileLength)*time.Second, func() {
-			p.Stop()
+			if p != nil {
+				p.Stop()
+			}
+			if config.Debug.ProfileType == "trace" {
+				trace.Stop()
+			}
+
 			os.Exit(0)
 		})
 	}

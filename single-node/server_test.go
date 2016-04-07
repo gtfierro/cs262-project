@@ -7,15 +7,15 @@ import (
 	"testing"
 )
 
-var testConfig = common.Config{
-	Logging: common.LoggingConfig{UseJSON: false, Level: "critical"},
+var testConfig = &common.Config{
+	Logging: common.LoggingConfig{UseJSON: false, Level: "error"},
 	Server:  common.ServerConfig{Port: 4444, Global: false},
 	Mongo:   common.MongoConfig{Port: 27017, Host: "0.0.0.0"},
 	Debug:   common.DebugConfig{Enable: false, ProfileLength: 0},
 }
 
 func BenchmarkDispatchNoMetadata(b *testing.B) {
-	s := NewServer(&testConfig)
+	s := NewServer(testConfig)
 	go s.listenAndDispatch()
 	address, _ := net.ResolveTCPAddr("tcp4", "0.0.0.0:4444")
 	conn, err := net.DialTCP("tcp4", nil, address)
@@ -37,7 +37,7 @@ func BenchmarkDispatchNoMetadata(b *testing.B) {
 }
 
 func BenchmarkDispatchWithMetadata(b *testing.B) {
-	s := NewServer(&testConfig)
+	s := NewServer(testConfig)
 	go s.listenAndDispatch()
 	address, _ := net.ResolveTCPAddr("tcp4", "0.0.0.0:4444")
 	conn, err := net.DialTCP("tcp4", nil, address)

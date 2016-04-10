@@ -233,7 +233,8 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 	// set up forwarding for all initial producers
 	b.updateForwardingTable(query)
 	b.mapQueryToClient(querystring, c)
-	msg := common.MatchingProducersMessage(query.MatchingProducers)
+	msg := make(common.SubscriptionDiffMessage)
+	msg.FromProducerState(query.MatchingProducers)
 	c.Send(&msg)
 
 	return c
@@ -277,6 +278,7 @@ func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, co
 		for p.C != nil {
 			select {
 			case <-p.stop:
+				b.cleanupProducer(p)
 				return
 			case msg := <-p.C:
 				msg.L.RLock()
@@ -289,6 +291,16 @@ func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, co
 			}
 		}
 	}(p)
+}
+
+// Removes the producer UUID from the forwarding and producers maps
+func (b *Broker) cleanupProducer(p *Producer) {
+	b.producers_lock.Lock()
+	b.forwarding_lock.Lock()
+	delete(b.producers, p.ID)
+	delete(b.forwarding, p.ID)
+	b.forwarding_lock.Unlock()
+	b.producers_lock.Unlock()
 }
 
 // 1. Firstly, have a method that given a producer (which is an implicit pointer to its

@@ -101,7 +101,6 @@ func (ms *MetadataStore) Query(node rootNode) (*Query, error) {
 }
 
 func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []common.UUID) {
-	//TODO: cache the mongo query generation
 	iter := ms.metadata.Find(query.Mongo).Select(selectID).Iter()
 	var r map[string]string
 	// mark new UUIDs
@@ -178,7 +177,6 @@ func (q *Query) changeUUIDs(uuids []common.UUID) (added, removed []common.UUID) 
 	return
 }
 
-// TODO: more efficient implementation?
 type clientList []*Client
 
 func (sl *clientList) addClient(sub *Client) {

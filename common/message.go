@@ -31,8 +31,29 @@ const (
 	ProdStateSame
 )
 
+/////////////////////////////////////////////////////
+/***************** Sent by Clients *****************/
+/////////////////////////////////////////////////////
+
+/***** BrokerRequestMessage *****/
+
+// Sent from clients / publishers -> central when they cannot contact their
+// local/home broker
+type BrokerRequestMessage struct {
+    // this is the broker that clients are expecting
+    // They send it to Central so that when this broker comes back online,
+    // it knows which clients to inform to reconnect
+    // "ip:port"
+    LocalBrokerAddr string
+}
+
+/***** QueryMessage *****/
+// Client starts a query with this
 type QueryMessage string
-type SubscriptionDiffMessage map[string][]UUID
+
+///////////////////////////////////////
+/********** Publish Message **********/
+///////////////////////////////////////
 
 type PublishMessage struct {
 	UUID     UUID
@@ -81,6 +102,11 @@ func (m *PublishMessage) IsEmpty() bool {
 	return m.UUID == ""
 }
 
+//////////////////////////////////////
+/***** SubscriptionDiff Message *****/
+//////////////////////////////////////
+type SubscriptionDiffMessage map[string][]UUID
+
 func (m *SubscriptionDiffMessage) FromProducerState(state map[UUID]ProducerState) {
 	(*m)["New"] = make([]UUID, len(state))
 	i := 0
@@ -88,10 +114,6 @@ func (m *SubscriptionDiffMessage) FromProducerState(state map[UUID]ProducerState
 		(*m)["New"][i] = uuid
 		i += 1
 	}
-}
-
-// another type of message
-type ProducerList struct {
 }
 
 func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
@@ -116,4 +138,170 @@ func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
 	default:
 		return nil, errors.New(fmt.Sprintf("MessageType unknown: %v", msgtype))
 	}
+}
+
+////////////////////////////////////
+/***** ForwardRequest Message *****/
+////////////////////////////////////
+
+// Sent from central -> brokers to tell the broker to create a forwarding route
+// from one broker to another
+type ForwardRequestMessage struct {
+	MessageID uint32
+	// list of publishers whose messages should be forwarded
+	PublisherList []UUID
+	// the destination broker
+	//TODO: need to allocate this on the broker somehow
+	BrokerID UUID
+	// the query string which defines this forward request
+	Query string
+}
+
+/////////////////////////////////////////////////////
+/***************** Sent by CENTRAL *****************/
+/////////////////////////////////////////////////////
+
+
+/***** CancelForwardRequest *****/
+
+// Sent from central -> brokers to cancel the forwarding route created by a
+// ForwardRequest; used when clients cancel their subscription/disappear
+type CancelForwardRequest struct {
+    MessageID uint32
+    // the query that has been cancelled
+    Query   string
+    // TODO: not sure why this is here?
+    BrokerID UUID
+}
+
+/***** BrokerSubscriptionDiff Message *****/
+
+// Analogous to SubscriptionDiffMessage, but used for internal comm., i.e. when
+// central notifies a broker to talk to its client
+type BrokerSubscriptionDiffMessage map[string][]UUID
+
+func (m *BrokerSubscriptionDiffMessage) FromProducerState(state map[UUID]ProducerState) {
+	(*m)["New"] = make([]UUID, len(state))
+	i := 0
+	for uuid, _ := range state {
+		(*m)["New"][i] = uuid
+		i += 1
+	}
+}
+
+/***** BrokerAssignmentMessage *****/
+
+// Sent from central -> clients/publishers to let them know which failover
+// broker they should contact
+type BrokerAssignmentMessage struct {
+    // the address of the failover broker: "ip:port"
+    BrokerAddr  string
+    // id of the failover broker
+    BrokerID    UUID
+}
+
+/***** BrokerDeathMessage *****/
+
+// Sent from central -> all brokers when it determines that a broker is
+// offline, notifying other brokers they should stop attempting to forward to
+// that broker 
+type BrokerDeathMessage struct {
+    MessageID   uint32
+    // addr of the failed broker "ip:port"
+    BrokerAddr string
+    // id of the failed broker
+    BrokerID    UUID
+}
+
+/***** ClientTerminationRequest *****/
+// Sent from central -> broker when central wants the broker to break the
+// connection with a specific client (i.e., when the broker is a
+// failover and the local broker comes back online)
+type ClientTerminationRequest struct {
+    MessageID   uint32
+    // "ip:port"
+    ClientAddr  string
+}
+
+/***** PublisherTerminationRequest *****/
+// Sent from central -> broker when central wants the broker to break the
+// connection with a specific publisher (i.e., when the broker is a
+// failover and the local broker comes back online)
+type PublisherTerminationRequest struct {
+    MessageID   uint32
+    PublisherID  UUID
+}
+
+/***** HeartbeatMessage *****/
+// Sent from central -> broker every x seconds to ensure that the broker is still alive
+
+type HeartbeatMessage struct {
+    MessageID uint32
+}
+
+/////////////////////////////////////////////////////
+/***************** Sent by BROKER *****************/
+/////////////////////////////////////////////////////
+
+
+/***** BrokerPublishMessage *****/
+
+// Analogous to PublishMessage, but used for internal communication, i.e. when
+// a broker forwards a PublishMessage to another broker
+type BrokerPublishMessage struct {
+	UUID     UUID
+	Metadata map[string]interface{}
+	Value    interface{}
+	L        sync.RWMutex `msg:"-"`
+}
+
+/***** ClientTermination Message *****/
+
+// Sent from broker -> central when a client connection / subscription is
+// terminated
+type ClientTerminationMessage struct {
+	MessageID uint32
+    // the client that has left
+    // "ip:port"
+	ClientAddr    string
+}
+
+/****** PublisherTermination Message *****/
+
+// Sent from broker -> central when a publisher connection is terminated
+type PublisherTerminationMessage struct {
+	MessageID   uint32
+    // the publisher that has left
+	PublisherID UUID
+}
+
+/***** BrokerConnectMessage *****/
+
+// Sent from broker -> Central whenever a broker comes online
+type BrokerConnectMessage struct {
+    MessageID  uint32
+    // where incoming requests from clients/publishers should be routed to
+    // "ip:port"
+    BrokerAddr string
+}
+
+/***** BrokerTerminateMessage *****/
+
+// Sent from broker -> central if it is going offline permanently
+type BrokerTerminateMessage struct {
+    MessageID   uint32
+    BrokerAddr string
+    BerokerID   UUID
+}
+
+
+/////////////////////////////////
+/***** Acknowledge Message *****/
+/////////////////////////////////
+
+// Used for communication between central and brokers to confirm that a
+// message was received. The sender should keep track of unacknowledged
+// messages and remove them from some sort of buffer when an ack is received.
+type AcknowledgeMessage struct {
+	MessageID uint32
 }

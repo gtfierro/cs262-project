@@ -33,7 +33,6 @@ const (
 
 type QueryMessage string
 type SubscriptionDiffMessage map[string][]UUID
-type MatchingProducersMessage map[UUID]ProducerState
 
 type PublishMessage struct {
 	UUID     UUID
@@ -82,6 +81,15 @@ func (m *PublishMessage) IsEmpty() bool {
 	return m.UUID == ""
 }
 
+func (m *SubscriptionDiffMessage) FromProducerState(state map[UUID]ProducerState) {
+	(*m)["New"] = make([]UUID, len(state))
+	i := 0
+	for uuid, _ := range state {
+		(*m)["New"][i] = uuid
+		i += 1
+	}
+}
+
 // another type of message
 type ProducerList struct {
 }
@@ -105,10 +113,6 @@ func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
 		sdm := make(SubscriptionDiffMessage)
 		sdm.DecodeMsg(dec)
 		return &sdm, err
-	case MATCHPRODMSG:
-		mpm := make(MatchingProducersMessage)
-		mpm.DecodeMsg(dec)
-		return &mpm, err
 	default:
 		return nil, errors.New(fmt.Sprintf("MessageType unknown: %v", msgtype))
 	}

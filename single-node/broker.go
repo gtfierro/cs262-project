@@ -30,6 +30,10 @@ type Broker struct {
 	query_lock sync.RWMutex
 	queries    map[string]*Query
 
+	// map metadata key to list of queries involving that key
+	key_lock sync.RWMutex
+	keys     map[string]*queryList
+
 	// dead client notification
 	killClient chan *Client
 }
@@ -42,6 +46,7 @@ func NewBroker(metadata *MetadataStore) *Broker {
 		forwarding:  make(map[common.UUID]*queryList),
 		producers:   make(map[common.UUID]*Producer),
 		queries:     make(map[string]*Query),
+		keys:        make(map[string]*queryList),
 		killClient:  make(chan *Client),
 	}
 
@@ -207,6 +212,17 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 		b.queries[querystring] = query
 		b.query_lock.Unlock()
 
+		// add the mapping of key -> query
+		b.key_lock.Lock()
+		for _, key := range query.Keys {
+			if list, found := b.keys[key]; found {
+				list.addQuery(querystring)
+			} else {
+				b.keys[key] = &queryList{queries: []string{querystring}}
+			}
+		}
+		b.key_lock.Unlock()
+
 		log.WithFields(log.Fields{
 			"query": querystring, "results": query.MatchingProducers,
 		}).Debug("Evaluated query")
@@ -279,35 +295,59 @@ func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, co
 //    metadata) reevaluates all queries.
 
 // when we receive a new producer, find related queries and update the forwarding
-// tables that match. If newMetadata is nil, it will just reevaluate using current
+// tables that match. If message is nil, it will just reevaluate using current
 // producer metadata across *all* queries, else it can use metadata in the provided
 // Message to filter which queries to reevaluate
-func (b *Broker) RemapProducer(p *Producer, newMetadata *common.PublishMessage) {
-	//TODO: make a list of queries to update so that its unique THEN actually reevaluate
-	//      to get added/removed lists. Once we have added/removed lists we use
-	//      that to update the forwarding table.
-	//      Question: Do i save the loop over to make OLD until after the forwarding table
-	//      is updated? NO this should be encapsulated?
+func (b *Broker) RemapProducer(p *Producer, message *common.PublishMessage) {
 	var queriesToReevaluate = make(map[string]*Query)
-	// TODO: remove this TRUE statement when we implement key-informed reevaluation
-	if newMetadata == nil || true { // reevaluate ALL queries
+	if message == nil { // reevaluate ALL queries
+		log.Debug("Reevaluating all queries")
 		b.subscriber_lock.RLock()
+		b.query_lock.RLock()
 		for querystring, _ := range b.subscribers {
 			if _, found := queriesToReevaluate[querystring]; !found {
-				b.query_lock.RLock()
 				queriesToReevaluate[querystring] = b.queries[querystring]
-				b.query_lock.RUnlock()
 			}
 		}
 		b.subscriber_lock.RUnlock()
-
-		for _, query := range queriesToReevaluate {
-			added, removed := b.metadata.Reevaluate(query)
-			log.WithFields(log.Fields{
-				"query": query.Query, "added": added, "removed": removed,
-			}).Info("Reevaluated query")
-			b.updateForwardingDiffs(query, added, removed)
-			b.SendSubscriptionDiffs(query.Query, added, removed)
+		b.query_lock.RUnlock()
+		goto reevaluate
+	}
+	// if we have new metadata
+	b.key_lock.RLock()
+	b.query_lock.RLock()
+	b.subscriber_lock.RLock()
+	// loop through each of the metadata keys
+	log.Debugf("Reevaluting w/ metadata %v", message.Metadata)
+	for key, _ := range message.Metadata {
+		// pull out the list of affected queries
+		list, found := b.keys[key]
+		log.Debugf("For key %v found queries %v", key, list)
+		if !found { // if there are no affected queries, go on to the next key
+			continue
 		}
+		// for each query in the found list
+		for _, querystring := range list.queries {
+			// if there are no subscribers for this query, continue
+			if subscribers, found := b.subscribers[querystring]; !found || len(subscribers) == 0 {
+				continue
+			}
+			if _, found := queriesToReevaluate[querystring]; !found {
+				queriesToReevaluate[querystring] = b.queries[querystring]
+			}
+		}
+	}
+	b.subscriber_lock.RUnlock()
+	b.query_lock.RUnlock()
+	b.key_lock.RUnlock()
+
+reevaluate:
+	for _, query := range queriesToReevaluate {
+		added, removed := b.metadata.Reevaluate(query)
+		log.WithFields(log.Fields{
+			"query": query.Query, "added": added, "removed": removed,
+		}).Info("Reevaluated query")
+		b.updateForwardingDiffs(query, added, removed)
+		b.SendSubscriptionDiffs(query.Query, added, removed)
 	}
 }

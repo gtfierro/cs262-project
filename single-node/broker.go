@@ -181,7 +181,7 @@ func (b *Broker) SendSubscriptionDiffs(query string, added, removed []common.UUI
 	subscribers := b.subscribers[query]
 	b.subscriber_lock.RUnlock()
 	for _, sub := range subscribers {
-		go sub.Send(&msg)
+		sub.Send(&msg)
 	}
 }
 

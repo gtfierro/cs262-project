@@ -19,6 +19,17 @@ type Server struct {
 	// server signals on this channel when it has stopped
 	stopped chan bool
 	closed  bool
+
+	// the address of the central server
+	centralAddress *net.TCPAddr
+	// connection to the central server
+	centralConn *net.TCPConn
+	// the number of seconds to wait before retrying to
+	// contact central server
+	centralRetryTime int
+	// the maximum interval to increase to between attempts to contact
+	// the central server
+	centralRetryTimeMAX int
 }
 
 // Create a new server instance using the configuration
@@ -50,10 +61,24 @@ func NewServer(c *common.Config) *Server {
 		}).Fatal("Could not listen on the provided address")
 	}
 
+	// parse the config into an address
+	centralAddress := fmt.Sprintf("%s:%d", c.Server.CentralHost, c.Server.CentralPort)
+	s.centralAddress, err = net.ResolveTCPAddr("tcp", centralAddress)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"addr": centralAddress, "error": err,
+		}).Fatal("Could not resolve the generated TCP address")
+	}
+
 	s.metadata = NewMetadataStore(c)
 	s.broker = NewBroker(s.metadata)
 	s.stopped = make(chan bool)
 	s.closed = false
+
+	s.centralRetryTime = 1
+	s.centralRetryTimeMAX = 60
+
+	//go s.talkToManagement()
 
 	// print up some server stats
 	go func() {
@@ -147,4 +172,35 @@ func (s *Server) handleSubscribe(query common.QueryMessage, dec *msgp.Reader, co
 
 func (s *Server) handlePublish(first *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {
 	s.broker.HandleProducer(first, dec, conn)
+}
+
+func (s *Server) talkToManagement() {
+	var err error
+	// Dial a connection to the Central server
+	s.centralConn, err = net.DialTCP("tcp", nil, s.centralAddress)
+	// if connection fails, we do exponential retry
+	for err != nil {
+		log.WithFields(log.Fields{
+			"err": err, "server": s.centralAddress, "retry": s.centralRetryTime,
+		}).Error("Failed to contact central server. Retrying")
+		time.Sleep(time.Duration(s.centralRetryTime) * time.Second)
+		// increase retry window by factor of 2
+		if s.centralRetryTime*2 < s.centralRetryTimeMAX {
+			s.centralRetryTime *= 2
+		} else {
+			s.centralRetryTime = s.centralRetryTimeMAX
+		}
+		// Dial a connection to the Central server
+		s.centralConn, err = net.DialTCP("tcp", nil, s.centralAddress)
+	}
+	// if we were successful, reset the wait timer
+	s.centralRetryTime = 1
+	encoder := msgp.NewWriter(s.centralConn)
+
+	// when we come online, send the BrokerConnectMessage to inform the central
+	// server where it should send clients
+	//TODO: how do we allocate MessageIDs?!?!?!?
+	// these need to be globally unique. Prepend w/ some hash of broker?
+	bcm := &common.BrokerConnectMessage{BrokerAddr: s.address.String()}
+	bcm.Encode(encoder)
 }

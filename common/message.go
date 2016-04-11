@@ -21,6 +21,7 @@ const (
 	QUERYMSG
 	SUBSCRIPDIFFMSG
 	MATCHPRODMSG
+	BROKERCONNECTMSG
 )
 
 type ProducerState uint
@@ -40,11 +41,11 @@ const (
 // Sent from clients / publishers -> central when they cannot contact their
 // local/home broker
 type BrokerRequestMessage struct {
-    // this is the broker that clients are expecting
-    // They send it to Central so that when this broker comes back online,
-    // it knows which clients to inform to reconnect
-    // "ip:port"
-    LocalBrokerAddr string
+	// this is the broker that clients are expecting
+	// They send it to Central so that when this broker comes back online,
+	// it knows which clients to inform to reconnect
+	// "ip:port"
+	LocalBrokerAddr string
 }
 
 /***** QueryMessage *****/
@@ -116,30 +117,6 @@ func (m *SubscriptionDiffMessage) FromProducerState(state map[UUID]ProducerState
 	}
 }
 
-func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
-	msgtype_tmp, err := dec.ReadByte()
-	if err != nil {
-		return nil, err
-	}
-	msgtype := uint8(msgtype_tmp)
-	switch MessageType(msgtype) {
-	case PUBLISHMSG:
-		msg := new(PublishMessage)
-		err = msg.DecodeMsg(dec)
-		return msg, err
-	case QUERYMSG:
-		qm := new(QueryMessage)
-		qm.DecodeMsg(dec)
-		return qm, err
-	case SUBSCRIPDIFFMSG:
-		sdm := make(SubscriptionDiffMessage)
-		sdm.DecodeMsg(dec)
-		return &sdm, err
-	default:
-		return nil, errors.New(fmt.Sprintf("MessageType unknown: %v", msgtype))
-	}
-}
-
 ////////////////////////////////////
 /***** ForwardRequest Message *****/
 ////////////////////////////////////
@@ -161,17 +138,16 @@ type ForwardRequestMessage struct {
 /***************** Sent by CENTRAL *****************/
 /////////////////////////////////////////////////////
 
-
 /***** CancelForwardRequest *****/
 
 // Sent from central -> brokers to cancel the forwarding route created by a
 // ForwardRequest; used when clients cancel their subscription/disappear
 type CancelForwardRequest struct {
-    MessageID uint32
-    // the query that has been cancelled
-    Query   string
-    // TODO: not sure why this is here?
-    BrokerID UUID
+	MessageID uint32
+	// the query that has been cancelled
+	Query string
+	// TODO: not sure why this is here?
+	BrokerID UUID
 }
 
 /***** BrokerSubscriptionDiff Message *****/
@@ -194,23 +170,23 @@ func (m *BrokerSubscriptionDiffMessage) FromProducerState(state map[UUID]Produce
 // Sent from central -> clients/publishers to let them know which failover
 // broker they should contact
 type BrokerAssignmentMessage struct {
-    // the address of the failover broker: "ip:port"
-    BrokerAddr  string
-    // id of the failover broker
-    BrokerID    UUID
+	// the address of the failover broker: "ip:port"
+	BrokerAddr string
+	// id of the failover broker
+	BrokerID UUID
 }
 
 /***** BrokerDeathMessage *****/
 
 // Sent from central -> all brokers when it determines that a broker is
 // offline, notifying other brokers they should stop attempting to forward to
-// that broker 
+// that broker
 type BrokerDeathMessage struct {
-    MessageID   uint32
-    // addr of the failed broker "ip:port"
-    BrokerAddr string
-    // id of the failed broker
-    BrokerID    UUID
+	MessageID uint32
+	// addr of the failed broker "ip:port"
+	BrokerAddr string
+	// id of the failed broker
+	BrokerID UUID
 }
 
 /***** ClientTerminationRequest *****/
@@ -218,9 +194,9 @@ type BrokerDeathMessage struct {
 // connection with a specific client (i.e., when the broker is a
 // failover and the local broker comes back online)
 type ClientTerminationRequest struct {
-    MessageID   uint32
-    // "ip:port"
-    ClientAddr  string
+	MessageID uint32
+	// "ip:port"
+	ClientAddr string
 }
 
 /***** PublisherTerminationRequest *****/
@@ -228,21 +204,20 @@ type ClientTerminationRequest struct {
 // connection with a specific publisher (i.e., when the broker is a
 // failover and the local broker comes back online)
 type PublisherTerminationRequest struct {
-    MessageID   uint32
-    PublisherID  UUID
+	MessageID   uint32
+	PublisherID UUID
 }
 
 /***** HeartbeatMessage *****/
 // Sent from central -> broker every x seconds to ensure that the broker is still alive
 
 type HeartbeatMessage struct {
-    MessageID uint32
+	MessageID uint32
 }
 
 /////////////////////////////////////////////////////
 /***************** Sent by BROKER *****************/
 /////////////////////////////////////////////////////
-
 
 /***** BrokerPublishMessage *****/
 
@@ -261,17 +236,17 @@ type BrokerPublishMessage struct {
 // terminated
 type ClientTerminationMessage struct {
 	MessageID uint32
-    // the client that has left
-    // "ip:port"
-	ClientAddr    string
+	// the client that has left
+	// "ip:port"
+	ClientAddr string
 }
 
 /****** PublisherTermination Message *****/
 
 // Sent from broker -> central when a publisher connection is terminated
 type PublisherTerminationMessage struct {
-	MessageID   uint32
-    // the publisher that has left
+	MessageID uint32
+	// the publisher that has left
 	PublisherID UUID
 }
 
@@ -279,21 +254,20 @@ type PublisherTerminationMessage struct {
 
 // Sent from broker -> Central whenever a broker comes online
 type BrokerConnectMessage struct {
-    MessageID  uint32
-    // where incoming requests from clients/publishers should be routed to
-    // "ip:port"
-    BrokerAddr string
+	MessageID uint32
+	// where incoming requests from clients/publishers should be routed to
+	// "ip:port"
+	BrokerAddr string
 }
 
 /***** BrokerTerminateMessage *****/
 
 // Sent from broker -> central if it is going offline permanently
 type BrokerTerminateMessage struct {
-    MessageID   uint32
-    BrokerAddr string
-    BerokerID   UUID
+	MessageID  uint32
+	BrokerAddr string
+	BerokerID  UUID
 }
-
 
 /////////////////////////////////
 /***** Acknowledge Message *****/

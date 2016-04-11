@@ -15,9 +15,14 @@ type LoggingConfig struct {
 
 // server configuration
 type ServerConfig struct {
+	// Client Interface
 	Port int
 	// if true, listens on 0.0.0.0
 	Global bool
+	// the name of the central server
+	CentralHost string
+	// the port of the central server
+	CentralPort int
 }
 
 // MongoDB configuration

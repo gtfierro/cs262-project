@@ -71,9 +71,10 @@ func (b *Broker) mapQueryToClient(query string, c *Client) {
 	b.subscriber_lock.Lock()
 	if list, found := b.subscribers[query]; found {
 		list.addClient(c)
+		b.subscribers[query] = list
 	} else {
 		// otherwise, create a new list with us in it
-		b.subscribers[query] = clientList{c}
+		b.subscribers[query] = clientList{List: []*Client{c}}
 	}
 	b.subscriber_lock.Unlock()
 }
@@ -148,18 +149,17 @@ func (b *Broker) ForwardMessage(m *common.PublishMessage) {
 		return
 	}
 
-	var clientList []*Client
+	var deliveries clientList
 	for _, query := range matchingQueries.queries {
 		b.subscriber_lock.RLock()
-		clientList, found = b.subscribers[query]
+		deliveries, found = b.subscribers[query]
 		b.subscriber_lock.RUnlock()
-		if !found || len(clientList) == 0 {
+		if !found || len(deliveries.List) == 0 {
 			log.Debugf("found no clients")
 			break
 		}
-		for _, client := range clientList {
-			go client.Send(m)
-		}
+		log.Debugf("found clients %v", deliveries)
+		deliveries.sendToList(m)
 	}
 }
 
@@ -180,9 +180,7 @@ func (b *Broker) SendSubscriptionDiffs(query string, added, removed []common.UUI
 	b.subscriber_lock.RLock()
 	subscribers := b.subscribers[query]
 	b.subscriber_lock.RUnlock()
-	for _, sub := range subscribers {
-		sub.Send(&msg)
-	}
+	go subscribers.sendToList(&msg)
 }
 
 // Evaluates the query and establishes the forwarding decisions.
@@ -341,7 +339,7 @@ func (b *Broker) RemapProducer(p *Producer, message *common.PublishMessage) {
 		// for each query in the found list
 		for _, querystring := range list.queries {
 			// if there are no subscribers for this query, continue
-			if subscribers, found := b.subscribers[querystring]; !found || len(subscribers) == 0 {
+			if subscribers, found := b.subscribers[querystring]; !found || len(subscribers.List) == 0 {
 				continue
 			}
 			if _, found := queriesToReevaluate[querystring]; !found {

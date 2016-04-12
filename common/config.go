@@ -19,10 +19,10 @@ type ServerConfig struct {
 	Port int
 	// if true, listens on 0.0.0.0
 	Global bool
-	// the name of the central server
-	CentralHost string
-	// the port of the central server
-	CentralPort int
+	// the name of the coordinator server
+	CoordinatorHost string
+	// the port of the coordinator server
+	CoordinatorPort int
 }
 
 // MongoDB configuration

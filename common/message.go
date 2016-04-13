@@ -5,10 +5,19 @@ import (
 	"errors"
 	"fmt"
 	"github.com/tinylib/msgp/msgp"
+	"math/rand"
+	"reflect"
 	"sync"
 )
 
 type UUID string
+
+func GetMessageType(msg Sendable) string {
+	if msg == nil {
+		return "nil"
+	}
+	return reflect.TypeOf(msg).Elem().Name()
+}
 
 type Sendable interface {
 	Encode(enc *msgp.Writer) error
@@ -16,15 +25,21 @@ type Sendable interface {
 
 type SendableWithID interface {
 	Encode(enc *msgp.Writer) error
-	GetID() uint32
+	GetID() MessageIDType
 }
+
+type MessageIDType uint32
 
 type MessageIDStruct struct {
-	MessageID uint32
+	MessageID MessageIDType
 }
 
-func (sendable *MessageIDStruct) GetID() uint32 {
-	return sendable.GetID()
+func (sendable *MessageIDStruct) GetID() MessageIDType {
+	return sendable.MessageID
+}
+
+func GetMessageIDStruct() MessageIDStruct {
+	return MessageIDStruct{MessageID: MessageIDType(rand.Uint32())} // TODO
 }
 
 type MessageType uint8
@@ -45,6 +60,7 @@ const (
 	BROKERDEATHMSG
 	CLIENTTERMREQUESTMSG
 	PUBTERMREQUESTMSG
+	REQHEARTBEATMSG
 	HEARTBEATMSG
 	BROKERPUBLISHMSG
 	CLIENTTERMMSG
@@ -238,16 +254,19 @@ type PublisherTerminationRequest struct {
 	PublisherID UUID
 }
 
-/***** HeartbeatMessage *****/
-// Sent from coordinator -> broker every x seconds to ensure that the broker is still alive
+/***** RequestHeartbeatMessage *****/
+// Sent from coordinator -> broker to request a heartbeat to confirm broker is alive
 
-type HeartbeatMessage struct {
-	MessageIDStruct
-}
+type RequestHeartbeatMessage struct{}
 
 /////////////////////////////////////////////////////
 /***************** Sent by BROKER *****************/
 /////////////////////////////////////////////////////
+
+/***** HeartbeatMessage *****/
+// Sent from broker -> coordinator every x seconds to confirm that the broker is still alive
+
+type HeartbeatMessage struct{}
 
 /***** BrokerPublishMessage *****/
 
@@ -294,7 +313,7 @@ type BrokerConnectMessage struct {
 
 // Sent from broker -> coordinator if it is going offline permanently
 type BrokerTerminateMessage struct {
-	MessageID  uint32
+	MessageIDStruct
 	BrokerAddr string
 	BrokerID   UUID
 }
@@ -307,5 +326,5 @@ type BrokerTerminateMessage struct {
 // message was received. The sender should keep track of unacknowledged
 // messages and remove them from some sort of buffer when an ack is received.
 type AcknowledgeMessage struct {
-	MessageIDStruct
+	MessageID MessageIDType
 }

@@ -24,30 +24,14 @@ func (z *AcknowledgeMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "MessageIDStruct":
-			var isz uint32
-			isz, err = dc.ReadMapHeader()
+		case "MessageID":
+			{
+				var tmp uint32
+				tmp, err = dc.ReadUint32()
+				z.MessageID = MessageIDType(tmp)
+			}
 			if err != nil {
 				return
-			}
-			for isz > 0 {
-				isz--
-				field, err = dc.ReadMapKeyPtr()
-				if err != nil {
-					return
-				}
-				switch msgp.UnsafeString(field) {
-				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
-					if err != nil {
-						return
-					}
-				default:
-					err = dc.Skip()
-					if err != nil {
-						return
-					}
-				}
 			}
 		default:
 			err = dc.Skip()
@@ -60,16 +44,14 @@ func (z *AcknowledgeMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z *AcknowledgeMessage) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 1
-	// write "MessageIDStruct"
+func (z AcknowledgeMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	// map header, size 1
 	// write "MessageID"
-	err = en.Append(0x81, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	err = en.Append(0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
+	err = en.WriteUint32(uint32(z.MessageID))
 	if err != nil {
 		return
 	}
@@ -77,14 +59,12 @@ func (z *AcknowledgeMessage) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z *AcknowledgeMessage) MarshalMsg(b []byte) (o []byte, err error) {
+func (z AcknowledgeMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	// map header, size 1
-	// string "MessageIDStruct"
-	// map header, size 1
 	// string "MessageID"
-	o = append(o, 0x81, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
+	o = append(o, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	o = msgp.AppendUint32(o, uint32(z.MessageID))
 	return
 }
 
@@ -104,30 +84,14 @@ func (z *AcknowledgeMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "MessageIDStruct":
-			var isz uint32
-			isz, bts, err = msgp.ReadMapHeaderBytes(bts)
+		case "MessageID":
+			{
+				var tmp uint32
+				tmp, bts, err = msgp.ReadUint32Bytes(bts)
+				z.MessageID = MessageIDType(tmp)
+			}
 			if err != nil {
 				return
-			}
-			for isz > 0 {
-				isz--
-				field, bts, err = msgp.ReadMapKeyZC(bts)
-				if err != nil {
-					return
-				}
-				switch msgp.UnsafeString(field) {
-				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
-					if err != nil {
-						return
-					}
-				default:
-					bts, err = msgp.Skip(bts)
-					if err != nil {
-						return
-					}
-				}
 			}
 		default:
 			bts, err = msgp.Skip(bts)
@@ -140,8 +104,8 @@ func (z *AcknowledgeMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	return
 }
 
-func (z *AcknowledgeMessage) Msgsize() (s int) {
-	s = 1 + 16 + 1 + 10 + msgp.Uint32Size
+func (z AcknowledgeMessage) Msgsize() (s int) {
+	s = 1 + 10 + msgp.Uint32Size
 	return
 }
 
@@ -298,7 +262,11 @@ func (z *BrokerConnectMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
+					{
+						var tmp uint32
+						tmp, err = dc.ReadUint32()
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -334,7 +302,7 @@ func (z *BrokerConnectMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
+	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
 	}
@@ -358,7 +326,7 @@ func (z *BrokerConnectMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 1
 	// string "MessageID"
 	o = append(o, 0x82, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
+	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
 	// string "BrokerAddr"
 	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
 	o = msgp.AppendString(o, z.BrokerAddr)
@@ -395,7 +363,11 @@ func (z *BrokerConnectMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+					{
+						var tmp uint32
+						tmp, bts, err = msgp.ReadUint32Bytes(bts)
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -457,7 +429,11 @@ func (z *BrokerDeathMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
+					{
+						var tmp uint32
+						tmp, err = dc.ReadUint32()
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -502,7 +478,7 @@ func (z *BrokerDeathMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
+	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
 	}
@@ -535,7 +511,7 @@ func (z *BrokerDeathMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 1
 	// string "MessageID"
 	o = append(o, 0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
+	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
 	// string "BrokerAddr"
 	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
 	o = msgp.AppendString(o, z.BrokerAddr)
@@ -575,7 +551,11 @@ func (z *BrokerDeathMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+					{
+						var tmp uint32
+						tmp, bts, err = msgp.ReadUint32Bytes(bts)
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1089,10 +1069,34 @@ func (z *BrokerTerminateMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "MessageID":
-			z.MessageID, err = dc.ReadUint32()
+		case "MessageIDStruct":
+			var isz uint32
+			isz, err = dc.ReadMapHeader()
 			if err != nil {
 				return
+			}
+			for isz > 0 {
+				isz--
+				field, err = dc.ReadMapKeyPtr()
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "MessageID":
+					{
+						var tmp uint32
+						tmp, err = dc.ReadUint32()
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
+					if err != nil {
+						return
+					}
+				default:
+					err = dc.Skip()
+					if err != nil {
+						return
+					}
+				}
 			}
 		case "BrokerAddr":
 			z.BrokerAddr, err = dc.ReadString()
@@ -1119,14 +1123,16 @@ func (z *BrokerTerminateMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z BrokerTerminateMessage) EncodeMsg(en *msgp.Writer) (err error) {
+func (z *BrokerTerminateMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	// map header, size 3
+	// write "MessageIDStruct"
+	// map header, size 1
 	// write "MessageID"
-	err = en.Append(0x83, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	err = en.Append(0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageID)
+	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
 	}
@@ -1152,12 +1158,14 @@ func (z BrokerTerminateMessage) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z BrokerTerminateMessage) MarshalMsg(b []byte) (o []byte, err error) {
+func (z *BrokerTerminateMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	// map header, size 3
+	// string "MessageIDStruct"
+	// map header, size 1
 	// string "MessageID"
-	o = append(o, 0x83, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageID)
+	o = append(o, 0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
 	// string "BrokerAddr"
 	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
 	o = msgp.AppendString(o, z.BrokerAddr)
@@ -1183,10 +1191,34 @@ func (z *BrokerTerminateMessage) UnmarshalMsg(bts []byte) (o []byte, err error) 
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "MessageID":
-			z.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+		case "MessageIDStruct":
+			var isz uint32
+			isz, bts, err = msgp.ReadMapHeaderBytes(bts)
 			if err != nil {
 				return
+			}
+			for isz > 0 {
+				isz--
+				field, bts, err = msgp.ReadMapKeyZC(bts)
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "MessageID":
+					{
+						var tmp uint32
+						tmp, bts, err = msgp.ReadUint32Bytes(bts)
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
+					if err != nil {
+						return
+					}
+				default:
+					bts, err = msgp.Skip(bts)
+					if err != nil {
+						return
+					}
+				}
 			}
 		case "BrokerAddr":
 			z.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
@@ -1213,8 +1245,8 @@ func (z *BrokerTerminateMessage) UnmarshalMsg(bts []byte) (o []byte, err error) 
 	return
 }
 
-func (z BrokerTerminateMessage) Msgsize() (s int) {
-	s = 1 + 10 + msgp.Uint32Size + 11 + msgp.StringPrefixSize + len(z.BrokerAddr) + 9 + msgp.StringPrefixSize + len(string(z.BrokerID))
+func (z *BrokerTerminateMessage) Msgsize() (s int) {
+	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 11 + msgp.StringPrefixSize + len(z.BrokerAddr) + 9 + msgp.StringPrefixSize + len(string(z.BrokerID))
 	return
 }
 
@@ -1248,7 +1280,11 @@ func (z *CancelForwardRequest) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
+					{
+						var tmp uint32
+						tmp, err = dc.ReadUint32()
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1293,7 +1329,7 @@ func (z *CancelForwardRequest) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
+	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
 	}
@@ -1326,7 +1362,7 @@ func (z *CancelForwardRequest) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 1
 	// string "MessageID"
 	o = append(o, 0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
+	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
 	// string "Query"
 	o = append(o, 0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
 	o = msgp.AppendString(o, z.Query)
@@ -1366,7 +1402,11 @@ func (z *CancelForwardRequest) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+					{
+						var tmp uint32
+						tmp, bts, err = msgp.ReadUint32Bytes(bts)
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1437,7 +1477,11 @@ func (z *ClientTerminationMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
+					{
+						var tmp uint32
+						tmp, err = dc.ReadUint32()
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1473,7 +1517,7 @@ func (z *ClientTerminationMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
+	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
 	}
@@ -1497,7 +1541,7 @@ func (z *ClientTerminationMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 1
 	// string "MessageID"
 	o = append(o, 0x82, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
+	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
 	// string "ClientAddr"
 	o = append(o, 0xaa, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x41, 0x64, 0x64, 0x72)
 	o = msgp.AppendString(o, z.ClientAddr)
@@ -1534,7 +1578,11 @@ func (z *ClientTerminationMessage) UnmarshalMsg(bts []byte) (o []byte, err error
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+					{
+						var tmp uint32
+						tmp, bts, err = msgp.ReadUint32Bytes(bts)
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1596,7 +1644,11 @@ func (z *ClientTerminationRequest) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
+					{
+						var tmp uint32
+						tmp, err = dc.ReadUint32()
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1632,7 +1684,7 @@ func (z *ClientTerminationRequest) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
+	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
 	}
@@ -1656,7 +1708,7 @@ func (z *ClientTerminationRequest) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 1
 	// string "MessageID"
 	o = append(o, 0x82, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
+	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
 	// string "ClientAddr"
 	o = append(o, 0xaa, 0x43, 0x6c, 0x69, 0x65, 0x6e, 0x74, 0x41, 0x64, 0x64, 0x72)
 	o = msgp.AppendString(o, z.ClientAddr)
@@ -1693,7 +1745,11 @@ func (z *ClientTerminationRequest) UnmarshalMsg(bts []byte) (o []byte, err error
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+					{
+						var tmp uint32
+						tmp, bts, err = msgp.ReadUint32Bytes(bts)
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1755,7 +1811,11 @@ func (z *ForwardRequestMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
+					{
+						var tmp uint32
+						tmp, err = dc.ReadUint32()
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1821,7 +1881,7 @@ func (z *ForwardRequestMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
+	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
 	}
@@ -1869,7 +1929,7 @@ func (z *ForwardRequestMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 1
 	// string "MessageID"
 	o = append(o, 0x84, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
+	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
 	// string "PublisherList"
 	o = append(o, 0xad, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x4c, 0x69, 0x73, 0x74)
 	o = msgp.AppendArrayHeader(o, uint32(len(z.PublisherList)))
@@ -1915,7 +1975,11 @@ func (z *ForwardRequestMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+					{
+						var tmp uint32
+						tmp, bts, err = msgp.ReadUint32Bytes(bts)
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -1982,143 +2046,6 @@ func (z *ForwardRequestMessage) Msgsize() (s int) {
 }
 
 // DecodeMsg implements msgp.Decodable
-func (z *HeartbeatMessage) DecodeMsg(dc *msgp.Reader) (err error) {
-	var field []byte
-	_ = field
-	var isz uint32
-	isz, err = dc.ReadMapHeader()
-	if err != nil {
-		return
-	}
-	for isz > 0 {
-		isz--
-		field, err = dc.ReadMapKeyPtr()
-		if err != nil {
-			return
-		}
-		switch msgp.UnsafeString(field) {
-		case "MessageIDStruct":
-			var isz uint32
-			isz, err = dc.ReadMapHeader()
-			if err != nil {
-				return
-			}
-			for isz > 0 {
-				isz--
-				field, err = dc.ReadMapKeyPtr()
-				if err != nil {
-					return
-				}
-				switch msgp.UnsafeString(field) {
-				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
-					if err != nil {
-						return
-					}
-				default:
-					err = dc.Skip()
-					if err != nil {
-						return
-					}
-				}
-			}
-		default:
-			err = dc.Skip()
-			if err != nil {
-				return
-			}
-		}
-	}
-	return
-}
-
-// EncodeMsg implements msgp.Encodable
-func (z *HeartbeatMessage) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 1
-	// write "MessageIDStruct"
-	// map header, size 1
-	// write "MessageID"
-	err = en.Append(0x81, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	if err != nil {
-		return err
-	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
-	if err != nil {
-		return
-	}
-	return
-}
-
-// MarshalMsg implements msgp.Marshaler
-func (z *HeartbeatMessage) MarshalMsg(b []byte) (o []byte, err error) {
-	o = msgp.Require(b, z.Msgsize())
-	// map header, size 1
-	// string "MessageIDStruct"
-	// map header, size 1
-	// string "MessageID"
-	o = append(o, 0x81, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
-	return
-}
-
-// UnmarshalMsg implements msgp.Unmarshaler
-func (z *HeartbeatMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
-	var field []byte
-	_ = field
-	var isz uint32
-	isz, bts, err = msgp.ReadMapHeaderBytes(bts)
-	if err != nil {
-		return
-	}
-	for isz > 0 {
-		isz--
-		field, bts, err = msgp.ReadMapKeyZC(bts)
-		if err != nil {
-			return
-		}
-		switch msgp.UnsafeString(field) {
-		case "MessageIDStruct":
-			var isz uint32
-			isz, bts, err = msgp.ReadMapHeaderBytes(bts)
-			if err != nil {
-				return
-			}
-			for isz > 0 {
-				isz--
-				field, bts, err = msgp.ReadMapKeyZC(bts)
-				if err != nil {
-					return
-				}
-				switch msgp.UnsafeString(field) {
-				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
-					if err != nil {
-						return
-					}
-				default:
-					bts, err = msgp.Skip(bts)
-					if err != nil {
-						return
-					}
-				}
-			}
-		default:
-			bts, err = msgp.Skip(bts)
-			if err != nil {
-				return
-			}
-		}
-	}
-	o = bts
-	return
-}
-
-func (z *HeartbeatMessage) Msgsize() (s int) {
-	s = 1 + 16 + 1 + 10 + msgp.Uint32Size
-	return
-}
-
-// DecodeMsg implements msgp.Decodable
 func (z *MessageIDStruct) DecodeMsg(dc *msgp.Reader) (err error) {
 	var field []byte
 	_ = field
@@ -2135,7 +2062,11 @@ func (z *MessageIDStruct) DecodeMsg(dc *msgp.Reader) (err error) {
 		}
 		switch msgp.UnsafeString(field) {
 		case "MessageID":
-			z.MessageID, err = dc.ReadUint32()
+			{
+				var tmp uint32
+				tmp, err = dc.ReadUint32()
+				z.MessageID = MessageIDType(tmp)
+			}
 			if err != nil {
 				return
 			}
@@ -2157,7 +2088,7 @@ func (z MessageIDStruct) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageID)
+	err = en.WriteUint32(uint32(z.MessageID))
 	if err != nil {
 		return
 	}
@@ -2170,7 +2101,7 @@ func (z MessageIDStruct) MarshalMsg(b []byte) (o []byte, err error) {
 	// map header, size 1
 	// string "MessageID"
 	o = append(o, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageID)
+	o = msgp.AppendUint32(o, uint32(z.MessageID))
 	return
 }
 
@@ -2191,7 +2122,11 @@ func (z *MessageIDStruct) UnmarshalMsg(bts []byte) (o []byte, err error) {
 		}
 		switch msgp.UnsafeString(field) {
 		case "MessageID":
-			z.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+			{
+				var tmp uint32
+				tmp, bts, err = msgp.ReadUint32Bytes(bts)
+				z.MessageID = MessageIDType(tmp)
+			}
 			if err != nil {
 				return
 			}
@@ -2208,6 +2143,54 @@ func (z *MessageIDStruct) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 func (z MessageIDStruct) Msgsize() (s int) {
 	s = 1 + 10 + msgp.Uint32Size
+	return
+}
+
+// DecodeMsg implements msgp.Decodable
+func (z *MessageIDType) DecodeMsg(dc *msgp.Reader) (err error) {
+	{
+		var tmp uint32
+		tmp, err = dc.ReadUint32()
+		(*z) = MessageIDType(tmp)
+	}
+	if err != nil {
+		return
+	}
+	return
+}
+
+// EncodeMsg implements msgp.Encodable
+func (z MessageIDType) EncodeMsg(en *msgp.Writer) (err error) {
+	err = en.WriteUint32(uint32(z))
+	if err != nil {
+		return
+	}
+	return
+}
+
+// MarshalMsg implements msgp.Marshaler
+func (z MessageIDType) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	o = msgp.AppendUint32(o, uint32(z))
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *MessageIDType) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	{
+		var tmp uint32
+		tmp, bts, err = msgp.ReadUint32Bytes(bts)
+		(*z) = MessageIDType(tmp)
+	}
+	if err != nil {
+		return
+	}
+	o = bts
+	return
+}
+
+func (z MessageIDType) Msgsize() (s int) {
+	s = msgp.Uint32Size
 	return
 }
 
@@ -2553,7 +2536,11 @@ func (z *PublisherTerminationMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, err = dc.ReadUint32()
+					{
+						var tmp uint32
+						tmp, err = dc.ReadUint32()
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}
@@ -2593,7 +2580,7 @@ func (z *PublisherTerminationMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteUint32(z.MessageIDStruct.MessageID)
+	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
 	}
@@ -2617,7 +2604,7 @@ func (z *PublisherTerminationMessage) MarshalMsg(b []byte) (o []byte, err error)
 	// map header, size 1
 	// string "MessageID"
 	o = append(o, 0x82, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
-	o = msgp.AppendUint32(o, z.MessageIDStruct.MessageID)
+	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
 	// string "PublisherID"
 	o = append(o, 0xab, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x49, 0x44)
 	o = msgp.AppendString(o, string(z.PublisherID))
@@ -2654,7 +2641,11 @@ func (z *PublisherTerminationMessage) UnmarshalMsg(bts []byte) (o []byte, err er
 				}
 				switch msgp.UnsafeString(field) {
 				case "MessageID":
-					z.MessageIDStruct.MessageID, bts, err = msgp.ReadUint32Bytes(bts)
+					{
+						var tmp uint32
+						tmp, bts, err = msgp.ReadUint32Bytes(bts)
+						z.MessageIDStruct.MessageID = MessageIDType(tmp)
+					}
 					if err != nil {
 						return
 					}

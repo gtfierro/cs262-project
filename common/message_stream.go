@@ -102,12 +102,14 @@ func (m *PublisherTerminationRequest) Encode(enc *msgp.Writer) error {
 	return m.EncodeMsg(enc)
 }
 
+func (m *RequestHeartbeatMessage) Encode(enc *msgp.Writer) error {
+	err := enc.WriteUint8(uint8(REQHEARTBEATMSG))
+	return err
+}
+
 func (m *HeartbeatMessage) Encode(enc *msgp.Writer) error {
 	err := enc.WriteUint8(uint8(HEARTBEATMSG))
-	if err != nil {
-		return err
-	}
-	return m.EncodeMsg(enc)
+	return err
 }
 
 func (m *BrokerPublishMessage) Encode(enc *msgp.Writer) error {
@@ -205,9 +207,11 @@ func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
 		msg := new(PublisherTerminationRequest)
 		msg.DecodeMsg(dec)
 		return msg, err
+	case REQHEARTBEATMSG:
+		msg := new(RequestHeartbeatMessage)
+		return msg, err
 	case HEARTBEATMSG:
 		msg := new(HeartbeatMessage)
-		msg.DecodeMsg(dec)
 		return msg, err
 	case BROKERPUBLISHMSG:
 		msg := new(BrokerPublishMessage)

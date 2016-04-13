@@ -54,8 +54,7 @@ func (c *Client) subscribe() {
 		case *common.PublishMessage:
 			c.latencyChan <- arrivalTime - m.Value.(int64)
 		case *common.SubscriptionDiffMessage:
-		case *common.MatchingProducersMessage:
-			// Can safely ignore both of these
+			// Can safely ignore this
 		}
 	}
 }

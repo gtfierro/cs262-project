@@ -5,8 +5,6 @@ import (
 	"github.com/tinylib/msgp/msgp"
 	"strings"
 	"testing"
-
-	"gopkg.in/vmihailenco/msgpack.v2"
 )
 
 type CopyReader struct {

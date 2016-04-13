@@ -14,6 +14,19 @@ type Sendable interface {
 	Encode(enc *msgp.Writer) error
 }
 
+type SendableWithID interface {
+	Encode(enc *msgp.Writer) error
+	GetID() uint32
+}
+
+type MessageIDStruct struct {
+	MessageID uint32
+}
+
+func (sendable *MessageIDStruct) GetID() uint32 {
+	return sendable.GetID()
+}
+
 type MessageType uint8
 
 const (
@@ -124,11 +137,12 @@ func (m *SubscriptionDiffMessage) FromProducerState(state map[UUID]ProducerState
 // Sent from coordinator -> brokers to tell the broker to create a forwarding route
 // from one broker to another
 type ForwardRequestMessage struct {
-	MessageID uint32
+	MessageIDStruct
 	// list of publishers whose messages should be forwarded
 	PublisherList []UUID
 	// the destination broker
 	//TODO: need to allocate this on the broker somehow
+	// ETK: or should we just refer to brokers by their ip:port string?
 	BrokerID UUID
 	// the query string which defines this forward request
 	Query string
@@ -143,7 +157,7 @@ type ForwardRequestMessage struct {
 // Sent from coordinator -> brokers to cancel the forwarding route created by a
 // ForwardRequest; used when clients cancel their subscription/disappear
 type CancelForwardRequest struct {
-	MessageID uint32
+	MessageIDStruct
 	// the query that has been cancelled
 	Query string
 	// TODO: not sure why this is here?
@@ -182,7 +196,7 @@ type BrokerAssignmentMessage struct {
 // offline, notifying other brokers they should stop attempting to forward to
 // that broker
 type BrokerDeathMessage struct {
-	MessageID uint32
+	MessageIDStruct
 	// addr of the failed broker "ip:port"
 	BrokerAddr string
 	// id of the failed broker
@@ -194,7 +208,7 @@ type BrokerDeathMessage struct {
 // connection with a specific client (i.e., when the broker is a
 // failover and the local broker comes back online)
 type ClientTerminationRequest struct {
-	MessageID uint32
+	MessageIDStruct
 	// "ip:port"
 	ClientAddr string
 }
@@ -212,7 +226,7 @@ type PublisherTerminationRequest struct {
 // Sent from coordinator -> broker every x seconds to ensure that the broker is still alive
 
 type HeartbeatMessage struct {
-	MessageID uint32
+	MessageIDStruct
 }
 
 /////////////////////////////////////////////////////
@@ -235,7 +249,7 @@ type BrokerPublishMessage struct {
 // Sent from broker -> coordinator when a client connection / subscription is
 // terminated
 type ClientTerminationMessage struct {
-	MessageID uint32
+	MessageIDStruct
 	// the client that has left
 	// "ip:port"
 	ClientAddr string
@@ -245,7 +259,7 @@ type ClientTerminationMessage struct {
 
 // Sent from broker -> coordinator when a publisher connection is terminated
 type PublisherTerminationMessage struct {
-	MessageID uint32
+	MessageIDStruct
 	// the publisher that has left
 	PublisherID UUID
 }
@@ -254,7 +268,7 @@ type PublisherTerminationMessage struct {
 
 // Sent from broker -> Coordinator whenever a broker comes online
 type BrokerConnectMessage struct {
-	MessageID uint32
+	MessageIDStruct
 	// where incoming requests from clients/publishers should be routed to
 	// "ip:port"
 	BrokerAddr string
@@ -266,7 +280,7 @@ type BrokerConnectMessage struct {
 type BrokerTerminateMessage struct {
 	MessageID  uint32
 	BrokerAddr string
-	BerokerID  UUID
+	BrokerID   UUID
 }
 
 /////////////////////////////////
@@ -277,5 +291,5 @@ type BrokerTerminateMessage struct {
 // message was received. The sender should keep track of unacknowledged
 // messages and remove them from some sort of buffer when an ack is received.
 type AcknowledgeMessage struct {
-	MessageID uint32
+	MessageIDStruct
 }

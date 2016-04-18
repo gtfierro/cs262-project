@@ -12,6 +12,11 @@ import (
 
 type UUID string
 
+type BrokerInfo struct {
+	BrokerID   UUID
+	BrokerAddr string // "ip:port" to be contacted at
+}
+
 func GetMessageType(msg Sendable) string {
 	if msg == nil {
 		return "nil"
@@ -174,8 +179,7 @@ type ForwardRequestMessage struct {
 	PublisherList []UUID
 	// the destination broker
 	//TODO: need to allocate this on the broker somehow
-	// ETK: or should we just refer to brokers by their ip:port string?
-	BrokerID UUID
+	BrokerInfo
 	// the query string which defines this forward request
 	Query string
 }
@@ -193,7 +197,7 @@ type CancelForwardRequest struct {
 	// the query that has been cancelled
 	Query string
 	// TODO: not sure why this is here?
-	BrokerID UUID
+	BrokerInfo
 }
 
 /***** BrokerSubscriptionDiff Message *****/
@@ -216,10 +220,8 @@ func (m *BrokerSubscriptionDiffMessage) FromProducerState(state map[UUID]Produce
 // Sent from coordinator -> clients/publishers to let them know which failover
 // broker they should contact
 type BrokerAssignmentMessage struct {
-	// the address of the failover broker: "ip:port"
-	BrokerAddr string
-	// id of the failover broker
-	BrokerID UUID
+	// the ID and address of the failover broker: "ip:port"
+	BrokerInfo
 }
 
 /***** BrokerDeathMessage *****/
@@ -229,10 +231,7 @@ type BrokerAssignmentMessage struct {
 // that broker
 type BrokerDeathMessage struct {
 	MessageIDStruct
-	// addr of the failed broker "ip:port"
-	BrokerAddr string
-	// id of the failed broker
-	BrokerID UUID
+	BrokerInfo
 }
 
 /***** ClientTerminationRequest *****/
@@ -304,9 +303,7 @@ type PublisherTerminationMessage struct {
 // Sent from broker -> Coordinator whenever a broker comes online
 type BrokerConnectMessage struct {
 	MessageIDStruct
-	// where incoming requests from clients/publishers should be routed to
-	// "ip:port"
-	BrokerAddr string
+	BrokerInfo // its own ID and where incoming requests should be routed to
 }
 
 /***** BrokerTerminateMessage *****/
@@ -314,8 +311,6 @@ type BrokerConnectMessage struct {
 // Sent from broker -> coordinator if it is going offline permanently
 type BrokerTerminateMessage struct {
 	MessageIDStruct
-	BrokerAddr string
-	BrokerID   UUID
 }
 
 /////////////////////////////////

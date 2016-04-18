@@ -1,6 +1,7 @@
 package main
 
 import (
+	"container/list"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/tinylib/msgp/msgp"
@@ -10,8 +11,8 @@ import (
 	"time"
 )
 
-type BrokerConnection struct {
-	broker                 *Broker
+type Broker struct {
+	common.BrokerInfo
 	outstandingMessages    map[common.MessageIDType]common.SendableWithID // messageID -> message
 	outMessageLock         sync.RWMutex
 	messageHandler         MessageHandler
@@ -22,14 +23,16 @@ type BrokerConnection struct {
 	aliveLock              sync.Mutex
 	aliveCond              *sync.Cond
 	heartbeatInterval      time.Duration
-	terminating            chan bool // send on this channel when broker is shutting down
+	terminating            chan bool // send on this channel when broker is shutting down permanently
 	clock                  common.Clock
+	deathChannel           chan *Broker
+	listElem               *list.Element
 }
 
-func NewBrokerConnection(broker *Broker, messageHandler MessageHandler, heartbeatInterval time.Duration,
-	clock common.Clock) *BrokerConnection {
-	bc := new(BrokerConnection)
-	bc.broker = broker
+func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
+	heartbeatInterval time.Duration, clock common.Clock, deathChannel chan *Broker) *Broker {
+	bc := new(Broker)
+	bc.BrokerInfo = *broker
 	bc.terminating = make(chan bool)
 	bc.messageSendBuffer = make(chan common.Sendable, 20) // TODO buffer size?
 	bc.requestHeartbeatBuffer = make(chan bool, 2)
@@ -41,13 +44,14 @@ func NewBrokerConnection(broker *Broker, messageHandler MessageHandler, heartbea
 	bc.messageHandler = messageHandler
 	bc.heartbeatInterval = heartbeatInterval
 	bc.clock = clock
+	bc.deathChannel = deathChannel
 	return bc
 }
 
 // Start up communication with this broker, asynchronously
-// Calling this on an existing BrokerConnection before calling WaitForCleanup
+// Calling this on an existing Broker before calling WaitForCleanup
 // will result in undefined behavior
-func (bc *BrokerConnection) StartAsynchronously(conn *net.TCPConn) {
+func (bc *Broker) StartAsynchronously(conn *net.TCPConn) {
 	bc.aliveLock.Lock()
 	bc.alive = true
 	bc.terminating = make(chan bool)
@@ -62,13 +66,13 @@ func (bc *BrokerConnection) StartAsynchronously(conn *net.TCPConn) {
 	go bc.cleanupWhenDone(conn, done, receiveFinishChannel, wg)
 }
 
-// Instruct this BrokerConnection to terminate itself
-func (bc *BrokerConnection) Terminate() {
+// Instruct this Broker to terminate itself
+func (bc *Broker) Terminate() {
 	close(bc.terminating)
 }
 
-// Wait until all of this BrokerConnection's threads and connections have been cleaned
-func (bc *BrokerConnection) WaitForCleanup() {
+// Wait until all of this Broker's threads and connections have been cleaned
+func (bc *Broker) WaitForCleanup() {
 	bc.aliveLock.Lock()
 	for bc.alive == true {
 		bc.aliveCond.Wait()
@@ -77,40 +81,51 @@ func (bc *BrokerConnection) WaitForCleanup() {
 }
 
 // Asynchonously a message to this Broker
-func (bc *BrokerConnection) Send(msg common.Sendable) {
+func (bc *Broker) Send(msg common.Sendable) {
 	bc.messageSendBuffer <- msg
 }
 
 // Request a heartbeat from this broker
-func (bc *BrokerConnection) RequestHeartbeat() {
+func (bc *Broker) RequestHeartbeat() {
 	bc.requestHeartbeatBuffer <- true
 }
 
+// Returns true iff currently alive
+func (bc *Broker) IsAlive() (alive bool) {
+	bc.aliveLock.Lock()
+	alive = bc.alive
+	bc.aliveLock.Unlock()
+	return
+}
+
 // Monitor heartbeats from the broker and determine death if necessary
-func (bc *BrokerConnection) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
+func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
 	lastHeartbeat := time.Now()
 	heartbeatRequested := false
 	hbRequest := common.RequestHeartbeatMessage{}
 	defer wg.Done()
 	for {
+		log.WithFields(log.Fields{
+			"broker": bc.BrokerID, "heartbeatInterval": bc.heartbeatInterval,
+		}).Debug("About to sleep while waiting for a heartbeat from broker")
 		select {
 		case <-bc.clock.After(bc.heartbeatInterval):
 			elapsed := bc.clock.Now().Sub(lastHeartbeat)
 			if elapsed >= 3*bc.heartbeatInterval { // determine that it's dead
 				log.WithFields(log.Fields{
-					"broker": *bc.broker, "heartbeatInterval": bc.heartbeatInterval, "secSinceResponse": elapsed.Seconds(),
+					"broker": bc.BrokerID, "heartbeatInterval": bc.heartbeatInterval, "secSinceResponse": elapsed.Seconds(),
 				}).Warn("Broker has not responded; determining death")
-				done <- true
+				close(done)
 			} else if elapsed >= 2*bc.heartbeatInterval && !heartbeatRequested {
 				log.WithFields(log.Fields{
-					"broker": *bc.broker, "heartbeatInterval": bc.heartbeatInterval, "secSinceResponse": elapsed.Seconds(),
+					"brokerID": bc.BrokerID, "heartbeatInterval": bc.heartbeatInterval, "secSinceResponse": elapsed.Seconds(),
 				}).Warn("Broker has not responded; sending HeartbeatRequest")
 				bc.messageSendBuffer <- &hbRequest
 			} else if elapsed >= 1*bc.heartbeatInterval && heartbeatRequested {
 				log.WithFields(log.Fields{
-					"broker": *bc.broker, "heartbeatInterval": bc.heartbeatInterval, "secSinceResponse": elapsed.Seconds(),
+					"brokerID": bc.BrokerID, "heartbeatInterval": bc.heartbeatInterval, "secSinceResponse": elapsed.Seconds(),
 				}).Warn("Broker has not responded after requesting a heartbeat; determining death")
-				done <- true
+				close(done)
 			}
 		case <-bc.requestHeartbeatBuffer:
 			heartbeatRequested = true
@@ -125,15 +140,18 @@ func (bc *BrokerConnection) monitorHeartbeats(done chan bool, wg *sync.WaitGroup
 }
 
 // Wait for a signal on done or bc.terminating, and then close conn
-func (bc *BrokerConnection) cleanupWhenDone(conn *net.TCPConn, done, rcvLoopDone chan bool, wg *sync.WaitGroup) {
+func (bc *Broker) cleanupWhenDone(conn *net.TCPConn, done, rcvLoopDone chan bool, wg *sync.WaitGroup) {
 	// Simply wait for a done or terminating signal
 	select {
 	case <-done:
 	case <-bc.terminating:
 	}
+	log.WithField("broker", bc.BrokerID).Debug("Broker cleanup; waiting on the workGroup")
 	wg.Wait()    // Wait for heartbeat monitoring and sendLoop
 	conn.Close() // Close connection to force receiveLoop to finish
+	log.WithField("broker", bc.BrokerID).Debug("Broker cleanup; waiting on the rcvLoop")
 	<-rcvLoopDone
+	bc.deathChannel <- bc
 	bc.aliveLock.Lock()
 	bc.alive = false
 	bc.aliveCond.Broadcast()
@@ -143,24 +161,24 @@ func (bc *BrokerConnection) cleanupWhenDone(conn *net.TCPConn, done, rcvLoopDone
 // Watch for incoming messages from the broker. Internally handles acknowledgments and heartbeats;
 // other messages are provided to bc.messageHandler.
 // Watches for messages until bc.alive is false or an EOF is reached
-func (bc *BrokerConnection) receiveLoop(conn *net.TCPConn, done chan bool, loopFinished chan bool) {
+func (bc *Broker) receiveLoop(conn *net.TCPConn, done chan bool, loopFinished chan bool) {
 	reader := msgp.NewReader(conn)
-	log.WithField("broker", *bc.broker).Info("Beginning to receive messages from broker")
+	log.WithField("brokerID", bc.BrokerID).Info("Beginning to receive messages from broker")
 	defer func() { loopFinished <- true }()
 	for {
 		msg, err := common.MessageFromDecoderMsgp(reader)
 		select {
 		case <-done:
-			log.WithField("broker", *bc.broker).Warn("No longer receiving messages from broker (death)")
+			log.WithField("brokerID", bc.BrokerID).Warn("No longer receiving messages from broker (death)")
 			return
 		case <-bc.terminating:
-			log.WithField("broker", *bc.broker).Info("No longer receiving messages from broker (termination)")
+			log.WithField("brokerID", bc.BrokerID).Info("No longer receiving messages from broker (termination)")
 			return
 		default: // fall through
 		}
 		if err == nil {
 			log.WithFields(log.Fields{
-				"broker": bc.broker, "message": msg, "messageType": common.GetMessageType(msg),
+				"brokerID": bc.BrokerID, "message": msg, "messageType": common.GetMessageType(msg),
 			}).Debug("Received message from broker")
 			switch m := msg.(type) {
 			case *common.AcknowledgeMessage:
@@ -168,26 +186,26 @@ func (bc *BrokerConnection) receiveLoop(conn *net.TCPConn, done chan bool, loopF
 			case *common.HeartbeatMessage:
 				bc.heartbeatBuffer <- true
 			default:
-				go bc.messageHandler(conn, msg)
+				go bc.messageHandler(msg)
 			}
 		} else {
 			if err == io.EOF {
 				close(done)
-				log.WithField("broker", *bc.broker).Warn("No longer receiving messages from broker; EOF reached")
+				log.WithField("brokerID", bc.BrokerID).Warn("No longer receiving messages from broker; EOF reached")
 				return // connection closed
 			}
 			log.WithFields(log.Fields{
-				"broker": *bc.broker, "error": err,
+				"brokerID": bc.BrokerID, "error": err,
 			}).Warn("Error while reading message from broker")
 			bc.clock.Sleep(time.Second) // wait before retry
 		}
 	}
 }
 
-func (bc *BrokerConnection) sendLoop(conn *net.TCPConn, done chan bool, wg *sync.WaitGroup) {
+func (bc *Broker) sendLoop(conn *net.TCPConn, done chan bool, wg *sync.WaitGroup) {
 	var err error
 	writer := msgp.NewWriter(conn)
-	log.WithField("broker", *bc.broker).Info("Beginning the send loop to broker")
+	log.WithField("brokerID", bc.BrokerID).Info("Beginning the send loop to broker")
 	defer wg.Done()
 	for {
 		select {
@@ -197,7 +215,7 @@ func (bc *BrokerConnection) sendLoop(conn *net.TCPConn, done chan bool, wg *sync
 				err = bc.sendEnsureDelivery(writer, m, done)
 			case common.Sendable:
 				log.WithFields(log.Fields{
-					"broker": bc.broker, "message": m, "messageType": common.GetMessageType(m),
+					"brokerID": bc.BrokerID, "message": m, "messageType": common.GetMessageType(m),
 				}).Debug("Sending message to broker...")
 				err = bc.sendInternal(writer, m)
 			}
@@ -205,28 +223,28 @@ func (bc *BrokerConnection) sendLoop(conn *net.TCPConn, done chan bool, wg *sync
 				if err == io.EOF {
 					bc.messageSendBuffer <- msg
 					close(done)
-					log.WithField("broker", bc.broker).Warn("No longer sending to broker; EOF reached")
+					log.WithField("brokerID", bc.BrokerID).Warn("No longer sending to broker; EOF reached")
 				} else {
 					bc.messageSendBuffer <- msg
 					log.WithFields(log.Fields{
-						"broker": bc.broker, "error": err, "message": msg, "messageType": common.GetMessageType(msg),
+						"brokerID": bc.BrokerID, "error": err, "message": msg, "messageType": common.GetMessageType(msg),
 					}).Error("Error sending message to broker")
 				}
 			}
 		case <-done:
-			log.WithField("broker", *bc.broker).Warn("Exiting the send loop to broker (death)")
+			log.WithField("brokerID", bc.BrokerID).Warn("Exiting the send loop to broker (death)")
 			return
 		case <-bc.terminating:
-			log.WithField("broker", *bc.broker).Info("Exiting the send loop to broker (termination)")
+			log.WithField("brokerID", bc.BrokerID).Info("Exiting the send loop to broker (termination)")
 			return
 		}
 	}
 }
 
-func (bc *BrokerConnection) sendEnsureDelivery(writer *msgp.Writer, message common.SendableWithID,
+func (bc *Broker) sendEnsureDelivery(writer *msgp.Writer, message common.SendableWithID,
 	done chan bool) (err error) {
 	log.WithFields(log.Fields{
-		"broker": bc.broker, "message": message, "messageType": common.GetMessageType(message),
+		"brokerID": bc.BrokerID, "message": message, "messageType": common.GetMessageType(message),
 	}).Debug("Sending message to broker with ensured delivery...")
 	err = bc.sendInternal(writer, message)
 	if err != nil {
@@ -247,7 +265,7 @@ func (bc *BrokerConnection) sendEnsureDelivery(writer *msgp.Writer, message comm
 		bc.outMessageLock.RUnlock()
 		if ok {
 			log.WithFields(log.Fields{
-				"broker": bc.broker, "message": msg, "messageType": common.GetMessageType(msg),
+				"brokerID": bc.BrokerID, "message": msg, "messageType": common.GetMessageType(msg),
 			}).Info("Send with ensured delivery has not been acked; placing back onto send buf")
 			bc.messageSendBuffer <- msg // put back onto the queue to be sent again
 		}
@@ -255,7 +273,7 @@ func (bc *BrokerConnection) sendEnsureDelivery(writer *msgp.Writer, message comm
 	return
 }
 
-func (bc *BrokerConnection) sendInternal(writer *msgp.Writer, message common.Sendable) (err error) {
+func (bc *Broker) sendInternal(writer *msgp.Writer, message common.Sendable) (err error) {
 	err = message.Encode(writer)
 	writer.Flush()
 	return
@@ -263,9 +281,9 @@ func (bc *BrokerConnection) sendInternal(writer *msgp.Writer, message common.Sen
 
 // Handles an acknowledgment by removing the MessageID from the outstanding
 // messages map
-func (bc *BrokerConnection) handleAck(ack *common.AcknowledgeMessage) {
+func (bc *Broker) handleAck(ack *common.AcknowledgeMessage) {
 	log.WithFields(log.Fields{
-		"broker": bc.broker, "ackMessage": ack,
+		"brokerID": bc.BrokerID, "ackMessage": ack,
 	}).Debug("Received ack from broker for message")
 	bc.outMessageLock.Lock()
 	defer bc.outMessageLock.Unlock()

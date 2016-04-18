@@ -125,19 +125,39 @@ func (z *BrokerAssignmentMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "BrokerAddr":
-			z.BrokerAddr, err = dc.ReadString()
+		case "BrokerInfo":
+			var isz uint32
+			isz, err = dc.ReadMapHeader()
 			if err != nil {
 				return
 			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, err = dc.ReadString()
-				z.BrokerID = UUID(tmp)
-			}
-			if err != nil {
-				return
+			for isz > 0 {
+				isz--
+				field, err = dc.ReadMapKeyPtr()
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, err = dc.ReadString()
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, err = dc.ReadString()
+					if err != nil {
+						return
+					}
+				default:
+					err = dc.Skip()
+					if err != nil {
+						return
+					}
+				}
 			}
 		default:
 			err = dc.Skip()
@@ -150,23 +170,25 @@ func (z *BrokerAssignmentMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z BrokerAssignmentMessage) EncodeMsg(en *msgp.Writer) (err error) {
+func (z *BrokerAssignmentMessage) EncodeMsg(en *msgp.Writer) (err error) {
+	// map header, size 1
+	// write "BrokerInfo"
 	// map header, size 2
-	// write "BrokerAddr"
-	err = en.Append(0x82, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
+	// write "BrokerID"
+	err = en.Append(0x81, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
 	if err != nil {
 		return err
 	}
-	err = en.WriteString(z.BrokerAddr)
+	err = en.WriteString(string(z.BrokerInfo.BrokerID))
 	if err != nil {
 		return
 	}
-	// write "BrokerID"
-	err = en.Append(0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	// write "BrokerAddr"
+	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
 	if err != nil {
 		return err
 	}
-	err = en.WriteString(string(z.BrokerID))
+	err = en.WriteString(z.BrokerInfo.BrokerAddr)
 	if err != nil {
 		return
 	}
@@ -174,15 +196,17 @@ func (z BrokerAssignmentMessage) EncodeMsg(en *msgp.Writer) (err error) {
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z BrokerAssignmentMessage) MarshalMsg(b []byte) (o []byte, err error) {
+func (z *BrokerAssignmentMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
+	// map header, size 1
+	// string "BrokerInfo"
 	// map header, size 2
-	// string "BrokerAddr"
-	o = append(o, 0x82, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
-	o = msgp.AppendString(o, z.BrokerAddr)
 	// string "BrokerID"
-	o = append(o, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
-	o = msgp.AppendString(o, string(z.BrokerID))
+	o = append(o, 0x81, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	o = msgp.AppendString(o, string(z.BrokerInfo.BrokerID))
+	// string "BrokerAddr"
+	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
+	o = msgp.AppendString(o, z.BrokerInfo.BrokerAddr)
 	return
 }
 
@@ -202,19 +226,39 @@ func (z *BrokerAssignmentMessage) UnmarshalMsg(bts []byte) (o []byte, err error)
 			return
 		}
 		switch msgp.UnsafeString(field) {
-		case "BrokerAddr":
-			z.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
+		case "BrokerInfo":
+			var isz uint32
+			isz, bts, err = msgp.ReadMapHeaderBytes(bts)
 			if err != nil {
 				return
 			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, bts, err = msgp.ReadStringBytes(bts)
-				z.BrokerID = UUID(tmp)
-			}
-			if err != nil {
-				return
+			for isz > 0 {
+				isz--
+				field, bts, err = msgp.ReadMapKeyZC(bts)
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, bts, err = msgp.ReadStringBytes(bts)
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
+					if err != nil {
+						return
+					}
+				default:
+					bts, err = msgp.Skip(bts)
+					if err != nil {
+						return
+					}
+				}
 			}
 		default:
 			bts, err = msgp.Skip(bts)
@@ -227,8 +271,8 @@ func (z *BrokerAssignmentMessage) UnmarshalMsg(bts []byte) (o []byte, err error)
 	return
 }
 
-func (z BrokerAssignmentMessage) Msgsize() (s int) {
-	s = 1 + 11 + msgp.StringPrefixSize + len(z.BrokerAddr) + 9 + msgp.StringPrefixSize + len(string(z.BrokerID))
+func (z *BrokerAssignmentMessage) Msgsize() (s int) {
+	s = 1 + 11 + 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerInfo.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerInfo.BrokerAddr)
 	return
 }
 
@@ -277,10 +321,39 @@ func (z *BrokerConnectMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 					}
 				}
 			}
-		case "BrokerAddr":
-			z.BrokerAddr, err = dc.ReadString()
+		case "BrokerInfo":
+			var isz uint32
+			isz, err = dc.ReadMapHeader()
 			if err != nil {
 				return
+			}
+			for isz > 0 {
+				isz--
+				field, err = dc.ReadMapKeyPtr()
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, err = dc.ReadString()
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, err = dc.ReadString()
+					if err != nil {
+						return
+					}
+				default:
+					err = dc.Skip()
+					if err != nil {
+						return
+					}
+				}
 			}
 		default:
 			err = dc.Skip()
@@ -306,12 +379,23 @@ func (z *BrokerConnectMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
+	// write "BrokerInfo"
+	// map header, size 2
+	// write "BrokerID"
+	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	if err != nil {
+		return err
+	}
+	err = en.WriteString(string(z.BrokerInfo.BrokerID))
+	if err != nil {
+		return
+	}
 	// write "BrokerAddr"
 	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
 	if err != nil {
 		return err
 	}
-	err = en.WriteString(z.BrokerAddr)
+	err = en.WriteString(z.BrokerInfo.BrokerAddr)
 	if err != nil {
 		return
 	}
@@ -327,9 +411,14 @@ func (z *BrokerConnectMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "MessageID"
 	o = append(o, 0x82, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
+	// string "BrokerInfo"
+	// map header, size 2
+	// string "BrokerID"
+	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	o = msgp.AppendString(o, string(z.BrokerInfo.BrokerID))
 	// string "BrokerAddr"
 	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
-	o = msgp.AppendString(o, z.BrokerAddr)
+	o = msgp.AppendString(o, z.BrokerInfo.BrokerAddr)
 	return
 }
 
@@ -378,10 +467,39 @@ func (z *BrokerConnectMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					}
 				}
 			}
-		case "BrokerAddr":
-			z.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
+		case "BrokerInfo":
+			var isz uint32
+			isz, bts, err = msgp.ReadMapHeaderBytes(bts)
 			if err != nil {
 				return
+			}
+			for isz > 0 {
+				isz--
+				field, bts, err = msgp.ReadMapKeyZC(bts)
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, bts, err = msgp.ReadStringBytes(bts)
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
+					if err != nil {
+						return
+					}
+				default:
+					bts, err = msgp.Skip(bts)
+					if err != nil {
+						return
+					}
+				}
 			}
 		default:
 			bts, err = msgp.Skip(bts)
@@ -395,7 +513,7 @@ func (z *BrokerConnectMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 func (z *BrokerConnectMessage) Msgsize() (s int) {
-	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 11 + msgp.StringPrefixSize + len(z.BrokerAddr)
+	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 11 + 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerInfo.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerInfo.BrokerAddr)
 	return
 }
 
@@ -444,19 +562,39 @@ func (z *BrokerDeathMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 					}
 				}
 			}
-		case "BrokerAddr":
-			z.BrokerAddr, err = dc.ReadString()
+		case "BrokerInfo":
+			var isz uint32
+			isz, err = dc.ReadMapHeader()
 			if err != nil {
 				return
 			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, err = dc.ReadString()
-				z.BrokerID = UUID(tmp)
-			}
-			if err != nil {
-				return
+			for isz > 0 {
+				isz--
+				field, err = dc.ReadMapKeyPtr()
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, err = dc.ReadString()
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, err = dc.ReadString()
+					if err != nil {
+						return
+					}
+				default:
+					err = dc.Skip()
+					if err != nil {
+						return
+					}
+				}
 			}
 		default:
 			err = dc.Skip()
@@ -470,15 +608,26 @@ func (z *BrokerDeathMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *BrokerDeathMessage) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 3
+	// map header, size 2
 	// write "MessageIDStruct"
 	// map header, size 1
 	// write "MessageID"
-	err = en.Append(0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	err = en.Append(0x82, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	if err != nil {
 		return err
 	}
 	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
+	if err != nil {
+		return
+	}
+	// write "BrokerInfo"
+	// map header, size 2
+	// write "BrokerID"
+	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	if err != nil {
+		return err
+	}
+	err = en.WriteString(string(z.BrokerInfo.BrokerID))
 	if err != nil {
 		return
 	}
@@ -487,16 +636,7 @@ func (z *BrokerDeathMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return err
 	}
-	err = en.WriteString(z.BrokerAddr)
-	if err != nil {
-		return
-	}
-	// write "BrokerID"
-	err = en.Append(0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
-	if err != nil {
-		return err
-	}
-	err = en.WriteString(string(z.BrokerID))
+	err = en.WriteString(z.BrokerInfo.BrokerAddr)
 	if err != nil {
 		return
 	}
@@ -506,18 +646,20 @@ func (z *BrokerDeathMessage) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *BrokerDeathMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 3
+	// map header, size 2
 	// string "MessageIDStruct"
 	// map header, size 1
 	// string "MessageID"
-	o = append(o, 0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	o = append(o, 0x82, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
+	// string "BrokerInfo"
+	// map header, size 2
+	// string "BrokerID"
+	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	o = msgp.AppendString(o, string(z.BrokerInfo.BrokerID))
 	// string "BrokerAddr"
 	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
-	o = msgp.AppendString(o, z.BrokerAddr)
-	// string "BrokerID"
-	o = append(o, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
-	o = msgp.AppendString(o, string(z.BrokerID))
+	o = msgp.AppendString(o, z.BrokerInfo.BrokerAddr)
 	return
 }
 
@@ -566,17 +708,160 @@ func (z *BrokerDeathMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					}
 				}
 			}
-		case "BrokerAddr":
-			z.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
+		case "BrokerInfo":
+			var isz uint32
+			isz, bts, err = msgp.ReadMapHeaderBytes(bts)
 			if err != nil {
 				return
 			}
+			for isz > 0 {
+				isz--
+				field, bts, err = msgp.ReadMapKeyZC(bts)
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, bts, err = msgp.ReadStringBytes(bts)
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
+					if err != nil {
+						return
+					}
+				default:
+					bts, err = msgp.Skip(bts)
+					if err != nil {
+						return
+					}
+				}
+			}
+		default:
+			bts, err = msgp.Skip(bts)
+			if err != nil {
+				return
+			}
+		}
+	}
+	o = bts
+	return
+}
+
+func (z *BrokerDeathMessage) Msgsize() (s int) {
+	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 11 + 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerInfo.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerInfo.BrokerAddr)
+	return
+}
+
+// DecodeMsg implements msgp.Decodable
+func (z *BrokerInfo) DecodeMsg(dc *msgp.Reader) (err error) {
+	var field []byte
+	_ = field
+	var isz uint32
+	isz, err = dc.ReadMapHeader()
+	if err != nil {
+		return
+	}
+	for isz > 0 {
+		isz--
+		field, err = dc.ReadMapKeyPtr()
+		if err != nil {
+			return
+		}
+		switch msgp.UnsafeString(field) {
+		case "BrokerID":
+			{
+				var tmp string
+				tmp, err = dc.ReadString()
+				z.BrokerID = UUID(tmp)
+			}
+			if err != nil {
+				return
+			}
+		case "BrokerAddr":
+			z.BrokerAddr, err = dc.ReadString()
+			if err != nil {
+				return
+			}
+		default:
+			err = dc.Skip()
+			if err != nil {
+				return
+			}
+		}
+	}
+	return
+}
+
+// EncodeMsg implements msgp.Encodable
+func (z BrokerInfo) EncodeMsg(en *msgp.Writer) (err error) {
+	// map header, size 2
+	// write "BrokerID"
+	err = en.Append(0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	if err != nil {
+		return err
+	}
+	err = en.WriteString(string(z.BrokerID))
+	if err != nil {
+		return
+	}
+	// write "BrokerAddr"
+	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
+	if err != nil {
+		return err
+	}
+	err = en.WriteString(z.BrokerAddr)
+	if err != nil {
+		return
+	}
+	return
+}
+
+// MarshalMsg implements msgp.Marshaler
+func (z BrokerInfo) MarshalMsg(b []byte) (o []byte, err error) {
+	o = msgp.Require(b, z.Msgsize())
+	// map header, size 2
+	// string "BrokerID"
+	o = append(o, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	o = msgp.AppendString(o, string(z.BrokerID))
+	// string "BrokerAddr"
+	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
+	o = msgp.AppendString(o, z.BrokerAddr)
+	return
+}
+
+// UnmarshalMsg implements msgp.Unmarshaler
+func (z *BrokerInfo) UnmarshalMsg(bts []byte) (o []byte, err error) {
+	var field []byte
+	_ = field
+	var isz uint32
+	isz, bts, err = msgp.ReadMapHeaderBytes(bts)
+	if err != nil {
+		return
+	}
+	for isz > 0 {
+		isz--
+		field, bts, err = msgp.ReadMapKeyZC(bts)
+		if err != nil {
+			return
+		}
+		switch msgp.UnsafeString(field) {
 		case "BrokerID":
 			{
 				var tmp string
 				tmp, bts, err = msgp.ReadStringBytes(bts)
 				z.BrokerID = UUID(tmp)
 			}
+			if err != nil {
+				return
+			}
+		case "BrokerAddr":
+			z.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
 				return
 			}
@@ -591,8 +876,8 @@ func (z *BrokerDeathMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 	return
 }
 
-func (z *BrokerDeathMessage) Msgsize() (s int) {
-	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 11 + msgp.StringPrefixSize + len(z.BrokerAddr) + 9 + msgp.StringPrefixSize + len(string(z.BrokerID))
+func (z BrokerInfo) Msgsize() (s int) {
+	s = 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerAddr)
 	return
 }
 
@@ -1098,20 +1383,6 @@ func (z *BrokerTerminateMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 					}
 				}
 			}
-		case "BrokerAddr":
-			z.BrokerAddr, err = dc.ReadString()
-			if err != nil {
-				return
-			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, err = dc.ReadString()
-				z.BrokerID = UUID(tmp)
-			}
-			if err != nil {
-				return
-			}
 		default:
 			err = dc.Skip()
 			if err != nil {
@@ -1124,33 +1395,15 @@ func (z *BrokerTerminateMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *BrokerTerminateMessage) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 3
+	// map header, size 1
 	// write "MessageIDStruct"
 	// map header, size 1
 	// write "MessageID"
-	err = en.Append(0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	err = en.Append(0x81, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	if err != nil {
 		return err
 	}
 	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
-	if err != nil {
-		return
-	}
-	// write "BrokerAddr"
-	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
-	if err != nil {
-		return err
-	}
-	err = en.WriteString(z.BrokerAddr)
-	if err != nil {
-		return
-	}
-	// write "BrokerID"
-	err = en.Append(0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
-	if err != nil {
-		return err
-	}
-	err = en.WriteString(string(z.BrokerID))
 	if err != nil {
 		return
 	}
@@ -1160,18 +1413,12 @@ func (z *BrokerTerminateMessage) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *BrokerTerminateMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 3
+	// map header, size 1
 	// string "MessageIDStruct"
 	// map header, size 1
 	// string "MessageID"
-	o = append(o, 0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	o = append(o, 0x81, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
-	// string "BrokerAddr"
-	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
-	o = msgp.AppendString(o, z.BrokerAddr)
-	// string "BrokerID"
-	o = append(o, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
-	o = msgp.AppendString(o, string(z.BrokerID))
 	return
 }
 
@@ -1220,20 +1467,6 @@ func (z *BrokerTerminateMessage) UnmarshalMsg(bts []byte) (o []byte, err error) 
 					}
 				}
 			}
-		case "BrokerAddr":
-			z.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
-			if err != nil {
-				return
-			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, bts, err = msgp.ReadStringBytes(bts)
-				z.BrokerID = UUID(tmp)
-			}
-			if err != nil {
-				return
-			}
 		default:
 			bts, err = msgp.Skip(bts)
 			if err != nil {
@@ -1246,7 +1479,7 @@ func (z *BrokerTerminateMessage) UnmarshalMsg(bts []byte) (o []byte, err error) 
 }
 
 func (z *BrokerTerminateMessage) Msgsize() (s int) {
-	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 11 + msgp.StringPrefixSize + len(z.BrokerAddr) + 9 + msgp.StringPrefixSize + len(string(z.BrokerID))
+	s = 1 + 16 + 1 + 10 + msgp.Uint32Size
 	return
 }
 
@@ -1300,14 +1533,39 @@ func (z *CancelForwardRequest) DecodeMsg(dc *msgp.Reader) (err error) {
 			if err != nil {
 				return
 			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, err = dc.ReadString()
-				z.BrokerID = UUID(tmp)
-			}
+		case "BrokerInfo":
+			var isz uint32
+			isz, err = dc.ReadMapHeader()
 			if err != nil {
 				return
+			}
+			for isz > 0 {
+				isz--
+				field, err = dc.ReadMapKeyPtr()
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, err = dc.ReadString()
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, err = dc.ReadString()
+					if err != nil {
+						return
+					}
+				default:
+					err = dc.Skip()
+					if err != nil {
+						return
+					}
+				}
 			}
 		default:
 			err = dc.Skip()
@@ -1342,12 +1600,23 @@ func (z *CancelForwardRequest) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
+	// write "BrokerInfo"
+	// map header, size 2
 	// write "BrokerID"
-	err = en.Append(0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
 	if err != nil {
 		return err
 	}
-	err = en.WriteString(string(z.BrokerID))
+	err = en.WriteString(string(z.BrokerInfo.BrokerID))
+	if err != nil {
+		return
+	}
+	// write "BrokerAddr"
+	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
+	if err != nil {
+		return err
+	}
+	err = en.WriteString(z.BrokerInfo.BrokerAddr)
 	if err != nil {
 		return
 	}
@@ -1366,9 +1635,14 @@ func (z *CancelForwardRequest) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "Query"
 	o = append(o, 0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
 	o = msgp.AppendString(o, z.Query)
+	// string "BrokerInfo"
+	// map header, size 2
 	// string "BrokerID"
-	o = append(o, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
-	o = msgp.AppendString(o, string(z.BrokerID))
+	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	o = msgp.AppendString(o, string(z.BrokerInfo.BrokerID))
+	// string "BrokerAddr"
+	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
+	o = msgp.AppendString(o, z.BrokerInfo.BrokerAddr)
 	return
 }
 
@@ -1422,14 +1696,39 @@ func (z *CancelForwardRequest) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			if err != nil {
 				return
 			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, bts, err = msgp.ReadStringBytes(bts)
-				z.BrokerID = UUID(tmp)
-			}
+		case "BrokerInfo":
+			var isz uint32
+			isz, bts, err = msgp.ReadMapHeaderBytes(bts)
 			if err != nil {
 				return
+			}
+			for isz > 0 {
+				isz--
+				field, bts, err = msgp.ReadMapKeyZC(bts)
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, bts, err = msgp.ReadStringBytes(bts)
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
+					if err != nil {
+						return
+					}
+				default:
+					bts, err = msgp.Skip(bts)
+					if err != nil {
+						return
+					}
+				}
 			}
 		default:
 			bts, err = msgp.Skip(bts)
@@ -1443,7 +1742,7 @@ func (z *CancelForwardRequest) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 func (z *CancelForwardRequest) Msgsize() (s int) {
-	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 6 + msgp.StringPrefixSize + len(z.Query) + 9 + msgp.StringPrefixSize + len(string(z.BrokerID))
+	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 6 + msgp.StringPrefixSize + len(z.Query) + 11 + 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerInfo.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerInfo.BrokerAddr)
 	return
 }
 
@@ -1847,14 +2146,39 @@ func (z *ForwardRequestMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 					return
 				}
 			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, err = dc.ReadString()
-				z.BrokerID = UUID(tmp)
-			}
+		case "BrokerInfo":
+			var isz uint32
+			isz, err = dc.ReadMapHeader()
 			if err != nil {
 				return
+			}
+			for isz > 0 {
+				isz--
+				field, err = dc.ReadMapKeyPtr()
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, err = dc.ReadString()
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, err = dc.ReadString()
+					if err != nil {
+						return
+					}
+				default:
+					err = dc.Skip()
+					if err != nil {
+						return
+					}
+				}
 			}
 		case "Query":
 			z.Query, err = dc.ReadString()
@@ -1900,12 +2224,23 @@ func (z *ForwardRequestMessage) EncodeMsg(en *msgp.Writer) (err error) {
 			return
 		}
 	}
+	// write "BrokerInfo"
+	// map header, size 2
 	// write "BrokerID"
-	err = en.Append(0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
 	if err != nil {
 		return err
 	}
-	err = en.WriteString(string(z.BrokerID))
+	err = en.WriteString(string(z.BrokerInfo.BrokerID))
+	if err != nil {
+		return
+	}
+	// write "BrokerAddr"
+	err = en.Append(0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
+	if err != nil {
+		return err
+	}
+	err = en.WriteString(z.BrokerInfo.BrokerAddr)
 	if err != nil {
 		return
 	}
@@ -1936,9 +2271,14 @@ func (z *ForwardRequestMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	for dnj := range z.PublisherList {
 		o = msgp.AppendString(o, string(z.PublisherList[dnj]))
 	}
+	// string "BrokerInfo"
+	// map header, size 2
 	// string "BrokerID"
-	o = append(o, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
-	o = msgp.AppendString(o, string(z.BrokerID))
+	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x6e, 0x66, 0x6f, 0x82, 0xa8, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x49, 0x44)
+	o = msgp.AppendString(o, string(z.BrokerInfo.BrokerID))
+	// string "BrokerAddr"
+	o = append(o, 0xaa, 0x42, 0x72, 0x6f, 0x6b, 0x65, 0x72, 0x41, 0x64, 0x64, 0x72)
+	o = msgp.AppendString(o, z.BrokerInfo.BrokerAddr)
 	// string "Query"
 	o = append(o, 0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
 	o = msgp.AppendString(o, z.Query)
@@ -2011,14 +2351,39 @@ func (z *ForwardRequestMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					return
 				}
 			}
-		case "BrokerID":
-			{
-				var tmp string
-				tmp, bts, err = msgp.ReadStringBytes(bts)
-				z.BrokerID = UUID(tmp)
-			}
+		case "BrokerInfo":
+			var isz uint32
+			isz, bts, err = msgp.ReadMapHeaderBytes(bts)
 			if err != nil {
 				return
+			}
+			for isz > 0 {
+				isz--
+				field, bts, err = msgp.ReadMapKeyZC(bts)
+				if err != nil {
+					return
+				}
+				switch msgp.UnsafeString(field) {
+				case "BrokerID":
+					{
+						var tmp string
+						tmp, bts, err = msgp.ReadStringBytes(bts)
+						z.BrokerInfo.BrokerID = UUID(tmp)
+					}
+					if err != nil {
+						return
+					}
+				case "BrokerAddr":
+					z.BrokerInfo.BrokerAddr, bts, err = msgp.ReadStringBytes(bts)
+					if err != nil {
+						return
+					}
+				default:
+					bts, err = msgp.Skip(bts)
+					if err != nil {
+						return
+					}
+				}
 			}
 		case "Query":
 			z.Query, bts, err = msgp.ReadStringBytes(bts)
@@ -2041,7 +2406,7 @@ func (z *ForwardRequestMessage) Msgsize() (s int) {
 	for dnj := range z.PublisherList {
 		s += msgp.StringPrefixSize + len(string(z.PublisherList[dnj]))
 	}
-	s += 9 + msgp.StringPrefixSize + len(string(z.BrokerID)) + 6 + msgp.StringPrefixSize + len(z.Query)
+	s += 11 + 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerInfo.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerInfo.BrokerAddr) + 6 + msgp.StringPrefixSize + len(z.Query)
 	return
 }
 

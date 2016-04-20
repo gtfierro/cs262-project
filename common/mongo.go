@@ -80,6 +80,10 @@ func (ms *MetadataStore) Save(msg *PublishMessage) error {
 	return err
 }
 
+func (ms *MetadataStore) RemovePublisher(uuid UUID) error {
+	return ms.metadata.Remove(bson.M{"uuid": uuid})
+}
+
 func (ms *MetadataStore) Query(node rootNode) (*Query, error) {
 	query := node.Tree.MongoQuery()
 	log.WithFields(log.Fields{

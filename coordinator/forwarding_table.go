@@ -21,6 +21,10 @@ type ForwardingTable struct {
 	pubQueryLock sync.RWMutex
 	pubQueryMap  map[common.UUID]*queryList
 
+	// map of queries to publisher ids
+	queryPubLock sync.RWMutex
+	queryPubMap  map[*ForwardedQuery]map[*common.UUID]struct{}
+
 	// index of publishers
 	publisherLock sync.RWMutex
 	publisherMap  map[common.UUID]*Publisher
@@ -37,6 +41,7 @@ type ForwardingTable struct {
 }
 
 type Publisher struct {
+	PublisherID     *common.UUID
 	CurrentBrokerID *common.UUID
 }
 
@@ -74,68 +79,13 @@ func (fq *ForwardedQuery) addClient(client *Client, brokerID *common.UUID) (exis
 	}
 }
 
-type queryList struct {
-	sync.RWMutex
-	queries       []*ForwardedQuery
-	nonnilInArray int
-}
-
-func (ql *queryList) containsQuery(q *ForwardedQuery) bool {
-	ql.RLock()
-	defer ql.RUnlock()
-	for _, q2 := range ql.queries {
-		if q2 == nil {
-			return false // All nil entries come after all valid ones
-		} else if q == q2 {
-			return true
-		}
-	}
-	return false
-}
-
-func (ql *queryList) addQuery(q *ForwardedQuery) {
-	ql.Lock()
-	defer ql.Unlock()
-	if ql.nonnilInArray < len(ql.queries) {
-		ql.queries[ql.nonnilInArray] = q
-		ql.nonnilInArray += 1
-	} else {
-		ql.queries = append(ql.queries, q)
-	}
-}
-
-func (ql *queryList) removeQuery(q *ForwardedQuery) {
-	ql.Lock()
-	defer ql.Unlock()
-	if ql.nonnilInArray == 1 {
-		// last remaining query
-		if ql.queries[0] == q {
-			ql.queries[0] = nil
-			return
-		}
-	} else {
-		// TODO should also probably resize down here if size falls below some point
-		for qIdx, current := range ql.queries {
-			if current == q {
-				ql.nonnilInArray -= 1
-				if qIdx != ql.nonnilInArray {
-					ql.queries[qIdx] = ql.queries[ql.nonnilInArray]
-				}
-				ql.queries[ql.nonnilInArray] = nil
-			}
-		}
-	}
-	log.WithFields(log.Fields{
-		"query": q, "queryList": ql,
-	}).Fatal("Attempted to remove query from queryList that doesn't contain it")
-}
-
 //TODO: config for broker?
 func NewForwardingTable(metadata *common.MetadataStore, brokerManager BrokerManager) *ForwardingTable {
 	return &ForwardingTable{
 		metadata:      metadata,
 		clientMap:     make(map[string]*Client),
 		pubQueryMap:   make(map[common.UUID]*queryList),
+		queryPubMap:   make(map[*ForwardedQuery]map[*common.UUID]struct{}),
 		publisherMap:  make(map[common.UUID]*Publisher),
 		queryMap:      make(map[string]*ForwardedQuery),
 		keyMap:        make(map[string]*queryList),
@@ -206,7 +156,7 @@ func (ft *ForwardingTable) HandlePublish(msg *common.PublishMessage, brokerID co
 	ft.publisherLock.Lock()
 	publisher, found := ft.publisherMap[msg.UUID]
 	if !found {
-		publisher = &Publisher{CurrentBrokerID: &brokerID}
+		publisher = &Publisher{PublisherID: &msg.UUID, CurrentBrokerID: &brokerID}
 		ft.publisherMap[msg.UUID] = publisher
 	}
 	ft.publisherLock.Unlock()
@@ -215,17 +165,120 @@ func (ft *ForwardingTable) HandlePublish(msg *common.PublishMessage, brokerID co
 	ft.reevaluateQueries(candidateQueries)
 }
 
-// TODO
 func (ft *ForwardingTable) HandleSubscriberDeath(clientAddr string, brokerID common.UUID) {
 	// find out which queries the client was involved in
 	// for each, if this client was the only one from brokerID, remove any forward mappings to that query
 	// if this client was the only one from any broker, remove the query from our mappings
+	var (
+		client        *Client
+		clientList    *list.List
+		oldPublishers map[*common.UUID]struct{}
+		found         bool
+	)
+	ft.clientLock.Lock()
+	if client, found = ft.clientMap[clientAddr]; !found {
+		log.WithFields(log.Fields{
+			"clientAddr": clientAddr, "brokerID": brokerID,
+		}).Warn("Attempted to handle death of a subscriber that did not exist")
+		return
+	}
+	delete(ft.clientMap, clientAddr)
+	ft.clientLock.Unlock()
+
+	fq := client.query
+	fq.Lock()
+	if clientList, found = fq.CurrentBrokerIDs[brokerID]; !found {
+		log.WithFields(log.Fields{
+			"query": fq.QueryString, "brokerID": brokerID, "clientAddr": clientAddr,
+		}).Warn("Broker attempted to terminate client but not found under that broker")
+		return
+	}
+	clientList.Remove(client.subscriberListElem)
+	remainingClientsFromBroker := clientList.Len()
+	if remainingClientsFromBroker == 0 {
+		delete(fq.CurrentBrokerIDs, brokerID)
+	}
+	remainingBrokers := len(fq.CurrentBrokerIDs)
+	fq.Unlock()
+	if remainingClientsFromBroker > 0 {
+		return
+	}
+
+	ft.queryPubLock.Lock()
+	if oldPublishers, found = ft.queryPubMap[fq]; !found {
+		log.WithField("query", fq.QueryString).Info("No existing publishers found for query while removing it")
+		ft.queryPubLock.Unlock()
+		return // nothing to be done
+	}
+	if remainingBrokers == 0 {
+		delete(ft.queryPubMap, fq)
+	}
+
+	cancelForwardRoutes := make(map[common.UUID]map[common.UUID][]common.UUID)
+	ft.publisherLock.RLock()
+	if remainingBrokers == 0 {
+		ft.pubQueryLock.Lock()
+		for publisherID, _ := range oldPublishers {
+			if queries, found := ft.pubQueryMap[*publisherID]; found {
+				queries.removeQuery(fq)
+			}
+		}
+		ft.pubQueryLock.Unlock()
+	}
+	// Determine which forwarding routes must be cancelled
+	for publisherID, _ := range oldPublishers {
+		publisherBrokerID := ft.publisherMap[*publisherID].CurrentBrokerID
+		addPublishRouteToMap(cancelForwardRoutes, publisherBrokerID, &brokerID, publisherID)
+	}
+	ft.publisherLock.RUnlock()
+	ft.queryPubLock.Unlock()
+
+	if len(cancelForwardRoutes) > 0 {
+		ft.sendForwardingChanges(cancelForwardRoutes, fq.QueryString, true)
+	}
 }
 
-// TODO
 func (ft *ForwardingTable) HandlePublisherDeath(publisherID common.UUID, brokerID common.UUID) {
-	// simply remove publisher from local mappings
+	// simply remove publisher from local mappings and save its metadata as blank
 	// send BrokerSubscriptionDiffMessage to any currently mapped
+	err := ft.metadata.RemovePublisher(publisherID)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "publisherID": publisherID,
+		}).Error("Error while removing publisher from metadata store")
+	}
+
+	ft.publisherLock.Lock()
+	if _, found := ft.publisherMap[publisherID]; !found {
+		log.WithFields(log.Fields{
+			"brokerID": brokerID, "publisherID": publisherID,
+		}).Warn("Attempted to terminate a non-existent publisher")
+	}
+	delete(ft.publisherMap, publisherID)
+	ft.publisherLock.Unlock()
+
+	ft.pubQueryLock.Lock()
+	ft.queryPubLock.Lock()
+	defer ft.pubQueryLock.Unlock()
+	defer ft.queryPubLock.Unlock()
+	if queries, found := ft.pubQueryMap[publisherID]; found {
+		delete(ft.pubQueryMap, publisherID)
+		for _, query := range queries.queries {
+			if publishers, found := ft.queryPubMap[query]; found {
+				delete(publishers, &publisherID)
+			}
+			query.RLock()
+			delete(query.MatchingProducers, publisherID)
+			for brokerID, _ := range query.CurrentBrokerIDs {
+				ft.brokerManager.SendToBroker(brokerID, &common.BrokerSubscriptionDiffMessage{
+					NewPublishers: emptyList,
+					DelPublishers: []common.UUID{publisherID},
+					Query:         query.QueryString,
+				})
+			}
+			query.RUnlock()
+		}
+	}
 }
 
 func (ft *ForwardingTable) SendSubscriptionDiffs(query *ForwardedQuery, added, removed []common.UUID) {
@@ -259,6 +312,8 @@ func (ft *ForwardingTable) SendSubscriptionDiffs(query *ForwardedQuery, added, r
 func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *common.UUID) {
 	ft.pubQueryLock.Lock()
 	defer ft.pubQueryLock.Unlock()
+	ft.queryPubLock.Lock()
+	defer ft.queryPubLock.Unlock()
 	ft.publisherLock.RLock()
 	defer ft.publisherLock.RUnlock()
 
@@ -288,6 +343,12 @@ PublisherLoop:
 			}).Debug("Adding query to NEW query list")
 			ft.pubQueryMap[publisherID] = &queryList{queries: []*ForwardedQuery{fq}, nonnilInArray: 1}
 		}
+		if qpm, found := ft.queryPubMap[fq]; found {
+			qpm[&publisherID] = struct{}{}
+		} else {
+			ft.queryPubMap[fq] = make(map[*common.UUID]struct{})
+			ft.queryPubMap[fq][&publisherID] = struct{}{}
+		}
 		publishBrokerID := ft.publisherMap[publisherID].CurrentBrokerID
 		log.WithFields(log.Fields{
 			"publisherID": publisherID, "query": fq.QueryString,
@@ -306,17 +367,7 @@ PublisherLoop:
 		log.WithFields(log.Fields{
 			"brokerID": newBrokerID, "query": fq.QueryString, "newRoutes": newPublishRoutes,
 		}).Debug("Creating new forwarding routes while processing updateForwardingTable")
-		for publishBrokerID, destBrokerMap := range newPublishRoutes {
-			for destBrokerID, publisherList := range destBrokerMap {
-				frm := &common.ForwardRequestMessage{
-					MessageIDStruct: common.GetMessageIDStruct(),
-					PublisherList:   publisherList,
-					Query:           fq.QueryString,
-					BrokerInfo:      *ft.brokerManager.GetBrokerInfo(destBrokerID),
-				}
-				ft.brokerManager.SendToBroker(publishBrokerID, frm)
-			}
-		}
+		ft.sendForwardingChanges(newPublishRoutes, fq.QueryString, false)
 	}
 }
 
@@ -330,12 +381,20 @@ func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []
 	}
 	cancelPublishRoutes := make(map[common.UUID]map[common.UUID][]common.UUID) // SourceBrokerID -> DestBrokerID -> PublisherIDs
 	ft.pubQueryLock.Lock()
+	ft.queryPubLock.Lock()
 	ft.publisherLock.RLock()
 	for _, rm_uuid := range removed {
 		if queries, found = ft.pubQueryMap[rm_uuid]; !found {
 			continue // no subscribers for this uuid
 		}
 		if queries.containsQuery(fq) {
+			if publishers, found := ft.queryPubMap[fq]; found {
+				delete(publishers, &rm_uuid)
+			} else {
+				log.WithFields(log.Fields{
+					"publisherID": rm_uuid, "query": fq.QueryString,
+				}).Error("Found a pub->query mapping without a corresponding query->pub mapping")
+			}
 			queries.removeQuery(fq)
 			publisherBrokerID := ft.publisherMap[rm_uuid].CurrentBrokerID
 			fq.RLock()
@@ -346,6 +405,7 @@ func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []
 		}
 	}
 	ft.publisherLock.RUnlock()
+	ft.queryPubLock.Unlock()
 	ft.pubQueryLock.Unlock()
 	if len(cancelPublishRoutes) == 0 {
 		log.WithFields(log.Fields{
@@ -355,17 +415,7 @@ func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []
 		log.WithFields(log.Fields{
 			"removedUUIDs": removed, "query": fq, "cancelRoutes": cancelPublishRoutes,
 		}).Debug("Cancelling forwarding routes while processing")
-		for publishBrokerID, destBrokerMap := range cancelPublishRoutes {
-			for destBrokerID, publisherList := range destBrokerMap {
-				frm := &common.CancelForwardRequest{
-					MessageIDStruct: common.GetMessageIDStruct(),
-					PublisherList:   publisherList,
-					Query:           fq.QueryString,
-					BrokerInfo:      *ft.brokerManager.GetBrokerInfo(destBrokerID),
-				}
-				ft.brokerManager.SendToBroker(publishBrokerID, frm)
-			}
-		}
+		ft.sendForwardingChanges(cancelPublishRoutes, fq.QueryString, true)
 	}
 }
 
@@ -442,6 +492,31 @@ func (ft *ForwardingTable) reevaluateQueries(candidateQueries map[*ForwardedQuer
 		ft.addForwardingRoutes(query, nil)
 		ft.cancelForwardingRoutes(query, removed)
 		ft.SendSubscriptionDiffs(query, added, removed)
+	}
+}
+
+func (ft *ForwardingTable) sendForwardingChanges(routesToChange map[common.UUID]map[common.UUID][]common.UUID,
+	queryString string, requestCancel bool) {
+	var msg common.Sendable
+	for publishBrokerID, destBrokerMap := range routesToChange {
+		for destBrokerID, publisherList := range destBrokerMap {
+			if requestCancel {
+				msg = &common.CancelForwardRequest{
+					MessageIDStruct: common.GetMessageIDStruct(),
+					PublisherList:   publisherList,
+					Query:           queryString,
+					BrokerInfo:      *ft.brokerManager.GetBrokerInfo(destBrokerID),
+				}
+			} else {
+				msg = &common.ForwardRequestMessage{
+					MessageIDStruct: common.GetMessageIDStruct(),
+					PublisherList:   publisherList,
+					Query:           queryString,
+					BrokerInfo:      *ft.brokerManager.GetBrokerInfo(destBrokerID),
+				}
+			}
+			ft.brokerManager.SendToBroker(publishBrokerID, msg)
+		}
 	}
 }
 

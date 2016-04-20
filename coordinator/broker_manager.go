@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-type MessageHandler func(common.Sendable)
+type MessageHandler func(*MessageFromBroker)
 
 type BrokerManager interface {
 	ConnectBroker(brokerInfo *common.BrokerInfo, conn *net.TCPConn) (err error)
@@ -24,6 +24,11 @@ type BrokerManager interface {
 	RequestHeartbeat(brokerID common.UUID) (err error)
 }
 
+type MessageFromBroker struct {
+	message common.Sendable
+	broker  *Broker
+}
+
 type BrokerManagerImpl struct {
 	brokerMap         map[common.UUID]*Broker
 	mapLock           sync.RWMutex
@@ -33,12 +38,13 @@ type BrokerManagerImpl struct {
 	liveBrokerQueue   *list.List
 	queueLock         sync.Mutex
 	internalDeathChan chan *Broker
-	BrokerDeathChan   chan *common.UUID // Written to when a broker dies
-	BrokerLiveChan    chan *common.UUID // Written to when a broker comes alive
+	BrokerDeathChan   chan *common.UUID       // Written to when a broker dies
+	BrokerLiveChan    chan *common.UUID       // Written to when a broker comes alive
+	MessageBuffer     chan *MessageFromBroker // Buffers incoming messages meant for other systems
 }
 
 func NewBrokerManager(heartbeatInterval int, brokerDeathChan, brokerLiveChan chan *common.UUID,
-	clock common.Clock) *BrokerManagerImpl {
+	messageBuffer chan *MessageFromBroker, clock common.Clock) *BrokerManagerImpl {
 	bm := new(BrokerManagerImpl)
 	bm.brokerMap = make(map[common.UUID]*Broker)
 	bm.mapLock = sync.RWMutex{}
@@ -48,6 +54,7 @@ func NewBrokerManager(heartbeatInterval int, brokerDeathChan, brokerLiveChan cha
 	bm.liveBrokerQueue = list.New()
 	bm.queueLock = sync.Mutex{}
 	bm.internalDeathChan = make(chan *Broker, 10)
+	bm.MessageBuffer = messageBuffer
 	bm.BrokerDeathChan = brokerDeathChan
 	bm.BrokerLiveChan = brokerLiveChan
 	go bm.monitorDeathChan()
@@ -168,12 +175,22 @@ func (bm *BrokerManagerImpl) SendToBroker(brokerID common.UUID, message common.S
 	return
 }
 
-// Asynchronously send a message to all currently living  brokers
+// Asynchronously send a message to all currently living brokers
+// Automatically adjusts the MessageID of the messages to be distinct
+// if the message contains it
 func (bm *BrokerManagerImpl) BroadcastToBrokers(message common.Sendable) {
 	bm.mapLock.RLock()
 	defer bm.mapLock.RUnlock()
-	for _, brokerConn := range bm.brokerMap {
-		brokerConn.Send(message)
+	switch msg := message.(type) {
+	case common.SendableWithID:
+		for _, brokerConn := range bm.brokerMap {
+			msg.SetID(common.GetMessageID())
+			brokerConn.Send(msg)
+		}
+	case common.Sendable:
+		for _, brokerConn := range bm.brokerMap {
+			brokerConn.Send(message)
+		}
 	}
 }
 
@@ -192,37 +209,22 @@ func (bm *BrokerManagerImpl) RequestHeartbeat(brokerID common.UUID) (err error) 
 }
 
 func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageHandler {
-	return func(message common.Sendable) {
+	return func(brokerMessage *MessageFromBroker) {
+		message := brokerMessage.message
 		switch msg := message.(type) {
-		case *common.PublishMessage:
-			// TODO forward on to the subsystem for this
-		case *common.QueryMessage:
-			// TODO forward on to the subsystem for this
-		case *common.ClientTerminationMessage:
-		// TODO communicate to the ClientTrackerService
-		case *common.PublisherTerminationMessage:
-		// TODO same as above
 		case *common.BrokerConnectMessage:
 			log.WithFields(log.Fields{
 				"connBrokerID": brokerID, "newBrokerID": msg.BrokerID, "newBrokerAddr": msg.BrokerAddr,
 			}).Warn("Received a BrokerConnectMessage over an existing broker connection")
 		case *common.BrokerTerminateMessage:
 			log.WithField("brokerID", brokerID).Info("BrokerManagerImpl terminating broker")
-			bm.mapLock.RLock()
-			brokerConn, ok := bm.brokerMap[brokerID]
-			bm.mapLock.RUnlock()
-			if !ok {
-				log.WithField("brokerID", brokerID).Fatal("Received BrokerTerminateMessage but can't find the brokerID")
-			}
-			brokerConn.Send(&common.AcknowledgeMessage{MessageID: msg.MessageID})
+			brokerMessage.broker.Send(&common.AcknowledgeMessage{MessageID: msg.MessageID})
 			bm.mapLock.Lock()
-			delete(bm.brokerMap, brokerConn.BrokerID)
+			delete(bm.brokerMap, brokerMessage.broker.BrokerID)
 			bm.mapLock.Unlock()
-			brokerConn.Terminate()
+			brokerMessage.broker.Terminate()
 		default:
-			log.WithFields(log.Fields{
-				"brokerID": brokerID, "message": msg, "messageType": common.GetMessageType(msg),
-			}).Warn("Coordinator received an unexpected message!")
+			bm.MessageBuffer <- brokerMessage
 		}
 	}
 }
@@ -241,5 +243,6 @@ func (bm *BrokerManagerImpl) monitorDeathChan() {
 		deadBroker.listElem = bm.deadBrokerQueue.PushBack(deadBroker)
 		bm.queueLock.Unlock()
 		bm.BrokerDeathChan <- &deadBroker.BrokerID // Forward on to outward death chan
+		bm.BroadcastToBrokers(&common.BrokerDeathMessage{BrokerInfo: deadBroker.BrokerInfo})
 	}
 }

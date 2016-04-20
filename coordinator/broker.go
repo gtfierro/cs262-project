@@ -186,7 +186,7 @@ func (bc *Broker) receiveLoop(conn *net.TCPConn, done chan bool, loopFinished ch
 			case *common.HeartbeatMessage:
 				bc.heartbeatBuffer <- true
 			default:
-				go bc.messageHandler(msg)
+				go bc.messageHandler(&MessageFromBroker{msg, bc})
 			}
 		} else {
 			if err == io.EOF {

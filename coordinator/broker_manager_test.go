@@ -41,7 +41,7 @@ func TestBrokerDeath(t *testing.T) {
 	uuid3 := common.UUID("3")
 	broker3 := common.BrokerInfo{BrokerID: uuid3, BrokerAddr: "0.0.0.0:0003"}
 
-	bm := NewBrokerManager(10, deathChan, liveChan, clock)
+	bm := NewBrokerManager(10, deathChan, liveChan, nil, clock)
 
 	defer func() {
 		bm.TerminateBroker(uuid1)

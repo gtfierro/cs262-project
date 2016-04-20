@@ -3,6 +3,7 @@ package main
 import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
+	"github.com/stretchr/testify/require"
 	"github.com/tinylib/msgp/msgp"
 	"net"
 	"os"
@@ -30,5 +31,13 @@ func fakeBroker(coordAddr *net.TCPAddr, expectedMsgs, responses chan common.Send
 			responseMsg.Encode(writer)
 			writer.Flush()
 		}
+	}
+}
+
+func AssertMFBChanEmpty(assert *require.Assertions, channel chan *MessageFromBroker) {
+	select {
+	case <-channel:
+		assert.Fail("Channel not empty")
+	default:
 	}
 }

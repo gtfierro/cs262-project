@@ -25,6 +25,13 @@ type ServerConfig struct {
 	CoordinatorPort int
 }
 
+// Coordinator configuration
+type CoordinatorConfig struct {
+	Port              int
+	Global            bool
+	HeartbeatInterval int // seconds
+}
+
 // MongoDB configuration
 type MongoConfig struct {
 	Port     int
@@ -46,11 +53,12 @@ type BenchmarkConfig struct {
 }
 
 type Config struct {
-	Logging   LoggingConfig
-	Server    ServerConfig
-	Mongo     MongoConfig
-	Debug     DebugConfig
-	Benchmark BenchmarkConfig
+	Logging     LoggingConfig
+	Server      ServerConfig
+	Mongo       MongoConfig
+	Coordinator CoordinatorConfig
+	Debug       DebugConfig
+	Benchmark   BenchmarkConfig
 }
 
 // Don't want to log anything since this is called before SetupLogging;

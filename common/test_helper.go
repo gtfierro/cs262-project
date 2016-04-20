@@ -19,7 +19,7 @@ func AssertStrEqual(assert *require.Assertions, a, b interface{}) {
 	assert.Equal(fmt.Sprintf("%v", a), fmt.Sprintf("%v", b))
 }
 
-func AssertChanEmpty(assert *require.Assertions, channel chan Sendable) {
+func AssertSendableChanEmpty(assert *require.Assertions, channel chan Sendable) {
 	select {
 	case <-channel:
 		assert.Fail("Channel not empty")

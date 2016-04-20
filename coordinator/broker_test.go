@@ -10,12 +10,12 @@ import (
 	"time"
 )
 
-func setupBroker(expectedMsgs, responseMsgs chan common.Sendable) (*Broker, chan common.Sendable,
+func setupBroker(expectedMsgs, responseMsgs chan common.Sendable) (*Broker, chan *MessageFromBroker,
 	*common.FakeClock, *net.TCPConn, *net.TCPListener) {
 	clock := common.NewFakeClock(time.Now())
-	msgRcvChan := make(chan common.Sendable, 5)
+	msgRcvChan := make(chan *MessageFromBroker, 5)
 	deathChan := make(chan *Broker, 5)
-	msgHandler := func(msg common.Sendable) { msgRcvChan <- msg }
+	msgHandler := func(msg *MessageFromBroker) { msgRcvChan <- msg }
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:56000")
 	listener, _ := net.ListenTCP("tcp", tcpAddr)
 	go fakeBroker(tcpAddr, expectedMsgs, responseMsgs)
@@ -59,11 +59,11 @@ func TestSendAndReceive(t *testing.T) {
 	common.AssertStrEqual(assert, &smsg1, <-expectedMsgs)
 	common.AssertStrEqual(assert, &smsg2, <-expectedMsgs)
 	common.AssertStrEqual(assert, &smsg3, <-expectedMsgs)
-	common.AssertStrEqual(assert, &rmsg1, <-msgRcvChan) // BrokerTerminateMessage should be here
-	common.AssertChanEmpty(assert, msgRcvChan)
+	common.AssertStrEqual(assert, &rmsg1, (<-msgRcvChan).message) // BrokerTerminateMessage should be here
+	AssertMFBChanEmpty(assert, msgRcvChan)
 	assert.Len(bc.outstandingMessages, 0) // should be no more - we ACKed both
 	clock.AdvanceNowTime(7 * time.Second)
-	common.AssertChanEmpty(assert, bc.messageSendBuffer)
+	common.AssertSendableChanEmpty(assert, bc.messageSendBuffer)
 	close(responseMsgs)
 }
 
@@ -113,7 +113,7 @@ func TestEnsureDelivery(t *testing.T) {
 
 	<-msgRcvChan
 
-	common.AssertChanEmpty(assert, expectedMsgs)
-	common.AssertChanEmpty(assert, bc.messageSendBuffer)
-	common.AssertChanEmpty(assert, msgRcvChan)
+	common.AssertSendableChanEmpty(assert, expectedMsgs)
+	common.AssertSendableChanEmpty(assert, bc.messageSendBuffer)
+	AssertMFBChanEmpty(assert, msgRcvChan)
 }

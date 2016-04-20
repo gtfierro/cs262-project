@@ -120,6 +120,14 @@ func (m *BrokerPublishMessage) Encode(enc *msgp.Writer) error {
 	return m.EncodeMsg(enc)
 }
 
+func (m *BrokerQueryMessage) Encode(enc *msgp.Writer) error {
+	err := enc.WriteUint8(uint8(BROKERQUERYMSG))
+	if err != nil {
+		return err
+	}
+	return m.EncodeMsg(enc)
+}
+
 func (m *ClientTerminationMessage) Encode(enc *msgp.Writer) error {
 	err := enc.WriteUint8(uint8(CLIENTTERMMSG))
 	if err != nil {
@@ -215,6 +223,10 @@ func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
 		return msg, err
 	case BROKERPUBLISHMSG:
 		msg := new(BrokerPublishMessage)
+		msg.DecodeMsg(dec)
+		return msg, err
+	case BROKERQUERYMSG:
+		msg := new(BrokerQueryMessage)
 		msg.DecodeMsg(dec)
 		return msg, err
 	case CLIENTTERMMSG:

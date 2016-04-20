@@ -31,6 +31,7 @@ type Sendable interface {
 type SendableWithID interface {
 	Encode(enc *msgp.Writer) error
 	GetID() MessageIDType
+	SetID(MessageIDType)
 }
 
 type MessageIDType uint32
@@ -43,8 +44,16 @@ func (sendable *MessageIDStruct) GetID() MessageIDType {
 	return sendable.MessageID
 }
 
+func (sendable *MessageIDStruct) SetID(id MessageIDType) {
+	sendable.MessageID = id
+}
+
 func GetMessageIDStruct() MessageIDStruct {
-	return MessageIDStruct{MessageID: MessageIDType(rand.Uint32())} // TODO
+	return MessageIDStruct{MessageID: GetMessageID()} // TODO
+}
+
+func GetMessageID() MessageIDType {
+	return MessageIDType(rand.Uint32())
 }
 
 type MessageType uint8
@@ -68,6 +77,7 @@ const (
 	REQHEARTBEATMSG
 	HEARTBEATMSG
 	BROKERPUBLISHMSG
+	BROKERQUERYMSG
 	CLIENTTERMMSG
 	PUBTERMMSG
 	BROKERTERMMSG
@@ -282,6 +292,16 @@ type BrokerPublishMessage struct {
 	Metadata map[string]interface{}
 	Value    interface{}
 	L        sync.RWMutex `msg:"-"`
+}
+
+/***** BrokerQueryMessage ********/
+
+// Analogous to QueryMessage, but used when sending messages
+// from brokers to the coordinator so that it is possible
+// to tell which client the query is attached to
+type BrokerQueryMessage struct {
+	QueryMessage string
+	ClientAddr   string
 }
 
 /***** ClientTermination Message *****/

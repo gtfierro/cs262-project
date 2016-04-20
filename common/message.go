@@ -178,7 +178,6 @@ type ForwardRequestMessage struct {
 	// list of publishers whose messages should be forwarded
 	PublisherList []UUID
 	// the destination broker
-	//TODO: need to allocate this on the broker somehow
 	BrokerInfo
 	// the query string which defines this forward request
 	Query string
@@ -194,9 +193,12 @@ type ForwardRequestMessage struct {
 // ForwardRequest; used when clients cancel their subscription/disappear
 type CancelForwardRequest struct {
 	MessageIDStruct
+	// list of publishers whose messages should be cancelled
+	PublisherList []UUID
 	// the query that has been cancelled
 	Query string
-	// TODO: not sure why this is here?
+	// Necessary so you know who you need to stop forwarding to, since you
+	// may be forwarding to multiple brokers for the same query
 	BrokerInfo
 }
 
@@ -204,13 +206,17 @@ type CancelForwardRequest struct {
 
 // Analogous to SubscriptionDiffMessage, but used for internal comm., i.e. when
 // coordinator notifies a broker to talk to its client
-type BrokerSubscriptionDiffMessage map[string][]UUID
+type BrokerSubscriptionDiffMessage struct {
+	NewPublishers []UUID
+	DelPublishers []UUID
+	Query         string
+}
 
 func (m *BrokerSubscriptionDiffMessage) FromProducerState(state map[UUID]ProducerState) {
-	(*m)["New"] = make([]UUID, len(state))
+	m.NewPublishers = make([]UUID, len(state))
 	i := 0
 	for uuid, _ := range state {
-		(*m)["New"][i] = uuid
+		m.NewPublishers[i] = uuid
 		i += 1
 	}
 }

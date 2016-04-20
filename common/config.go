@@ -27,8 +27,9 @@ type ServerConfig struct {
 
 // MongoDB configuration
 type MongoConfig struct {
-	Port int
-	Host string
+	Port     int
+	Host     string
+	Database string
 }
 
 // Debugging configuration
@@ -40,7 +41,7 @@ type DebugConfig struct {
 type BenchmarkConfig struct {
 	BrokerURL         string
 	BrokerPort        int
-	StepSpacing       int    // How long between increasing client/producer counts (seconds)
+	StepSpacing       int    // How long between increasing client/publisher counts (seconds)
 	ConfigurationName string // Named bundle of query/metadata
 }
 

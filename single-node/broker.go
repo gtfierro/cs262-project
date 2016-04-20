@@ -12,7 +12,7 @@ var emptyList = []common.UUID{}
 
 // Handles the subscriptions, updates, forwarding
 type Broker struct {
-	metadata *MetadataStore
+	metadata *common.MetadataStore
 
 	// map queries to clients
 	subscriber_lock sync.RWMutex
@@ -28,7 +28,7 @@ type Broker struct {
 
 	// map query string to query struct
 	query_lock sync.RWMutex
-	queries    map[string]*Query
+	queries    map[string]*common.Query
 
 	// map metadata key to list of queries involving that key
 	key_lock sync.RWMutex
@@ -38,14 +38,108 @@ type Broker struct {
 	killClient chan *Client
 }
 
+type clientList struct {
+	List []*Client
+	sync.RWMutex
+}
+
+func (sl *clientList) addClient(sub *Client) {
+	sl.Lock()
+	defer sl.Unlock()
+	for _, oldSub := range sl.List {
+		if oldSub == sub {
+			return
+		}
+	}
+	for i, oldSub := range sl.List {
+		if oldSub == nil {
+			sl.List[i] = sub
+		}
+		return
+	}
+
+	sl.List = append(sl.List, sub)
+}
+
+// TODO: something is funky here. if a client disconnects/reconnects very quickly,
+// we can get a race condition where they disconnect, the broker fails to forward
+// to them, then at the same time the new client comes in, then the broker "deletes"
+// the old client?
+func (sl *clientList) removeClient(sub *Client) {
+	sl.Lock()
+	defer sl.Unlock()
+	for i, oldSub := range sl.List {
+		if oldSub == sub {
+			sl.List[i] = sl.List[len(sl.List)-1]
+			sl.List[len(sl.List)-1] = nil
+			sl.List = sl.List[:len(sl.List)-1]
+			// above: this is supposedly a better delete method for slices because
+			// it avoids leaving references to "deleted" objects at the end of the list
+			// below is the "normal" one
+			//*sl = append((*sl)[:i], (*sl)[i+1:]...)
+			return
+		}
+	}
+}
+
+func (sl *clientList) sendToList(msg common.Sendable) {
+	sl.RLock()
+	for _, c := range sl.List {
+		if c == nil {
+			continue
+		}
+		c.Send(msg)
+	}
+	sl.RUnlock()
+}
+
+type queryList struct {
+	queries []string
+	sync.RWMutex
+}
+
+func (ql *queryList) addQuery(q string) {
+	ql.Lock()
+	for _, oldSub := range ql.queries {
+		if oldSub == q {
+			ql.Unlock()
+			return
+		}
+	}
+	ql.queries = append(ql.queries, q)
+	ql.Unlock()
+}
+
+func (ql *queryList) removeQuery(q string) {
+	ql.Lock()
+	for i, oldSub := range ql.queries {
+		if oldSub == q {
+			ql.queries = append(ql.queries[:i], ql.queries[i+1:]...)
+			ql.Unlock()
+			return
+		}
+	}
+	ql.Unlock()
+}
+
+func (ql *queryList) empty() bool {
+	if ql == nil {
+		return true
+	}
+	ql.RLock()
+	empty := len(ql.queries) == 0
+	ql.RUnlock()
+	return empty
+}
+
 //TODO: config for broker?
-func NewBroker(metadata *MetadataStore) *Broker {
+func NewBroker(metadata *common.MetadataStore) *Broker {
 	b := &Broker{
 		metadata:    metadata,
 		subscribers: make(map[string]clientList),
 		forwarding:  make(map[common.UUID]*queryList),
 		producers:   make(map[common.UUID]*Producer),
-		queries:     make(map[string]*Query),
+		queries:     make(map[string]*common.Query),
 		keys:        make(map[string]*queryList),
 		killClient:  make(chan *Client),
 	}
@@ -56,6 +150,8 @@ func NewBroker(metadata *MetadataStore) *Broker {
 				"client": deadClient,
 			}).Info("Removing dead client")
 			b.subscriber_lock.Lock()
+			// TODO this seems inefficient - only one query will actually map
+			// to this client, so why not just store that pointer in the client?
 			for _, cl := range b.subscribers {
 				cl.removeClient(deadClient)
 			}
@@ -79,7 +175,7 @@ func (b *Broker) mapQueryToClient(query string, c *Client) {
 	b.subscriber_lock.Unlock()
 }
 
-func (b *Broker) updateForwardingTable(query *Query) {
+func (b *Broker) updateForwardingTable(query *common.Query) {
 	b.forwarding_lock.Lock()
 	query.RLock()
 Loop:
@@ -87,19 +183,19 @@ Loop:
 		if list, found := b.forwarding[producerID]; found {
 			// check if we are already in the list
 			for _, q2 := range list.queries {
-				if q2 == query.Query {
+				if q2 == query.QueryString {
 					continue Loop
 				}
 			}
 			log.WithFields(log.Fields{
-				"producerID": producerID, "query": query.Query, "list": list,
+				"producerID": producerID, "query": query.QueryString, "list": list,
 			}).Debug("Adding query to existing query list")
-			b.forwarding[producerID].addQuery(query.Query)
+			b.forwarding[producerID].addQuery(query.QueryString)
 		} else {
 			log.WithFields(log.Fields{
-				"producerID": producerID, "query": query.Query,
+				"producerID": producerID, "query": query.QueryString,
 			}).Debug("Adding query to NEW query list")
-			b.forwarding[producerID] = &queryList{queries: []string{query.Query}}
+			b.forwarding[producerID] = &queryList{queries: []string{query.QueryString}}
 		}
 	}
 	log.Debugf("forwarding table %v", b.forwarding)
@@ -109,11 +205,13 @@ Loop:
 
 // we have the list of new and removed UUIDs for a query,
 // so we update the forwarding table to match that
-func (b *Broker) updateForwardingDiffs(query *Query, added, removed []common.UUID) {
+func (b *Broker) updateForwardingDiffs(query *common.Query, added, removed []common.UUID) {
 	var (
 		list  *queryList
 		found bool
 	)
+	// TODO this will only activate when a query no longer applies to a publisher due to
+	// metadata changes - what about when a query should no longer exist due to no more clients?
 	if len(removed) > 0 {
 		b.forwarding_lock.Lock()
 		for _, rm_uuid := range removed {
@@ -122,8 +220,8 @@ func (b *Broker) updateForwardingDiffs(query *Query, added, removed []common.UUI
 				continue
 			}
 			for _, tmp_query := range list.queries {
-				if tmp_query == query.Query {
-					list.removeQuery(query.Query)
+				if tmp_query == query.QueryString {
+					list.removeQuery(query.QueryString)
 					continue
 				}
 			}
@@ -187,7 +285,7 @@ func (b *Broker) SendSubscriptionDiffs(query string, added, removed []common.UUI
 // Returns the client
 func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 	var (
-		query *Query
+		query *common.Query
 		found bool
 		err   error
 	)
@@ -197,7 +295,7 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 
 	if !found {
 		// parse it!
-		queryAST := Parse(querystring)
+		queryAST := common.Parse(querystring)
 		query, err = b.metadata.Query(queryAST)
 		if err != nil {
 			log.WithFields(log.Fields{
@@ -309,7 +407,7 @@ func (b *Broker) cleanupProducer(p *Producer) {
 // producer metadata across *all* queries, else it can use metadata in the provided
 // Message to filter which queries to reevaluate
 func (b *Broker) RemapProducer(p *Producer, message *common.PublishMessage) {
-	var queriesToReevaluate = make(map[string]*Query)
+	var queriesToReevaluate = make(map[string]*common.Query)
 	if message == nil { // reevaluate ALL queries
 		log.Debug("Reevaluating all queries")
 		b.subscriber_lock.RLock()
@@ -355,9 +453,9 @@ reevaluate:
 	for _, query := range queriesToReevaluate {
 		added, removed := b.metadata.Reevaluate(query)
 		log.WithFields(log.Fields{
-			"query": query.Query, "added": added, "removed": removed,
+			"query": query.QueryString, "added": added, "removed": removed,
 		}).Info("Reevaluated query")
 		b.updateForwardingDiffs(query, added, removed)
-		b.SendSubscriptionDiffs(query.Query, added, removed)
+		b.SendSubscriptionDiffs(query.QueryString, added, removed)
 	}
 }

@@ -1192,149 +1192,228 @@ func (z BrokerRequestMessage) Msgsize() (s int) {
 
 // DecodeMsg implements msgp.Decodable
 func (z *BrokerSubscriptionDiffMessage) DecodeMsg(dc *msgp.Reader) (err error) {
-	var msz uint32
-	msz, err = dc.ReadMapHeader()
+	var field []byte
+	_ = field
+	var isz uint32
+	isz, err = dc.ReadMapHeader()
 	if err != nil {
 		return
 	}
-	if (*z) == nil && msz > 0 {
-		(*z) = make(BrokerSubscriptionDiffMessage, msz)
-	} else if len((*z)) > 0 {
-		for key, _ := range *z {
-			delete((*z), key)
-		}
-	}
-	for msz > 0 {
-		msz--
-		var wht string
-		var hct []UUID
-		wht, err = dc.ReadString()
+	for isz > 0 {
+		isz--
+		field, err = dc.ReadMapKeyPtr()
 		if err != nil {
 			return
 		}
-		var xsz uint32
-		xsz, err = dc.ReadArrayHeader()
-		if err != nil {
-			return
-		}
-		if cap(hct) >= int(xsz) {
-			hct = hct[:xsz]
-		} else {
-			hct = make([]UUID, xsz)
-		}
-		for cua := range hct {
-			{
-				var tmp string
-				tmp, err = dc.ReadString()
-				hct[cua] = UUID(tmp)
+		switch msgp.UnsafeString(field) {
+		case "NewPublishers":
+			var xsz uint32
+			xsz, err = dc.ReadArrayHeader()
+			if err != nil {
+				return
 			}
+			if cap(z.NewPublishers) >= int(xsz) {
+				z.NewPublishers = z.NewPublishers[:xsz]
+			} else {
+				z.NewPublishers = make([]UUID, xsz)
+			}
+			for bai := range z.NewPublishers {
+				{
+					var tmp string
+					tmp, err = dc.ReadString()
+					z.NewPublishers[bai] = UUID(tmp)
+				}
+				if err != nil {
+					return
+				}
+			}
+		case "DelPublishers":
+			var xsz uint32
+			xsz, err = dc.ReadArrayHeader()
+			if err != nil {
+				return
+			}
+			if cap(z.DelPublishers) >= int(xsz) {
+				z.DelPublishers = z.DelPublishers[:xsz]
+			} else {
+				z.DelPublishers = make([]UUID, xsz)
+			}
+			for cmr := range z.DelPublishers {
+				{
+					var tmp string
+					tmp, err = dc.ReadString()
+					z.DelPublishers[cmr] = UUID(tmp)
+				}
+				if err != nil {
+					return
+				}
+			}
+		case "Query":
+			z.Query, err = dc.ReadString()
+			if err != nil {
+				return
+			}
+		default:
+			err = dc.Skip()
 			if err != nil {
 				return
 			}
 		}
-		(*z)[wht] = hct
 	}
 	return
 }
 
 // EncodeMsg implements msgp.Encodable
-func (z BrokerSubscriptionDiffMessage) EncodeMsg(en *msgp.Writer) (err error) {
-	err = en.WriteMapHeader(uint32(len(z)))
+func (z *BrokerSubscriptionDiffMessage) EncodeMsg(en *msgp.Writer) (err error) {
+	// map header, size 3
+	// write "NewPublishers"
+	err = en.Append(0x83, 0xad, 0x4e, 0x65, 0x77, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x73)
+	if err != nil {
+		return err
+	}
+	err = en.WriteArrayHeader(uint32(len(z.NewPublishers)))
 	if err != nil {
 		return
 	}
-	for xhx, lqf := range z {
-		err = en.WriteString(xhx)
+	for bai := range z.NewPublishers {
+		err = en.WriteString(string(z.NewPublishers[bai]))
 		if err != nil {
 			return
 		}
-		err = en.WriteArrayHeader(uint32(len(lqf)))
+	}
+	// write "DelPublishers"
+	err = en.Append(0xad, 0x44, 0x65, 0x6c, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x73)
+	if err != nil {
+		return err
+	}
+	err = en.WriteArrayHeader(uint32(len(z.DelPublishers)))
+	if err != nil {
+		return
+	}
+	for cmr := range z.DelPublishers {
+		err = en.WriteString(string(z.DelPublishers[cmr]))
 		if err != nil {
 			return
 		}
-		for daf := range lqf {
-			err = en.WriteString(string(lqf[daf]))
-			if err != nil {
-				return
-			}
-		}
+	}
+	// write "Query"
+	err = en.Append(0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
+	if err != nil {
+		return err
+	}
+	err = en.WriteString(z.Query)
+	if err != nil {
+		return
 	}
 	return
 }
 
 // MarshalMsg implements msgp.Marshaler
-func (z BrokerSubscriptionDiffMessage) MarshalMsg(b []byte) (o []byte, err error) {
+func (z *BrokerSubscriptionDiffMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	o = msgp.AppendMapHeader(o, uint32(len(z)))
-	for xhx, lqf := range z {
-		o = msgp.AppendString(o, xhx)
-		o = msgp.AppendArrayHeader(o, uint32(len(lqf)))
-		for daf := range lqf {
-			o = msgp.AppendString(o, string(lqf[daf]))
-		}
+	// map header, size 3
+	// string "NewPublishers"
+	o = append(o, 0x83, 0xad, 0x4e, 0x65, 0x77, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x73)
+	o = msgp.AppendArrayHeader(o, uint32(len(z.NewPublishers)))
+	for bai := range z.NewPublishers {
+		o = msgp.AppendString(o, string(z.NewPublishers[bai]))
 	}
+	// string "DelPublishers"
+	o = append(o, 0xad, 0x44, 0x65, 0x6c, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x73)
+	o = msgp.AppendArrayHeader(o, uint32(len(z.DelPublishers)))
+	for cmr := range z.DelPublishers {
+		o = msgp.AppendString(o, string(z.DelPublishers[cmr]))
+	}
+	// string "Query"
+	o = append(o, 0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
+	o = msgp.AppendString(o, z.Query)
 	return
 }
 
 // UnmarshalMsg implements msgp.Unmarshaler
 func (z *BrokerSubscriptionDiffMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
-	var msz uint32
-	msz, bts, err = msgp.ReadMapHeaderBytes(bts)
+	var field []byte
+	_ = field
+	var isz uint32
+	isz, bts, err = msgp.ReadMapHeaderBytes(bts)
 	if err != nil {
 		return
 	}
-	if (*z) == nil && msz > 0 {
-		(*z) = make(BrokerSubscriptionDiffMessage, msz)
-	} else if len((*z)) > 0 {
-		for key, _ := range *z {
-			delete((*z), key)
-		}
-	}
-	for msz > 0 {
-		var pks string
-		var jfb []UUID
-		msz--
-		pks, bts, err = msgp.ReadStringBytes(bts)
+	for isz > 0 {
+		isz--
+		field, bts, err = msgp.ReadMapKeyZC(bts)
 		if err != nil {
 			return
 		}
-		var xsz uint32
-		xsz, bts, err = msgp.ReadArrayHeaderBytes(bts)
-		if err != nil {
-			return
-		}
-		if cap(jfb) >= int(xsz) {
-			jfb = jfb[:xsz]
-		} else {
-			jfb = make([]UUID, xsz)
-		}
-		for cxo := range jfb {
-			{
-				var tmp string
-				tmp, bts, err = msgp.ReadStringBytes(bts)
-				jfb[cxo] = UUID(tmp)
+		switch msgp.UnsafeString(field) {
+		case "NewPublishers":
+			var xsz uint32
+			xsz, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				return
 			}
+			if cap(z.NewPublishers) >= int(xsz) {
+				z.NewPublishers = z.NewPublishers[:xsz]
+			} else {
+				z.NewPublishers = make([]UUID, xsz)
+			}
+			for bai := range z.NewPublishers {
+				{
+					var tmp string
+					tmp, bts, err = msgp.ReadStringBytes(bts)
+					z.NewPublishers[bai] = UUID(tmp)
+				}
+				if err != nil {
+					return
+				}
+			}
+		case "DelPublishers":
+			var xsz uint32
+			xsz, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				return
+			}
+			if cap(z.DelPublishers) >= int(xsz) {
+				z.DelPublishers = z.DelPublishers[:xsz]
+			} else {
+				z.DelPublishers = make([]UUID, xsz)
+			}
+			for cmr := range z.DelPublishers {
+				{
+					var tmp string
+					tmp, bts, err = msgp.ReadStringBytes(bts)
+					z.DelPublishers[cmr] = UUID(tmp)
+				}
+				if err != nil {
+					return
+				}
+			}
+		case "Query":
+			z.Query, bts, err = msgp.ReadStringBytes(bts)
+			if err != nil {
+				return
+			}
+		default:
+			bts, err = msgp.Skip(bts)
 			if err != nil {
 				return
 			}
 		}
-		(*z)[pks] = jfb
 	}
 	o = bts
 	return
 }
 
-func (z BrokerSubscriptionDiffMessage) Msgsize() (s int) {
-	s = msgp.MapHeaderSize
-	if z != nil {
-		for eff, rsw := range z {
-			_ = rsw
-			s += msgp.StringPrefixSize + len(eff) + msgp.ArrayHeaderSize
-			for xpk := range rsw {
-				s += msgp.StringPrefixSize + len(string(rsw[xpk]))
-			}
-		}
+func (z *BrokerSubscriptionDiffMessage) Msgsize() (s int) {
+	s = 1 + 14 + msgp.ArrayHeaderSize
+	for bai := range z.NewPublishers {
+		s += msgp.StringPrefixSize + len(string(z.NewPublishers[bai]))
 	}
+	s += 14 + msgp.ArrayHeaderSize
+	for cmr := range z.DelPublishers {
+		s += msgp.StringPrefixSize + len(string(z.DelPublishers[cmr]))
+	}
+	s += 6 + msgp.StringPrefixSize + len(z.Query)
 	return
 }
 
@@ -1528,6 +1607,27 @@ func (z *CancelForwardRequest) DecodeMsg(dc *msgp.Reader) (err error) {
 					}
 				}
 			}
+		case "PublisherList":
+			var xsz uint32
+			xsz, err = dc.ReadArrayHeader()
+			if err != nil {
+				return
+			}
+			if cap(z.PublisherList) >= int(xsz) {
+				z.PublisherList = z.PublisherList[:xsz]
+			} else {
+				z.PublisherList = make([]UUID, xsz)
+			}
+			for ajw := range z.PublisherList {
+				{
+					var tmp string
+					tmp, err = dc.ReadString()
+					z.PublisherList[ajw] = UUID(tmp)
+				}
+				if err != nil {
+					return
+				}
+			}
 		case "Query":
 			z.Query, err = dc.ReadString()
 			if err != nil {
@@ -1579,17 +1679,32 @@ func (z *CancelForwardRequest) DecodeMsg(dc *msgp.Reader) (err error) {
 
 // EncodeMsg implements msgp.Encodable
 func (z *CancelForwardRequest) EncodeMsg(en *msgp.Writer) (err error) {
-	// map header, size 3
+	// map header, size 4
 	// write "MessageIDStruct"
 	// map header, size 1
 	// write "MessageID"
-	err = en.Append(0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	err = en.Append(0x84, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	if err != nil {
 		return err
 	}
 	err = en.WriteUint32(uint32(z.MessageIDStruct.MessageID))
 	if err != nil {
 		return
+	}
+	// write "PublisherList"
+	err = en.Append(0xad, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x4c, 0x69, 0x73, 0x74)
+	if err != nil {
+		return err
+	}
+	err = en.WriteArrayHeader(uint32(len(z.PublisherList)))
+	if err != nil {
+		return
+	}
+	for ajw := range z.PublisherList {
+		err = en.WriteString(string(z.PublisherList[ajw]))
+		if err != nil {
+			return
+		}
 	}
 	// write "Query"
 	err = en.Append(0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
@@ -1626,12 +1741,18 @@ func (z *CancelForwardRequest) EncodeMsg(en *msgp.Writer) (err error) {
 // MarshalMsg implements msgp.Marshaler
 func (z *CancelForwardRequest) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
-	// map header, size 3
+	// map header, size 4
 	// string "MessageIDStruct"
 	// map header, size 1
 	// string "MessageID"
-	o = append(o, 0x83, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
+	o = append(o, 0x84, 0xaf, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44, 0x53, 0x74, 0x72, 0x75, 0x63, 0x74, 0x81, 0xa9, 0x4d, 0x65, 0x73, 0x73, 0x61, 0x67, 0x65, 0x49, 0x44)
 	o = msgp.AppendUint32(o, uint32(z.MessageIDStruct.MessageID))
+	// string "PublisherList"
+	o = append(o, 0xad, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x4c, 0x69, 0x73, 0x74)
+	o = msgp.AppendArrayHeader(o, uint32(len(z.PublisherList)))
+	for ajw := range z.PublisherList {
+		o = msgp.AppendString(o, string(z.PublisherList[ajw]))
+	}
 	// string "Query"
 	o = append(o, 0xa5, 0x51, 0x75, 0x65, 0x72, 0x79)
 	o = msgp.AppendString(o, z.Query)
@@ -1691,6 +1812,27 @@ func (z *CancelForwardRequest) UnmarshalMsg(bts []byte) (o []byte, err error) {
 					}
 				}
 			}
+		case "PublisherList":
+			var xsz uint32
+			xsz, bts, err = msgp.ReadArrayHeaderBytes(bts)
+			if err != nil {
+				return
+			}
+			if cap(z.PublisherList) >= int(xsz) {
+				z.PublisherList = z.PublisherList[:xsz]
+			} else {
+				z.PublisherList = make([]UUID, xsz)
+			}
+			for ajw := range z.PublisherList {
+				{
+					var tmp string
+					tmp, bts, err = msgp.ReadStringBytes(bts)
+					z.PublisherList[ajw] = UUID(tmp)
+				}
+				if err != nil {
+					return
+				}
+			}
 		case "Query":
 			z.Query, bts, err = msgp.ReadStringBytes(bts)
 			if err != nil {
@@ -1742,7 +1884,11 @@ func (z *CancelForwardRequest) UnmarshalMsg(bts []byte) (o []byte, err error) {
 }
 
 func (z *CancelForwardRequest) Msgsize() (s int) {
-	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 6 + msgp.StringPrefixSize + len(z.Query) + 11 + 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerInfo.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerInfo.BrokerAddr)
+	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 14 + msgp.ArrayHeaderSize
+	for ajw := range z.PublisherList {
+		s += msgp.StringPrefixSize + len(string(z.PublisherList[ajw]))
+	}
+	s += 6 + msgp.StringPrefixSize + len(z.Query) + 11 + 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerInfo.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerInfo.BrokerAddr)
 	return
 }
 
@@ -2136,11 +2282,11 @@ func (z *ForwardRequestMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 			} else {
 				z.PublisherList = make([]UUID, xsz)
 			}
-			for dnj := range z.PublisherList {
+			for wht := range z.PublisherList {
 				{
 					var tmp string
 					tmp, err = dc.ReadString()
-					z.PublisherList[dnj] = UUID(tmp)
+					z.PublisherList[wht] = UUID(tmp)
 				}
 				if err != nil {
 					return
@@ -2218,8 +2364,8 @@ func (z *ForwardRequestMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	for dnj := range z.PublisherList {
-		err = en.WriteString(string(z.PublisherList[dnj]))
+	for wht := range z.PublisherList {
+		err = en.WriteString(string(z.PublisherList[wht]))
 		if err != nil {
 			return
 		}
@@ -2268,8 +2414,8 @@ func (z *ForwardRequestMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "PublisherList"
 	o = append(o, 0xad, 0x50, 0x75, 0x62, 0x6c, 0x69, 0x73, 0x68, 0x65, 0x72, 0x4c, 0x69, 0x73, 0x74)
 	o = msgp.AppendArrayHeader(o, uint32(len(z.PublisherList)))
-	for dnj := range z.PublisherList {
-		o = msgp.AppendString(o, string(z.PublisherList[dnj]))
+	for wht := range z.PublisherList {
+		o = msgp.AppendString(o, string(z.PublisherList[wht]))
 	}
 	// string "BrokerInfo"
 	// map header, size 2
@@ -2341,11 +2487,11 @@ func (z *ForwardRequestMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 			} else {
 				z.PublisherList = make([]UUID, xsz)
 			}
-			for dnj := range z.PublisherList {
+			for wht := range z.PublisherList {
 				{
 					var tmp string
 					tmp, bts, err = msgp.ReadStringBytes(bts)
-					z.PublisherList[dnj] = UUID(tmp)
+					z.PublisherList[wht] = UUID(tmp)
 				}
 				if err != nil {
 					return
@@ -2403,8 +2549,8 @@ func (z *ForwardRequestMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 
 func (z *ForwardRequestMessage) Msgsize() (s int) {
 	s = 1 + 16 + 1 + 10 + msgp.Uint32Size + 14 + msgp.ArrayHeaderSize
-	for dnj := range z.PublisherList {
-		s += msgp.StringPrefixSize + len(string(z.PublisherList[dnj]))
+	for wht := range z.PublisherList {
+		s += msgp.StringPrefixSize + len(string(z.PublisherList[wht]))
 	}
 	s += 11 + 1 + 9 + msgp.StringPrefixSize + len(string(z.BrokerInfo.BrokerID)) + 11 + msgp.StringPrefixSize + len(z.BrokerInfo.BrokerAddr) + 6 + msgp.StringPrefixSize + len(z.Query)
 	return
@@ -2695,17 +2841,17 @@ func (z *PublishMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 			}
 			for msz > 0 {
 				msz--
-				var obc string
-				var snv interface{}
-				obc, err = dc.ReadString()
+				var hct string
+				var cua interface{}
+				hct, err = dc.ReadString()
 				if err != nil {
 					return
 				}
-				snv, err = dc.ReadIntf()
+				cua, err = dc.ReadIntf()
 				if err != nil {
 					return
 				}
-				z.Metadata[obc] = snv
+				z.Metadata[hct] = cua
 			}
 		case "Value":
 			z.Value, err = dc.ReadIntf()
@@ -2743,12 +2889,12 @@ func (z *PublishMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	for obc, snv := range z.Metadata {
-		err = en.WriteString(obc)
+	for hct, cua := range z.Metadata {
+		err = en.WriteString(hct)
 		if err != nil {
 			return
 		}
-		err = en.WriteIntf(snv)
+		err = en.WriteIntf(cua)
 		if err != nil {
 			return
 		}
@@ -2775,9 +2921,9 @@ func (z *PublishMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	// string "Metadata"
 	o = append(o, 0xa8, 0x4d, 0x65, 0x74, 0x61, 0x64, 0x61, 0x74, 0x61)
 	o = msgp.AppendMapHeader(o, uint32(len(z.Metadata)))
-	for obc, snv := range z.Metadata {
-		o = msgp.AppendString(o, obc)
-		o, err = msgp.AppendIntf(o, snv)
+	for hct, cua := range z.Metadata {
+		o = msgp.AppendString(o, hct)
+		o, err = msgp.AppendIntf(o, cua)
 		if err != nil {
 			return
 		}
@@ -2830,18 +2976,18 @@ func (z *PublishMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 				}
 			}
 			for msz > 0 {
-				var obc string
-				var snv interface{}
+				var hct string
+				var cua interface{}
 				msz--
-				obc, bts, err = msgp.ReadStringBytes(bts)
+				hct, bts, err = msgp.ReadStringBytes(bts)
 				if err != nil {
 					return
 				}
-				snv, bts, err = msgp.ReadIntfBytes(bts)
+				cua, bts, err = msgp.ReadIntfBytes(bts)
 				if err != nil {
 					return
 				}
-				z.Metadata[obc] = snv
+				z.Metadata[hct] = cua
 			}
 		case "Value":
 			z.Value, bts, err = msgp.ReadIntfBytes(bts)
@@ -2862,9 +3008,9 @@ func (z *PublishMessage) UnmarshalMsg(bts []byte) (o []byte, err error) {
 func (z *PublishMessage) Msgsize() (s int) {
 	s = 1 + 5 + msgp.StringPrefixSize + len(string(z.UUID)) + 9 + msgp.MapHeaderSize
 	if z.Metadata != nil {
-		for obc, snv := range z.Metadata {
-			_ = snv
-			s += msgp.StringPrefixSize + len(obc) + msgp.GuessSize(snv)
+		for hct, cua := range z.Metadata {
+			_ = cua
+			s += msgp.StringPrefixSize + len(hct) + msgp.GuessSize(cua)
 		}
 	}
 	s += 6 + msgp.GuessSize(z.Value)
@@ -3233,9 +3379,9 @@ func (z *SubscriptionDiffMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 	}
 	for msz > 0 {
 		msz--
-		var qke string
-		var qyh []UUID
-		qke, err = dc.ReadString()
+		var pks string
+		var jfb []UUID
+		pks, err = dc.ReadString()
 		if err != nil {
 			return
 		}
@@ -3244,22 +3390,22 @@ func (z *SubscriptionDiffMessage) DecodeMsg(dc *msgp.Reader) (err error) {
 		if err != nil {
 			return
 		}
-		if cap(qyh) >= int(xsz) {
-			qyh = qyh[:xsz]
+		if cap(jfb) >= int(xsz) {
+			jfb = jfb[:xsz]
 		} else {
-			qyh = make([]UUID, xsz)
+			jfb = make([]UUID, xsz)
 		}
-		for yzr := range qyh {
+		for cxo := range jfb {
 			{
 				var tmp string
 				tmp, err = dc.ReadString()
-				qyh[yzr] = UUID(tmp)
+				jfb[cxo] = UUID(tmp)
 			}
 			if err != nil {
 				return
 			}
 		}
-		(*z)[qke] = qyh
+		(*z)[pks] = jfb
 	}
 	return
 }
@@ -3270,17 +3416,17 @@ func (z SubscriptionDiffMessage) EncodeMsg(en *msgp.Writer) (err error) {
 	if err != nil {
 		return
 	}
-	for ywj, jpj := range z {
-		err = en.WriteString(ywj)
+	for eff, rsw := range z {
+		err = en.WriteString(eff)
 		if err != nil {
 			return
 		}
-		err = en.WriteArrayHeader(uint32(len(jpj)))
+		err = en.WriteArrayHeader(uint32(len(rsw)))
 		if err != nil {
 			return
 		}
-		for zpf := range jpj {
-			err = en.WriteString(string(jpj[zpf]))
+		for xpk := range rsw {
+			err = en.WriteString(string(rsw[xpk]))
 			if err != nil {
 				return
 			}
@@ -3293,11 +3439,11 @@ func (z SubscriptionDiffMessage) EncodeMsg(en *msgp.Writer) (err error) {
 func (z SubscriptionDiffMessage) MarshalMsg(b []byte) (o []byte, err error) {
 	o = msgp.Require(b, z.Msgsize())
 	o = msgp.AppendMapHeader(o, uint32(len(z)))
-	for ywj, jpj := range z {
-		o = msgp.AppendString(o, ywj)
-		o = msgp.AppendArrayHeader(o, uint32(len(jpj)))
-		for zpf := range jpj {
-			o = msgp.AppendString(o, string(jpj[zpf]))
+	for eff, rsw := range z {
+		o = msgp.AppendString(o, eff)
+		o = msgp.AppendArrayHeader(o, uint32(len(rsw)))
+		for xpk := range rsw {
+			o = msgp.AppendString(o, string(rsw[xpk]))
 		}
 	}
 	return
@@ -3318,10 +3464,10 @@ func (z *SubscriptionDiffMessage) UnmarshalMsg(bts []byte) (o []byte, err error)
 		}
 	}
 	for msz > 0 {
-		var rfe string
-		var gmo []UUID
+		var dnj string
+		var obc []UUID
 		msz--
-		rfe, bts, err = msgp.ReadStringBytes(bts)
+		dnj, bts, err = msgp.ReadStringBytes(bts)
 		if err != nil {
 			return
 		}
@@ -3330,22 +3476,22 @@ func (z *SubscriptionDiffMessage) UnmarshalMsg(bts []byte) (o []byte, err error)
 		if err != nil {
 			return
 		}
-		if cap(gmo) >= int(xsz) {
-			gmo = gmo[:xsz]
+		if cap(obc) >= int(xsz) {
+			obc = obc[:xsz]
 		} else {
-			gmo = make([]UUID, xsz)
+			obc = make([]UUID, xsz)
 		}
-		for taf := range gmo {
+		for snv := range obc {
 			{
 				var tmp string
 				tmp, bts, err = msgp.ReadStringBytes(bts)
-				gmo[taf] = UUID(tmp)
+				obc[snv] = UUID(tmp)
 			}
 			if err != nil {
 				return
 			}
 		}
-		(*z)[rfe] = gmo
+		(*z)[dnj] = obc
 	}
 	o = bts
 	return
@@ -3354,11 +3500,11 @@ func (z *SubscriptionDiffMessage) UnmarshalMsg(bts []byte) (o []byte, err error)
 func (z SubscriptionDiffMessage) Msgsize() (s int) {
 	s = msgp.MapHeaderSize
 	if z != nil {
-		for eth, sbz := range z {
-			_ = sbz
-			s += msgp.StringPrefixSize + len(eth) + msgp.ArrayHeaderSize
-			for rjx := range sbz {
-				s += msgp.StringPrefixSize + len(string(sbz[rjx]))
+		for kgt, ema := range z {
+			_ = ema
+			s += msgp.StringPrefixSize + len(kgt) + msgp.ArrayHeaderSize
+			for pez := range ema {
+				s += msgp.StringPrefixSize + len(string(ema[pez]))
 			}
 		}
 	}

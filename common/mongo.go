@@ -1,14 +1,12 @@
-package main
+package common
 
 import (
 	"errors"
 	"fmt"
-	"sync"
-
 	log "github.com/Sirupsen/logrus"
-	"github.com/gtfierro/cs262-project/common"
 	"gopkg.in/mgo.v2"
 	"gopkg.in/mgo.v2/bson"
+	"sync"
 )
 
 // This struct handles all communication with the Mongo database that provides
@@ -24,7 +22,7 @@ type MetadataStore struct {
 
 var selectID = bson.M{"uuid": 1}
 
-func NewMetadataStore(c *common.Config) *MetadataStore {
+func NewMetadataStore(c *Config) *MetadataStore {
 	var (
 		m   = new(MetadataStore)
 		err error
@@ -44,7 +42,7 @@ func NewMetadataStore(c *common.Config) *MetadataStore {
 		"address": address,
 	}).Info("Connected to MongoDB")
 
-	m.db = m.session.DB("broker")
+	m.db = m.session.DB(c.Mongo.Database)
 	m.metadata = m.db.C("metadata")
 
 	index := mgo.Index{
@@ -64,7 +62,7 @@ func NewMetadataStore(c *common.Config) *MetadataStore {
 	return m
 }
 
-func (ms *MetadataStore) Save(msg *common.PublishMessage) error {
+func (ms *MetadataStore) Save(msg *PublishMessage) error {
 	if msg == nil {
 		return errors.New("Message is null")
 	}
@@ -93,30 +91,30 @@ func (ms *MetadataStore) Query(node rootNode) (*Query, error) {
 	iter := ms.metadata.Find(query).Select(selectID).Iter()
 	var r map[string]string
 	for iter.Next(&r) {
-		uuid := common.UUID(r["uuid"])
-		q.MatchingProducers[uuid] = common.ProdStateNew
+		uuid := UUID(r["uuid"])
+		q.MatchingProducers[uuid] = ProdStateNew
 	}
 	err := iter.Close()
 	return q, err
 }
 
-func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []common.UUID) {
+func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []UUID) {
 	iter := ms.metadata.Find(query.Mongo).Select(selectID).Iter()
 	var r map[string]string
 	// mark new UUIDs
 	query.Lock()
 	for iter.Next(&r) {
-		uuid := common.UUID(r["uuid"])
+		uuid := UUID(r["uuid"])
 		if _, found := query.MatchingProducers[uuid]; found {
-			query.MatchingProducers[uuid] = common.ProdStateSame
+			query.MatchingProducers[uuid] = ProdStateSame
 		} else {
-			query.MatchingProducers[uuid] = common.ProdStateNew
+			query.MatchingProducers[uuid] = ProdStateNew
 			added = append(added, uuid)
 		}
 	}
 	// remove old ones
 	for uuid, status := range query.MatchingProducers {
-		if status == common.ProdStateOld {
+		if status == ProdStateOld {
 			removed = append(removed, uuid)
 			delete(query.MatchingProducers, uuid)
 		}
@@ -124,149 +122,58 @@ func (ms *MetadataStore) Reevaluate(query *Query) (added, removed []common.UUID)
 
 	// prepare statuses
 	for uuid, _ := range query.MatchingProducers {
-		query.MatchingProducers[uuid] = common.ProdStateOld
+		query.MatchingProducers[uuid] = ProdStateOld
 	}
 	query.Unlock()
 	return
 }
 
+// Obviously use carefully - in place only for testing!
+func (ms *MetadataStore) DropDatabase() {
+	ms.db.DropDatabase()
+}
+
 type Query struct {
-	Query             string
+	QueryString       string
 	Keys              []string
-	MatchingProducers map[common.UUID]common.ProducerState
-	Clients           *clientList
+	MatchingProducers map[UUID]ProducerState
 	Mongo             bson.M
 	sync.RWMutex
 }
 
 func NewQuery(query string, keys []string, root Node) *Query {
 	return &Query{
-		Query:             query,
+		QueryString:       query,
 		Keys:              keys,
-		MatchingProducers: make(map[common.UUID]common.ProducerState),
-		Clients:           new(clientList),
+		MatchingProducers: make(map[UUID]ProducerState),
 		Mongo:             root.MongoQuery(),
 	}
 }
 
 // updates internal list of qualified streams. Returns the lists of added and removed UUIDs
-func (q *Query) changeUUIDs(uuids []common.UUID) (added, removed []common.UUID) {
+func (q *Query) changeUUIDs(uuids []UUID) (added, removed []UUID) {
 	// mark the UUIDs that are new
 	q.Lock()
 	for _, uuid := range uuids {
 		if _, found := q.MatchingProducers[uuid]; found {
-			q.MatchingProducers[uuid] = common.ProdStateSame
+			q.MatchingProducers[uuid] = ProdStateSame
 		} else {
-			q.MatchingProducers[uuid] = common.ProdStateNew
+			q.MatchingProducers[uuid] = ProdStateNew
 			added = append(added, uuid)
 		}
 	}
 
 	// remove the old ones
 	for uuid, status := range q.MatchingProducers {
-		if status == common.ProdStateOld {
+		if status == ProdStateOld {
 			removed = append(removed, uuid)
 			delete(q.MatchingProducers, uuid)
 		}
 	}
 
 	for uuid, _ := range q.MatchingProducers {
-		q.MatchingProducers[uuid] = common.ProdStateOld
+		q.MatchingProducers[uuid] = ProdStateOld
 	}
 	q.Unlock()
 	return
-}
-
-type clientList struct {
-	List []*Client
-	sync.RWMutex
-}
-
-func (sl *clientList) addClient(sub *Client) {
-	sl.Lock()
-	defer sl.Unlock()
-	for _, oldSub := range sl.List {
-		if oldSub == sub {
-			return
-		}
-	}
-	for i, oldSub := range sl.List {
-		if oldSub == nil {
-			sl.List[i] = sub
-		}
-		return
-	}
-
-	sl.List = append(sl.List, sub)
-}
-
-// TODO: something is funky here. if a client disconnects/reconnects very quickly,
-// we can get a race condition where they disconnect, the broker fails to forward
-// to them, then at the same time the new client comes in, then the broker "deletes"
-// the old client?
-func (sl *clientList) removeClient(sub *Client) {
-	sl.Lock()
-	defer sl.Unlock()
-	for i, oldSub := range sl.List {
-		if oldSub == sub {
-			sl.List[i] = sl.List[len(sl.List)-1]
-			sl.List[len(sl.List)-1] = nil
-			sl.List = sl.List[:len(sl.List)-1]
-			// above: this is supposedly a better delete method for slices because
-			// it avoids leaving references to "deleted" objects at the end of the list
-			// below is the "normal" one
-			//*sl = append((*sl)[:i], (*sl)[i+1:]...)
-			return
-		}
-	}
-}
-
-func (sl *clientList) sendToList(msg common.Sendable) {
-	sl.RLock()
-	for _, c := range sl.List {
-		if c == nil {
-			continue
-		}
-		c.Send(msg)
-	}
-	sl.RUnlock()
-}
-
-type queryList struct {
-	queries []string
-	sync.RWMutex
-}
-
-func (ql *queryList) addQuery(q string) {
-	ql.Lock()
-	for _, oldSub := range ql.queries {
-		if oldSub == q {
-			ql.Unlock()
-			return
-		}
-	}
-	ql.queries = append(ql.queries, q)
-	ql.Unlock()
-}
-
-func (ql *queryList) removeQuery(q string) {
-	ql.Lock()
-	for i, oldSub := range ql.queries {
-		if oldSub == q {
-			ql.queries = append(ql.queries[:i], ql.queries[i+1:]...)
-			ql.Unlock()
-			return
-		}
-	}
-	ql.Unlock()
-}
-
-func (ql *queryList) empty() bool {
-	if ql == nil {
-		return true
-	}
-	ql.RLock()
-	empty := len(ql.queries) == 0
-	ql.RUnlock()
-	return empty
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
+	"github.com/nu7hatch/gouuid"
 	"github.com/tinylib/msgp/msgp"
 	"io"
 	"net"
@@ -14,7 +15,7 @@ import (
 type Server struct {
 	address  *net.TCPAddr
 	listener *net.TCPListener
-	metadata *MetadataStore
+	metadata *common.MetadataStore
 	broker   *Broker
 	// server signals on this channel when it has stopped
 	stopped chan bool
@@ -70,7 +71,7 @@ func NewServer(c *common.Config) *Server {
 		}).Fatal("Could not resolve the generated TCP address")
 	}
 
-	s.metadata = NewMetadataStore(c)
+	s.metadata = common.NewMetadataStore(c)
 	s.broker = NewBroker(s.metadata)
 	s.stopped = make(chan bool)
 	s.closed = false
@@ -201,6 +202,12 @@ func (s *Server) talkToManagement() {
 	// server where it should send clients
 	//TODO: how do we allocate MessageIDs?!?!?!?
 	// these need to be globally unique. Prepend w/ some hash of broker?
-	bcm := &common.BrokerConnectMessage{BrokerAddr: s.address.String()}
+	uuid, _ := uuid.NewV4()
+	brokerID := uuid.String()
+	// TODO should do something else for the BrokerID since we want it to persist after restarts
+	bcm := &common.BrokerConnectMessage{BrokerInfo: common.BrokerInfo{
+		BrokerID:   common.UUID(brokerID),
+		BrokerAddr: s.address.String(),
+	}, MessageIDStruct: common.GetMessageIDStruct()}
 	bcm.Encode(encoder)
 }

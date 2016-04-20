@@ -17,7 +17,7 @@ func BenchmarkNewSubscriptionAllUniqueWarm(b *testing.B) {
 	}
 	common.SetupLogging(testConfig)
 	conn := &net.TCPConn{}
-	metadata := NewMetadataStore(testConfig)
+	metadata := common.NewMetadataStore(testConfig)
 	broker := NewBroker(metadata)
 
 	querystrings := make([]string, b.N)
@@ -47,7 +47,7 @@ func BenchmarkNewSubscriptionAllUniqueCold(b *testing.B) {
 	}
 	common.SetupLogging(testConfig)
 	conn := &net.TCPConn{}
-	metadata := NewMetadataStore(testConfig)
+	metadata := common.NewMetadataStore(testConfig)
 	broker := NewBroker(metadata)
 
 	querystrings := make([]string, b.N)

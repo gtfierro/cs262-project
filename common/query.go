@@ -1,5 +1,5 @@
 //line query.y:3
-package main
+package common
 
 import __yyfmt__ "fmt"
 

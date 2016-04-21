@@ -37,7 +37,17 @@ type ForwardingTable struct {
 	keyLock sync.RWMutex
 	keyMap  map[string]*queryList
 
+	pubClientDeathChan chan *PubClientDeaths
+	brokerDeathChan    chan *common.UUID
+	brokerLiveChan     chan *common.UUID
+
 	brokerManager BrokerManager
+}
+
+type PubClientDeaths struct {
+	BrokerID        *common.UUID
+	PublisherDeaths map[common.UUID]struct{}
+	ClientDeaths    map[string]struct{}
 }
 
 type Publisher struct {
@@ -79,17 +89,40 @@ func (fq *ForwardedQuery) addClient(client *Client, brokerID *common.UUID) (exis
 	}
 }
 
-//TODO: config for broker?
-func NewForwardingTable(metadata *common.MetadataStore, brokerManager BrokerManager) *ForwardingTable {
+func NewForwardingTable(metadata *common.MetadataStore, brokerManager BrokerManager, brokerDeathChan,
+	brokerLiveChan chan *common.UUID, pubClientDeathChan chan *PubClientDeaths) *ForwardingTable {
 	return &ForwardingTable{
-		metadata:      metadata,
-		clientMap:     make(map[string]*Client),
-		pubQueryMap:   make(map[common.UUID]*queryList),
-		queryPubMap:   make(map[*ForwardedQuery]map[*common.UUID]struct{}),
-		publisherMap:  make(map[common.UUID]*Publisher),
-		queryMap:      make(map[string]*ForwardedQuery),
-		keyMap:        make(map[string]*queryList),
-		brokerManager: brokerManager,
+		metadata:           metadata,
+		clientMap:          make(map[string]*Client),
+		pubQueryMap:        make(map[common.UUID]*queryList),
+		queryPubMap:        make(map[*ForwardedQuery]map[*common.UUID]struct{}),
+		publisherMap:       make(map[common.UUID]*Publisher),
+		queryMap:           make(map[string]*ForwardedQuery),
+		keyMap:             make(map[string]*queryList),
+		pubClientDeathChan: pubClientDeathChan,
+		brokerDeathChan:    brokerDeathChan,
+		brokerLiveChan:     brokerLiveChan,
+		brokerManager:      brokerManager,
+	}
+}
+
+func (ft *ForwardingTable) monitorInboundChannels() {
+	for {
+		select {
+		case <-ft.brokerDeathChan:
+		case <-ft.brokerLiveChan:
+		// TODO do I even need these anymore?? I think no based on how I implemented failover
+		case deaths := <-ft.pubClientDeathChan:
+			go func() {
+				deaths := deaths // local copy to avoid the closure
+				for publisherID, _ := range deaths.PublisherDeaths {
+					ft.HandlePublisherDeath(publisherID, *deaths.BrokerID)
+				}
+				for clientAddr, _ := range deaths.ClientDeaths {
+					ft.HandleSubscriberDeath(clientAddr, *deaths.BrokerID)
+				}
+			}()
+		}
 	}
 }
 

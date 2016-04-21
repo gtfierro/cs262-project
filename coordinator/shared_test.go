@@ -15,16 +15,19 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func fakeBroker(coordAddr *net.TCPAddr, expectedMsgs, responses chan common.Sendable) {
+func fakeBroker(coordAddr *net.TCPAddr, expectedMsgs, responses chan common.Sendable, brokerDeath chan bool) {
 	conn, _ := net.DialTCP("tcp", nil, coordAddr)
 	reader := msgp.NewReader(conn)
 	writer := msgp.NewWriter(conn)
 	for {
 		msg, _ := common.MessageFromDecoderMsgp(reader)
 		log.WithField("message", msg).Debug("Broker received message")
-		expectedMsgs <- msg
+		if msg != nil {
+			expectedMsgs <- msg
+		}
 		responseMsg, ok := <-responses
 		if !ok {
+			brokerDeath <- true
 			return
 		}
 		if responseMsg != nil {

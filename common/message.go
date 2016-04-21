@@ -105,7 +105,10 @@ type BrokerRequestMessage struct {
 	// They send it to Coordinator so that when this broker comes back online,
 	// it knows which clients to inform to reconnect
 	// "ip:port"
-	LocalBrokerAddr string
+	LocalBrokerAddr         string
+	IsPublisher             bool   // false if a client
+	PublisherIdOrClientAddr string // if IsPublisher is true, this is the Publisher's UUID
+	// otherwise, this is the client's address
 }
 
 /***** QueryMessage *****/
@@ -257,7 +260,7 @@ type BrokerDeathMessage struct {
 type ClientTerminationRequest struct {
 	MessageIDStruct
 	// "ip:port"
-	ClientAddr string
+	ClientAddrs []string
 }
 
 /***** PublisherTerminationRequest *****/
@@ -265,8 +268,8 @@ type ClientTerminationRequest struct {
 // connection with a specific publisher (i.e., when the broker is a
 // failover and the local broker comes back online)
 type PublisherTerminationRequest struct {
-	MessageID   uint32
-	PublisherID UUID
+	MessageIDStruct
+	PublisherIDs []UUID
 }
 
 /***** RequestHeartbeatMessage *****/

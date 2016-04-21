@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-func setupBroker(expectedMsgs, responseMsgs chan common.Sendable) (*Broker, chan *MessageFromBroker,
+func setupBroker(expectedMsgs, responseMsgs chan common.Sendable, brokerDeath chan bool) (*Broker, chan *MessageFromBroker,
 	*common.FakeClock, *net.TCPConn, *net.TCPListener) {
 	clock := common.NewFakeClock(time.Now())
 	msgRcvChan := make(chan *MessageFromBroker, 5)
@@ -18,7 +18,7 @@ func setupBroker(expectedMsgs, responseMsgs chan common.Sendable) (*Broker, chan
 	msgHandler := func(msg *MessageFromBroker) { msgRcvChan <- msg }
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:56000")
 	listener, _ := net.ListenTCP("tcp", tcpAddr)
-	go fakeBroker(tcpAddr, expectedMsgs, responseMsgs)
+	go fakeBroker(tcpAddr, expectedMsgs, responseMsgs, brokerDeath)
 	conn, _ := listener.AcceptTCP()
 	broker := common.BrokerInfo{BrokerID: "42", BrokerAddr: "0.0.0.0:0000"}
 	bc := NewBroker(&broker, msgHandler, 5*time.Second, clock, deathChan)
@@ -30,7 +30,8 @@ func TestSendAndReceive(t *testing.T) {
 
 	expectedMsgs := make(chan common.Sendable, 3)
 	responseMsgs := make(chan common.Sendable, 3)
-	bc, msgRcvChan, clock, conn, listener := setupBroker(expectedMsgs, responseMsgs)
+	brokerDeath := make(chan bool)
+	bc, msgRcvChan, clock, conn, listener := setupBroker(expectedMsgs, responseMsgs, brokerDeath)
 	defer func() {
 		// Terminate and wait for close
 		bc.Terminate()
@@ -60,11 +61,13 @@ func TestSendAndReceive(t *testing.T) {
 	common.AssertStrEqual(assert, &smsg2, <-expectedMsgs)
 	common.AssertStrEqual(assert, &smsg3, <-expectedMsgs)
 	common.AssertStrEqual(assert, &rmsg1, (<-msgRcvChan).message) // BrokerTerminateMessage should be here
+	conn.CloseRead()
+	close(responseMsgs)
+	<-brokerDeath // wait for it to exit
 	AssertMFBChanEmpty(assert, msgRcvChan)
 	assert.Len(bc.outstandingMessages, 0) // should be no more - we ACKed both
 	clock.AdvanceNowTime(7 * time.Second)
 	common.AssertSendableChanEmpty(assert, bc.messageSendBuffer)
-	close(responseMsgs)
 }
 
 func TestEnsureDelivery(t *testing.T) {
@@ -72,7 +75,8 @@ func TestEnsureDelivery(t *testing.T) {
 
 	expectedMsgs := make(chan common.Sendable)
 	responseMsgs := make(chan common.Sendable, 3)
-	bc, msgRcvChan, clock, conn, listener := setupBroker(expectedMsgs, responseMsgs)
+	brokerDeath := make(chan bool)
+	bc, msgRcvChan, clock, conn, listener := setupBroker(expectedMsgs, responseMsgs, brokerDeath)
 	defer func() {
 		bc.Terminate()
 		bc.WaitForCleanup()
@@ -112,7 +116,9 @@ func TestEnsureDelivery(t *testing.T) {
 	<-expectedMsgs
 
 	<-msgRcvChan
-
+	close(responseMsgs)
+	conn.CloseRead()
+	<-brokerDeath // wait for it to exit
 	common.AssertSendableChanEmpty(assert, expectedMsgs)
 	common.AssertSendableChanEmpty(assert, bc.messageSendBuffer)
 	AssertMFBChanEmpty(assert, msgRcvChan)

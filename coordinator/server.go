@@ -15,9 +15,10 @@ type Server struct {
 	fwdTable      *ForwardingTable
 	brokerManager BrokerManager
 
-	messageBuffer   chan *MessageFromBroker
-	brokerDeathChan chan *common.UUID
-	brokerLiveChan  chan *common.UUID
+	pubClientDeathChan chan *PubClientDeaths
+	messageBuffer      chan *MessageFromBroker
+	brokerDeathChan    chan *common.UUID
+	brokerLiveChan     chan *common.UUID
 
 	stop    chan bool
 	stopped bool
@@ -55,9 +56,12 @@ func NewServer(config *common.Config) *Server {
 	s.brokerDeathChan = make(chan *common.UUID)
 	s.brokerLiveChan = make(chan *common.UUID)
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
+	s.pubClientDeathChan = make(chan *PubClientDeaths, 25)
+
 	s.brokerManager = NewBrokerManager(config.Coordinator.HeartbeatInterval, s.brokerDeathChan,
-		s.brokerLiveChan, s.messageBuffer, new(common.RealClock))
-	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager)
+		s.brokerLiveChan, s.messageBuffer, s.pubClientDeathChan, new(common.RealClock))
+	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.brokerDeathChan, s.brokerLiveChan,
+		s.pubClientDeathChan)
 	s.stop = make(chan bool)
 	s.stopped = false
 
@@ -104,7 +108,13 @@ func (s *Server) dispatch(conn *net.TCPConn) {
 		ack := &common.AcknowledgeMessage{MessageID: m.MessageID}
 		ack.Encode(writer)
 	case *common.BrokerRequestMessage:
-		// TODO
+		if resp, err := s.brokerManager.HandlePubClientRemapping(m); err == nil {
+			resp.Encode(writer)
+		} else {
+			log.WithFields(log.Fields{
+				"requestMessage": msg, "error": err,
+			}).Error("Publisher/client requested remapping but failed")
+		}
 	default:
 		log.WithFields(log.Fields{
 			"tcpAddr": conn.RemoteAddr(), "message": msg, "messageType": common.GetMessageType(msg),

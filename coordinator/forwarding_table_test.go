@@ -2,7 +2,6 @@ package main
 
 import (
 	"github.com/gtfierro/cs262-project/common"
-	"github.com/gtfierro/cs262-project/coordinator/mocks"
 	"github.com/stretchr/testify/mock"
 	"testing"
 )
@@ -28,13 +27,13 @@ func TestSingleSubscription(t *testing.T) {
 	config, _ := common.LoadConfig("config.ini")
 	config.Mongo.Database = "test_coordinator"
 
-	bm := new(mocks.BrokerManager)
+	bm := new(MockBrokerManager)
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
 	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffBlank).Return(nil)
 
-	ft := NewForwardingTable(mongo, bm)
+	ft := NewForwardingTable(mongo, bm, nil, nil, nil)
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid0")
 
 	bm.AssertExpectations(t)
@@ -44,7 +43,7 @@ func TestSingleSubscribeSingleMatchingPublisher(t *testing.T) {
 	config, _ := common.LoadConfig("config.ini")
 	config.Mongo.Database = "test_coordinator"
 
-	bm := new(mocks.BrokerManager)
+	bm := new(MockBrokerManager)
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
@@ -57,7 +56,7 @@ func TestSingleSubscribeSingleMatchingPublisher(t *testing.T) {
 			msg.PublisherList[0] == common.UUID("pub0")
 	})).Return(nil)
 
-	ft := NewForwardingTable(mongo, bm)
+	ft := NewForwardingTable(mongo, bm, nil, nil, nil)
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid0")
 	ft.HandlePublish(publishMessage1, "brokerid1")
 
@@ -68,7 +67,7 @@ func TestSingleQueryMultipleSubscribe(t *testing.T) {
 	config, _ := common.LoadConfig("config.ini")
 	config.Mongo.Database = "test_coordinator"
 
-	bm := new(mocks.BrokerManager)
+	bm := new(MockBrokerManager)
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
@@ -88,7 +87,7 @@ func TestSingleQueryMultipleSubscribe(t *testing.T) {
 			msg.PublisherList[0] == common.UUID("pub0")
 	})).Once().Return(nil)
 
-	ft := NewForwardingTable(mongo, bm)
+	ft := NewForwardingTable(mongo, bm, nil, nil, nil)
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid0")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4243", "brokerid0")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4244", "brokerid1")
@@ -103,7 +102,7 @@ func TestSingleQueryMultipleSubscribeMetadataChange(t *testing.T) {
 	config, _ := common.LoadConfig("config.ini")
 	config.Mongo.Database = "test_coordinator"
 
-	bm := new(mocks.BrokerManager)
+	bm := new(MockBrokerManager)
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
@@ -132,7 +131,7 @@ func TestSingleQueryMultipleSubscribeMetadataChange(t *testing.T) {
 			msg.PublisherList[0] == common.UUID("pub0")
 	})).Once().Return(nil)
 
-	ft := NewForwardingTable(mongo, bm)
+	ft := NewForwardingTable(mongo, bm, nil, nil, nil)
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid0")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4243", "brokerid0")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4244", "brokerid1")
@@ -150,7 +149,7 @@ func TestPublisherDeath(t *testing.T) {
 	config, _ := common.LoadConfig("config.ini")
 	config.Mongo.Database = "test_coordinator"
 
-	bm := new(mocks.BrokerManager)
+	bm := new(MockBrokerManager)
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
@@ -169,7 +168,7 @@ func TestPublisherDeath(t *testing.T) {
 	bm.On("SendToBroker", common.UUID("brokerid2"), expectedDiffBlankNewQuery).Once().Return(nil)
 	bm.On("GetBrokerInfo", common.UUID("brokerid1")).Return(&broker1Info)
 
-	ft := NewForwardingTable(mongo, bm)
+	ft := NewForwardingTable(mongo, bm, nil, nil, nil)
 	publishMessage1.Metadata["Building"] = "Soda"
 	ft.HandlePublish(publishMessage1, "brokerid0")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid1")
@@ -184,7 +183,7 @@ func TestSubscriberDeathSharedQuery(t *testing.T) {
 	config, _ := common.LoadConfig("config.ini")
 	config.Mongo.Database = "test_coordinator"
 
-	bm := new(mocks.BrokerManager)
+	bm := new(MockBrokerManager)
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
@@ -217,7 +216,7 @@ func TestSubscriberDeathSharedQuery(t *testing.T) {
 	bm.On("GetBrokerInfo", common.UUID("brokerid1")).Return(&broker1Info)
 	bm.On("GetBrokerInfo", common.UUID("brokerid2")).Return(&broker2Info)
 
-	ft := NewForwardingTable(mongo, bm)
+	ft := NewForwardingTable(mongo, bm, nil, nil, nil)
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid1")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4243", "brokerid2")
 	publishMessage1.Metadata["Building"] = "Soda"
@@ -237,7 +236,7 @@ func TestSubscriberDeathSharedQuerySharedBroker(t *testing.T) {
 	config, _ := common.LoadConfig("config.ini")
 	config.Mongo.Database = "test_coordinator"
 
-	bm := new(mocks.BrokerManager)
+	bm := new(MockBrokerManager)
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
@@ -259,7 +258,7 @@ func TestSubscriberDeathSharedQuerySharedBroker(t *testing.T) {
 	})).Once().Return(nil)
 	bm.On("GetBrokerInfo", common.UUID("brokerid1")).Return(&broker1Info)
 
-	ft := NewForwardingTable(mongo, bm)
+	ft := NewForwardingTable(mongo, bm, nil, nil, nil)
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid1")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4243", "brokerid1")
 	publishMessage1.Metadata["Building"] = "Soda"
@@ -279,7 +278,7 @@ func TestSingleSubscriberQueryDeath(t *testing.T) {
 	config, _ := common.LoadConfig("config.ini")
 	config.Mongo.Database = "test_coordinator"
 
-	bm := new(mocks.BrokerManager)
+	bm := new(MockBrokerManager)
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
@@ -302,7 +301,7 @@ func TestSingleSubscriberQueryDeath(t *testing.T) {
 
 	bm.On("GetBrokerInfo", common.UUID("brokerid1")).Return(&broker1Info)
 
-	ft := NewForwardingTable(mongo, bm)
+	ft := NewForwardingTable(mongo, bm, nil, nil, nil)
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid1")
 	ft.HandleSubscription("Building = 'Cory'", "127.0.0.1:4243", "brokerid1")
 	publishMessage1.Metadata["Building"] = "Soda"

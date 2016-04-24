@@ -4,7 +4,7 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
-	"github.com/nu7hatch/gouuid"
+	gouuid "github.com/nu7hatch/gouuid"
 	"github.com/tinylib/msgp/msgp"
 	"io"
 	"net"
@@ -13,24 +13,15 @@ import (
 )
 
 type Server struct {
-	address  *net.TCPAddr
-	listener *net.TCPListener
-	metadata *common.MetadataStore
-	broker   *Broker
+	address     *net.TCPAddr
+	listener    *net.TCPListener
+	metadata    *common.MetadataStore
+	broker      *Broker
+	brokerID    common.UUID
+	coordinator *Coordinator
 	// server signals on this channel when it has stopped
 	stopped chan bool
 	closed  bool
-
-	// the address of the coordinator server
-	coordinatorAddress *net.TCPAddr
-	// connection to the coordinator server
-	coordinatorConn *net.TCPConn
-	// the number of seconds to wait before retrying to
-	// contact coordinator server
-	coordinatorRetryTime int
-	// the maximum interval to increase to between attempts to contact
-	// the coordinator server
-	coordinatorRetryTimeMAX int
 }
 
 // Create a new server instance using the configuration
@@ -62,24 +53,14 @@ func NewServer(c *common.Config) *Server {
 		}).Fatal("Could not listen on the provided address")
 	}
 
-	// parse the config into an address
-	coordinatorAddress := fmt.Sprintf("%s:%d", c.Server.CoordinatorHost, c.Server.CoordinatorPort)
-	s.coordinatorAddress, err = net.ResolveTCPAddr("tcp", coordinatorAddress)
-	if err != nil {
-		log.WithFields(log.Fields{
-			"addr": coordinatorAddress, "error": err,
-		}).Fatal("Could not resolve the generated TCP address")
-	}
-
 	s.metadata = common.NewMetadataStore(c)
 	s.broker = NewBroker(s.metadata)
+	bid, _ := gouuid.NewV4()
+	s.brokerID = common.UUID(bid.String())
 	s.stopped = make(chan bool)
 	s.closed = false
 
-	s.coordinatorRetryTime = 1
-	s.coordinatorRetryTimeMAX = 60
-
-	//go s.talkToManagement()
+	s.coordinator = ConnectCoordinator(c.Server, s)
 
 	// print up some server stats
 	go func() {
@@ -173,41 +154,4 @@ func (s *Server) handleSubscribe(query common.QueryMessage, dec *msgp.Reader, co
 
 func (s *Server) handlePublish(first *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {
 	s.broker.HandleProducer(first, dec, conn)
-}
-
-func (s *Server) talkToManagement() {
-	var err error
-	// Dial a connection to the Coordinator server
-	s.coordinatorConn, err = net.DialTCP("tcp", nil, s.coordinatorAddress)
-	// if connection fails, we do exponential retry
-	for err != nil {
-		log.WithFields(log.Fields{
-			"err": err, "server": s.coordinatorAddress, "retry": s.coordinatorRetryTime,
-		}).Error("Failed to contact coordinator server. Retrying")
-		time.Sleep(time.Duration(s.coordinatorRetryTime) * time.Second)
-		// increase retry window by factor of 2
-		if s.coordinatorRetryTime*2 < s.coordinatorRetryTimeMAX {
-			s.coordinatorRetryTime *= 2
-		} else {
-			s.coordinatorRetryTime = s.coordinatorRetryTimeMAX
-		}
-		// Dial a connection to the Coordinator server
-		s.coordinatorConn, err = net.DialTCP("tcp", nil, s.coordinatorAddress)
-	}
-	// if we were successful, reset the wait timer
-	s.coordinatorRetryTime = 1
-	encoder := msgp.NewWriter(s.coordinatorConn)
-
-	// when we come online, send the BrokerConnectMessage to inform the coordinator
-	// server where it should send clients
-	//TODO: how do we allocate MessageIDs?!?!?!?
-	// these need to be globally unique. Prepend w/ some hash of broker?
-	uuid, _ := uuid.NewV4()
-	brokerID := uuid.String()
-	// TODO should do something else for the BrokerID since we want it to persist after restarts
-	bcm := &common.BrokerConnectMessage{BrokerInfo: common.BrokerInfo{
-		BrokerID:   common.UUID(brokerID),
-		BrokerAddr: s.address.String(),
-	}, MessageIDStruct: common.GetMessageIDStruct()}
-	bcm.Encode(encoder)
 }

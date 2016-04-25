@@ -23,6 +23,12 @@ type ServerConfig struct {
 	CoordinatorHost string
 	// the port of the coordinator server
 	CoordinatorPort int
+	// if true, then the broker evaluates metadata locally
+	// (distribution option #2). If false, then it forwards
+	// queries to the coordinator (distribution option #1).
+	// Note that if running in single-node mode, without
+	// a coordinator, this must be TRUE.
+	LocalEvaluation bool
 }
 
 // Coordinator configuration

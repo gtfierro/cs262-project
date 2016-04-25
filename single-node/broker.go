@@ -11,7 +11,7 @@ import (
 var emptyList = []common.UUID{}
 
 // Handles the subscriptions, updates, forwarding
-type Broker struct {
+type LocalBroker struct {
 	metadata    *common.MetadataStore
 	coordinator *Coordinator
 	local       bool
@@ -134,9 +134,8 @@ func (ql *queryList) empty() bool {
 	return empty
 }
 
-//TODO: config for broker?
-func NewBroker(config common.ServerConfig, metadata *common.MetadataStore, coordinator *Coordinator) *Broker {
-	b := &Broker{
+func NewBroker(config common.ServerConfig, metadata *common.MetadataStore, coordinator *Coordinator) *LocalBroker {
+	b := &LocalBroker{
 		metadata:    metadata,
 		coordinator: coordinator,
 		local:       config.LocalEvaluation,
@@ -148,7 +147,7 @@ func NewBroker(config common.ServerConfig, metadata *common.MetadataStore, coord
 		killClient:  make(chan *Client),
 	}
 
-	go func(b *Broker) {
+	go func(b *LocalBroker) {
 		for deadClient := range b.killClient {
 			log.WithFields(log.Fields{
 				"client": deadClient,
@@ -167,7 +166,7 @@ func NewBroker(config common.ServerConfig, metadata *common.MetadataStore, coord
 }
 
 // safely adds entry to map[query][]Client map
-func (b *Broker) mapQueryToClient(query string, c *Client) {
+func (b *LocalBroker) mapQueryToClient(query string, c *Client) {
 	b.subscriber_lock.Lock()
 	if list, found := b.subscribers[query]; found {
 		list.addClient(c)
@@ -179,7 +178,7 @@ func (b *Broker) mapQueryToClient(query string, c *Client) {
 	b.subscriber_lock.Unlock()
 }
 
-func (b *Broker) updateForwardingTable(query *common.Query) {
+func (b *LocalBroker) updateForwardingTable(query *common.Query) {
 	b.forwarding_lock.Lock()
 	query.RLock()
 Loop:
@@ -209,7 +208,7 @@ Loop:
 
 // we have the list of new and removed UUIDs for a query,
 // so we update the forwarding table to match that
-func (b *Broker) updateForwardingDiffs(query *common.Query, added, removed []common.UUID) {
+func (b *LocalBroker) updateForwardingDiffs(query *common.Query, added, removed []common.UUID) {
 	var (
 		list  *queryList
 		found bool
@@ -235,7 +234,7 @@ func (b *Broker) updateForwardingDiffs(query *common.Query, added, removed []com
 	b.updateForwardingTable(query)
 }
 
-func (b *Broker) ForwardMessage(m *common.PublishMessage) {
+func (b *LocalBroker) ForwardMessage(m *common.PublishMessage) {
 	var (
 		matchingQueries *queryList
 		found           bool
@@ -265,7 +264,7 @@ func (b *Broker) ForwardMessage(m *common.PublishMessage) {
 	}
 }
 
-func (b *Broker) SendSubscriptionDiffs(query string, added, removed []common.UUID) {
+func (b *LocalBroker) SendSubscriptionDiffs(query string, added, removed []common.UUID) {
 	// if we don't do this, then empty lists show up as None
 	// when we pack them
 	if len(added) == 0 {
@@ -287,7 +286,7 @@ func (b *Broker) SendSubscriptionDiffs(query string, added, removed []common.UUI
 
 // Evaluates the query and establishes the forwarding decisions.
 // Returns the client
-func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
+func (b *LocalBroker) NewSubscription(querystring string, conn net.Conn) *Client {
 	var (
 		query *common.Query
 		found bool
@@ -340,7 +339,7 @@ func (b *Broker) NewSubscription(querystring string, conn net.Conn) *Client {
 	return c
 }
 
-func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {
+func (b *LocalBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {
 	// use uuid to find old producer or create new one
 	// add producer.C to a list of channels to select from
 	// when we receive a message from a producer, save the
@@ -401,7 +400,7 @@ func (b *Broker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, co
 }
 
 // Removes the producer UUID from the forwarding and producers maps
-func (b *Broker) cleanupProducer(p *Producer) {
+func (b *LocalBroker) cleanupProducer(p *Producer) {
 	b.producers_lock.Lock()
 	b.forwarding_lock.Lock()
 	delete(b.producers, p.ID)
@@ -417,7 +416,7 @@ func (b *Broker) cleanupProducer(p *Producer) {
 // tables that match. If message is nil, it will just reevaluate using current
 // producer metadata across *all* queries, else it can use metadata in the provided
 // Message to filter which queries to reevaluate
-func (b *Broker) RemapProducer(p *Producer, message *common.PublishMessage) {
+func (b *LocalBroker) RemapProducer(p *Producer, message *common.PublishMessage) {
 	var queriesToReevaluate = make(map[string]*common.Query)
 	if message == nil { // reevaluate ALL queries
 		log.Debug("Reevaluating all queries")

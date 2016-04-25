@@ -13,7 +13,7 @@ import (
 type Coordinator struct {
 	address  *net.TCPAddr
 	conn     *net.TCPConn
-	broker   *Broker
+	broker   Broker
 	brokerID common.UUID
 	encoder  *msgp.Writer
 	// the number of seconds to wait before retrying to
@@ -94,10 +94,13 @@ func (c *Coordinator) handleStateMachine() {
 				"brokerID": c.brokerID, "message": msg, "error": err, "coordinator": c.address,
 			}).Warn("Could not decode incoming message from coordinator")
 		}
+		// handle incoming message types
 		switch m := msg.(type) {
 		case *common.RequestHeartbeatMessage:
 			log.Info("Received heartbeat from coordinator")
 			c.sendHeartbeat()
+		case *common.BrokerSubscriptionDiffMessage:
+			log.Info("Received Subscription Diff from Coordinator")
 		default:
 			log.WithFields(log.Fields{
 				"message": m, "coordinator": c.address,

@@ -16,7 +16,7 @@ type Server struct {
 	address     *net.TCPAddr
 	listener    *net.TCPListener
 	metadata    *common.MetadataStore
-	broker      *Broker
+	broker      Broker
 	brokerID    common.UUID
 	coordinator *Coordinator
 	local       bool

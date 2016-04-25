@@ -5,6 +5,7 @@ import (
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/tinylib/msgp/msgp"
+	"io"
 	"net"
 	"time"
 )
@@ -82,6 +83,12 @@ func (c *Coordinator) handleStateMachine() {
 	reader := msgp.NewReader(c.conn)
 	for {
 		msg, err := common.MessageFromDecoderMsgp(reader)
+		//TODO: when the connection with the coordinator breaks,
+		//WHAT DO WE DO?!
+		if err == io.EOF {
+			log.Warn("Coordinator is no longer reachable!")
+			break
+		}
 		if err != nil {
 			log.WithFields(log.Fields{
 				"brokerID": c.brokerID, "message": msg, "error": err, "coordinator": c.address,
@@ -116,5 +123,34 @@ func (c *Coordinator) startBeating() {
 	tick := time.NewTicker(5 * time.Second)
 	for range tick.C {
 		c.sendHeartbeat()
+	}
+}
+
+// if we receive a subscription and we are *not* using local evaluation,
+// then we wrap it up in a BrokerQueryMessage and forward it to the coordinator
+//   type BrokerQueryMessage struct {
+//   	QueryMessage string
+//   	ClientAddr   string
+//   }
+func (c *Coordinator) forwardSubscription(query common.QueryMessage, client net.Conn) {
+	bqm := &common.BrokerQueryMessage{
+		QueryMessage: string(query),
+		ClientAddr:   client.RemoteAddr().String(),
+	}
+	bqm.Encode(c.encoder)
+	if err := c.encoder.Flush(); err != nil {
+		log.WithFields(log.Fields{
+			"query": query, "client": client.RemoteAddr(), "error": err, "coordinator": c.address,
+		}).Error("Could not forward query to coordinator")
+	}
+}
+
+func (c *Coordinator) forwardPublish(msg *common.PublishMessage) {
+	bpm := common.BrokerPublishMessage(*msg)
+	bpm.Encode(c.encoder)
+	if err := c.encoder.Flush(); err != nil {
+		log.WithFields(log.Fields{
+			"query": msg, "error": err, "coordinator": c.address,
+		}).Error("Could not forward query to coordinator")
 	}
 }

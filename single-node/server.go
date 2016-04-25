@@ -19,6 +19,7 @@ type Server struct {
 	broker      *Broker
 	brokerID    common.UUID
 	coordinator *Coordinator
+	local       bool
 	// server signals on this channel when it has stopped
 	stopped chan bool
 	closed  bool
@@ -37,6 +38,8 @@ func NewServer(c *common.Config) *Server {
 		address = fmt.Sprintf(":%d", c.Server.Port)
 	}
 
+	s.local = c.Server.LocalEvaluation
+
 	// parse the config into an address
 	s.address, err = net.ResolveTCPAddr("tcp", address)
 	if err != nil {
@@ -54,13 +57,12 @@ func NewServer(c *common.Config) *Server {
 	}
 
 	s.metadata = common.NewMetadataStore(c)
-	s.broker = NewBroker(s.metadata)
+	s.coordinator = ConnectCoordinator(c.Server, s)
+	s.broker = NewBroker(c.Server, s.metadata, s.coordinator)
 	bid, _ := gouuid.NewV4()
 	s.brokerID = common.UUID(bid.String())
 	s.stopped = make(chan bool)
 	s.closed = false
-
-	s.coordinator = ConnectCoordinator(c.Server, s)
 
 	// print up some server stats
 	go func() {
@@ -149,7 +151,12 @@ func (s *Server) handleSubscribe(query common.QueryMessage, dec *msgp.Reader, co
 	log.WithFields(log.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
-	s.broker.NewSubscription(string(query), conn)
+
+	if s.local {
+		s.broker.NewSubscription(string(query), conn)
+	} else {
+		s.coordinator.forwardSubscription(query, conn)
+	}
 }
 
 func (s *Server) handlePublish(first *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {

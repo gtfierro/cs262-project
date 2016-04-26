@@ -13,7 +13,7 @@ import (
 type Coordinator struct {
 	address  *net.TCPAddr
 	conn     *net.TCPConn
-	broker   Broker
+	broker   *RemoteBroker
 	brokerID common.UUID
 	encoder  *msgp.Writer
 	// the number of seconds to wait before retrying to
@@ -22,13 +22,14 @@ type Coordinator struct {
 	// the maximum interval to increase to between attempts to contact
 	// the coordinator server
 	retryTimeMax int
+	// handles outstanding messages that need an ACK
 	requests *outstandingManager
 }
 
 func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 	var err error
 
-	c := &Coordinator{broker: s.broker,
+	c := &Coordinator{broker: s.broker.(*RemoteBroker),
 		retryTime:    1,
 		retryTimeMax: 60,
 		requests:     newOutstandingManager(),

@@ -57,11 +57,12 @@ func NewServer(c *common.Config) *Server {
 	}
 
 	s.metadata = common.NewMetadataStore(c)
-	s.coordinator = ConnectCoordinator(c.Server, s)
 	if s.local {
 		s.broker = NewBroker(s.metadata)
 	} else {
 		s.broker = NewRemoteBroker(s.metadata, s.coordinator)
+		s.coordinator = ConnectCoordinator(c.Server, s)
+		s.broker.(*RemoteBroker).coordinator = s.coordinator
 	}
 	bid, _ := gouuid.NewV4()
 	s.brokerID = common.UUID(bid.String())

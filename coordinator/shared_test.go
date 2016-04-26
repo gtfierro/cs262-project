@@ -37,6 +37,13 @@ func fakeBroker(coordAddr *net.TCPAddr, expectedMsgs, responses chan common.Send
 	}
 }
 
+func sendDummyMessage(conn *net.TCPConn, expectMsgChan chan common.Sendable) {
+	w1 := msgp.NewWriter(conn)
+	(&common.AcknowledgeMessage{}).Encode(w1)
+	w1.Flush()
+	<-expectMsgChan
+}
+
 func AssertMFBChanEmpty(assert *require.Assertions, channel chan *MessageFromBroker) {
 	select {
 	case <-channel:

@@ -73,8 +73,10 @@ func (s *Server) handleMessage(brokerMessage *MessageFromBroker) {
 	switch msg := brokerMessage.message.(type) {
 	case *common.BrokerPublishMessage:
 		s.fwdTable.HandlePublish(msg, brokerID)
+		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.BrokerQueryMessage:
 		s.fwdTable.HandleSubscription(msg.QueryMessage, msg.ClientAddr, brokerID)
+		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.PublisherTerminationMessage:
 		s.fwdTable.HandlePublisherDeath(msg.PublisherID, brokerID)
 	case *common.ClientTerminationMessage:

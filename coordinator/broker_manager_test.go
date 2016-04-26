@@ -3,7 +3,6 @@ package main
 import (
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/stretchr/testify/require"
-	"github.com/tinylib/msgp/msgp"
 	"net"
 	"testing"
 	"time"
@@ -97,13 +96,6 @@ func TestBrokerDeath(t *testing.T) {
 	assert.Equal(&uuid2, <-liveChan)
 	ids := []*common.UUID{&bm.GetLiveBroker().BrokerID, &bm.GetLiveBroker().BrokerID, &bm.GetLiveBroker().BrokerID}
 	assert.Contains(ids, &uuid2)
-}
-
-func sendDummyMessage(conn *net.TCPConn, expectMsgChan chan common.Sendable) {
-	w1 := msgp.NewWriter(conn)
-	(&common.AcknowledgeMessage{}).Encode(w1)
-	w1.Flush()
-	<-expectMsgChan
 }
 
 func TestBrokerDeathWithClientFailover(t *testing.T) {

@@ -16,8 +16,9 @@ var expectedDiffPlusOne = &common.BrokerSubscriptionDiffMessage{
 var expectedDiffMinusOne = &common.BrokerSubscriptionDiffMessage{
 	NewPublishers: []common.UUID{}, DelPublishers: []common.UUID{"pub0"}, Query: queryStr,
 }
-var publishMessage1 = &common.PublishMessage{
-	UUID: "pub0", Metadata: make(map[string]interface{}), Value: "1",
+var publishMessage1 = &common.BrokerPublishMessage{
+	MessageIDStruct: common.MessageIDStruct{1}, UUID: "pub0",
+	Metadata: make(map[string]interface{}), Value: "1",
 }
 var broker0Info = common.BrokerInfo{BrokerID: "brokerid0", BrokerAddr: "127.0.0.1:60007"}
 var broker1Info = common.BrokerInfo{BrokerID: "brokerid1", BrokerAddr: "127.0.0.1:60008"}
@@ -222,8 +223,9 @@ func TestSubscriberDeathSharedQuery(t *testing.T) {
 	publishMessage1.Metadata["Building"] = "Soda"
 	ft.HandlePublish(publishMessage1, "brokerid0")
 	ft.HandleSubscriberDeath("127.0.0.1:4242", "brokerid1")
-	var publishMessage2 = &common.PublishMessage{
-		UUID: "pub1", Metadata: make(map[string]interface{}), Value: "2",
+	var publishMessage2 = &common.BrokerPublishMessage{
+		MessageIDStruct: common.MessageIDStruct{2},
+		UUID:            "pub1", Metadata: make(map[string]interface{}), Value: "2",
 	}
 	publishMessage2.Metadata["Building"] = "Soda"
 	publishMessage2.Metadata["Room"] = "500"
@@ -264,8 +266,9 @@ func TestSubscriberDeathSharedQuerySharedBroker(t *testing.T) {
 	publishMessage1.Metadata["Building"] = "Soda"
 	ft.HandlePublish(publishMessage1, "brokerid0")
 	ft.HandleSubscriberDeath("127.0.0.1:4242", "brokerid1")
-	var publishMessage2 = &common.PublishMessage{
-		UUID: "pub1", Metadata: make(map[string]interface{}), Value: "2",
+	var publishMessage2 = &common.BrokerPublishMessage{
+		MessageIDStruct: common.MessageIDStruct{2},
+		UUID:            "pub1", Metadata: make(map[string]interface{}), Value: "2",
 	}
 	publishMessage2.Metadata["Building"] = "Soda"
 	publishMessage2.Metadata["Room"] = "500"

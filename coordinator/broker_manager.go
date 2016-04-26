@@ -295,7 +295,7 @@ func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageH
 		case *common.PublisherTerminationMessage:
 			brokerMessage.broker.RemovePublisher(msg.PublisherID)
 			bm.MessageBuffer <- brokerMessage
-		case *common.PublishMessage:
+		case *common.BrokerPublishMessage:
 			brokerMessage.broker.AddLocalPublisher(msg.UUID)
 			bm.MessageBuffer <- brokerMessage
 		case *common.BrokerQueryMessage:

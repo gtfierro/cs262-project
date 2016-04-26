@@ -43,7 +43,20 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 		}).Fatal("Could not resolve the generated TCP address")
 	}
 	// Dial a connection to the Coordinator server
+	c.rebuildConnection()
+	// send a heartbeat as well
+	c.sendHeartbeat()
+	// before we send, we want to setup the ping/pong service
+	go c.handleStateMachine()
+	go c.startBeating()
+
+	return c
+}
+
+func (c *Coordinator) rebuildConnection() {
+	var err error
 	c.conn, err = net.DialTCP("tcp", nil, c.address)
+	//c.conn2, _ = net.DialTCP("tcp", nil, c.address)
 	for err != nil {
 		log.WithFields(log.Fields{
 			"err": err, "server": c.address, "retry": c.retryTime,
@@ -72,13 +85,6 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 	bcm.Encode(c.encoder)
 	// do the actual sending
 	c.encoder.Flush()
-	// send a heartbeat as well
-	c.sendHeartbeat()
-	// before we send, we want to setup the ping/pong service
-	go c.handleStateMachine()
-	go c.startBeating()
-
-	return c
 }
 
 // This method handles the bookkeeping messages from the coordinator server
@@ -86,7 +92,9 @@ func (c *Coordinator) handleStateMachine() {
 	reader := msgp.NewReader(c.conn)
 	for {
 		msg, err := common.MessageFromDecoderMsgp(reader)
-		//TODO: when the connection with the coordinator breaks,
+		//TODO: when the connection with the coordinator breaks, buffer
+		// all outgoing messages
+		c.rebuildConnection()
 		//WHAT DO WE DO?!
 		if err == io.EOF {
 			log.Warn("Coordinator is no longer reachable!")

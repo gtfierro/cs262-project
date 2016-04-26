@@ -167,7 +167,7 @@ func (ft *ForwardingTable) HandleSubscription(queryStr string, clientAddr string
 }
 
 // Called anytime a publisher sends metadata (new publisher or MD update)
-func (ft *ForwardingTable) HandlePublish(msg *common.PublishMessage, brokerID common.UUID) {
+func (ft *ForwardingTable) HandlePublish(msg *common.BrokerPublishMessage, brokerID common.UUID) {
 	if len(msg.Metadata) == 0 {
 		// Ignore
 		log.WithFields(log.Fields{
@@ -177,7 +177,8 @@ func (ft *ForwardingTable) HandlePublish(msg *common.PublishMessage, brokerID co
 	}
 
 	// save the metadata
-	err := ft.metadata.Save(msg)
+	pm := msg.ToRegular()
+	err := ft.metadata.Save(pm)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"message": msg, "error": err,
@@ -194,7 +195,7 @@ func (ft *ForwardingTable) HandlePublish(msg *common.PublishMessage, brokerID co
 	}
 	ft.publisherLock.Unlock()
 
-	candidateQueries := ft.gatherCandidateQueries(msg)
+	candidateQueries := ft.gatherCandidateQueries(pm)
 	ft.reevaluateQueries(candidateQueries)
 }
 

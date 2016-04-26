@@ -71,7 +71,7 @@ func NewServer(config *common.Config) *Server {
 func (s *Server) handleMessage(brokerMessage *MessageFromBroker) {
 	brokerID := brokerMessage.broker.BrokerID
 	switch msg := brokerMessage.message.(type) {
-	case *common.PublishMessage:
+	case *common.BrokerPublishMessage:
 		s.fwdTable.HandlePublish(msg, brokerID)
 	case *common.BrokerQueryMessage:
 		s.fwdTable.HandleSubscription(msg.QueryMessage, msg.ClientAddr, brokerID)

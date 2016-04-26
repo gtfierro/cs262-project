@@ -288,7 +288,7 @@ func (ft *ForwardingTable) HandlePublisherDeath(publisherID common.UUID, brokerI
 			"brokerID": brokerID, "publisherID": publisherID,
 		}).Warn("Attempted to terminate a non-existent publisher")
 	}
-	delete(ft.publisherMap, publisherID)
+	delete(ft.publisherMap, publisherID) // delete is a no-op if the ID doesn't exist
 	ft.publisherLock.Unlock()
 
 	ft.pubQueryLock.Lock()

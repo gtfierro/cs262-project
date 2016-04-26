@@ -140,6 +140,7 @@ func (c *Coordinator) forwardSubscription(query common.QueryMessage, client net.
 		QueryMessage: string(query),
 		ClientAddr:   client.RemoteAddr().String(),
 	}
+	bqm.MessageID = common.GetMessageID()
 	bqm.Encode(c.encoder)
 	if err := c.encoder.Flush(); err != nil {
 		log.WithFields(log.Fields{
@@ -148,8 +149,11 @@ func (c *Coordinator) forwardSubscription(query common.QueryMessage, client net.
 	}
 }
 
-func (c *Coordinator) forwardPublish(msg *common.PublishMessage) {
-	bpm := common.BrokerPublishMessage(*msg)
+// this forwards a publish message from a local producer to the coordinator and receives
+// a BrokerSubscriptionDiffMessage in response
+func (c *Coordinator) forwardPublish(msg *common.PublishMessage) *common.ForwardRequestMessage {
+	var bpm common.BrokerPublishMessage
+	bpm.FromPublishMessage(msg)
 	bpm.Encode(c.encoder)
 	if err := c.encoder.Flush(); err != nil {
 		log.WithFields(log.Fields{

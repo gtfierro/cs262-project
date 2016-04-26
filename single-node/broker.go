@@ -12,9 +12,7 @@ var emptyList = []common.UUID{}
 
 // Handles the subscriptions, updates, forwarding
 type LocalBroker struct {
-	metadata    *common.MetadataStore
-	coordinator *Coordinator
-	local       bool
+	metadata *common.MetadataStore
 
 	// map queries to clients
 	subscriber_lock sync.RWMutex
@@ -134,11 +132,9 @@ func (ql *queryList) empty() bool {
 	return empty
 }
 
-func NewBroker(config common.ServerConfig, metadata *common.MetadataStore, coordinator *Coordinator) *LocalBroker {
+func NewBroker(metadata *common.MetadataStore) *LocalBroker {
 	b := &LocalBroker{
 		metadata:    metadata,
-		coordinator: coordinator,
-		local:       config.LocalEvaluation,
 		subscribers: make(map[string]clientList),
 		forwarding:  make(map[common.UUID]*queryList),
 		producers:   make(map[common.UUID]*Producer),
@@ -381,16 +377,9 @@ func (b *LocalBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reade
 				return
 			case msg := <-p.C:
 				msg.L.RLock()
-				// if doing local reevaluation then we save metadata
-				// and handle differences here
-				if b.local {
-					if len(msg.Metadata) > 0 {
-						err = b.metadata.Save(msg)
-						b.RemapProducer(p, msg)
-					}
-				} else {
-					// if not, we forward the new publish message to the coordinator
-					b.coordinator.forwardPublish(msg)
+				if len(msg.Metadata) > 0 {
+					err = b.metadata.Save(msg)
+					b.RemapProducer(p, msg)
 				}
 				b.ForwardMessage(msg)
 				msg.L.RUnlock()

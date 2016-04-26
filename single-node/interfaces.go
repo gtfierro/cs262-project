@@ -7,7 +7,6 @@ import (
 )
 
 type Broker interface {
-	RemapProducer(p *Producer, message *common.PublishMessage)
 	HandleProducer(msg *common.PublishMessage, dec *msgp.Reader, conn net.Conn)
 	NewSubscription(querystring string, conn net.Conn) *Client
 	ForwardMessage(msg *common.PublishMessage)

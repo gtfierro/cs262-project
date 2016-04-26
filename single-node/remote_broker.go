@@ -89,13 +89,9 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 				msg.L.RLock()
 				// if doing local reevaluation then we save metadata
 				// and handle differences here
-				diff := b.coordinator.forwardPublish(msg)
-				log.Debugf("GOT DIFF %v", diff)
-				if len(msg.Metadata) > 0 {
-					//err = b.metadata.Save(msg)
-					//b.RemapProducer(p, msg)
-				}
-				//b.ForwardMessage(msg)
+				// FIXME: problem here is that this does not return because
+				// coordinator does not send ACKs for forward messages
+				b.coordinator.forwardPublish(msg)
 				msg.L.RUnlock()
 			}
 		}
@@ -113,6 +109,21 @@ func (b *RemoteBroker) NewSubscription(querystring string, conn net.Conn) *Clien
 }
 
 func (b *RemoteBroker) ForwardMessage(msg *common.PublishMessage) {
+	log.Debugf("Got forward message %v", msg)
+}
+
+// This method is called to add forwarding entries for remote brokers.
+// The received structure has this form:
+//	// list of publishers whose messages should be forwarded
+//	PublisherList []UUID
+//	// the destination broker
+//	BrokerInfo
+//	// the query string which defines this forward request
+//	Query string
+func (b *RemoteBroker) AddForwardingEntries(msg *common.ForwardRequestMessage) {
+	//TODO: figure out what to do with the error here
+	client, _ := ClientFromBrokerString(msg.Query, msg.BrokerAddr, b.killClient)
+	b.mapQueryToClient(msg.Query, client)
 }
 
 // safely adds entry to map[query][]Client map

@@ -110,6 +110,11 @@ func (c *Coordinator) handleStateMachine() {
 		case *common.RequestHeartbeatMessage:
 			log.Info("Received heartbeat from coordinator")
 			c.sendHeartbeat()
+		case *common.ForwardRequestMessage:
+			log.Infof("Received forward request message %v", m)
+			c.broker.AddForwardingEntries(m)
+		case *common.SubscriptionDiffMessage:
+			log.Infof("Subscription Diff message %v", m)
 		case common.Message:
 			log.Infof("Got a message %v", m)
 			c.requests.GotMessage(m)
@@ -121,17 +126,22 @@ func (c *Coordinator) handleStateMachine() {
 	}
 }
 
+func (c *Coordinator) send(m common.Sendable) {
+	m.Encode(c.encoder)
+	if err := c.encoder.Flush(); err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "coordinator": c.address, "message": m,
+		}).Error("Could not send message to coordinator")
+		// buffer!
+	}
+}
+
 func (c *Coordinator) sendHeartbeat() {
 	log.WithFields(log.Fields{
 		"coordinator": c.address,
 	}).Debug("Sending hearbeat")
 	hb := &common.HeartbeatMessage{}
-	hb.Encode(c.encoder)
-	if err := c.encoder.Flush(); err != nil {
-		log.WithFields(log.Fields{
-			"error": err, "coordinator": c.address,
-		}).Error("Could not send heartbeat to coordinator")
-	}
+	c.send(hb)
 }
 
 func (c *Coordinator) startBeating() {
@@ -153,28 +163,19 @@ func (c *Coordinator) forwardSubscription(query common.QueryMessage, client net.
 		ClientAddr:   client.RemoteAddr().String(),
 	}
 	bqm.MessageID = common.GetMessageID()
-	bqm.Encode(c.encoder)
-	if err := c.encoder.Flush(); err != nil {
-		log.WithFields(log.Fields{
-			"query": query, "client": client.RemoteAddr(), "error": err, "coordinator": c.address,
-		}).Error("Could not forward query to coordinator")
-	}
+	c.send(bqm)
 	response, _ := c.requests.WaitForMessage(bqm.GetID())
-	log.Debugf("Response %v", response.(*common.BrokerSubscriptionDiffMessage))
+	log.Debugf("Response %v", response.(*common.AcknowledgeMessage))
 }
 
 // this forwards a publish message from a local producer to the coordinator and receives
 // a BrokerSubscriptionDiffMessage in response
 func (c *Coordinator) forwardPublish(msg *common.PublishMessage) *common.ForwardRequestMessage {
-	var bpm common.BrokerPublishMessage
+	var bpm *common.BrokerPublishMessage
 	bpm.FromPublishMessage(msg)
-	bpm.Encode(c.encoder)
-	if err := c.encoder.Flush(); err != nil {
-		log.WithFields(log.Fields{
-			"query": msg, "error": err, "coordinator": c.address,
-		}).Error("Could not forward query to coordinator")
-	}
+	c.send(bpm)
 	log.Debug("Waiting for publish response")
 	response, _ := c.requests.WaitForMessage(bpm.GetID())
+	log.Debugf("Got response for pub %v", response)
 	return response.(*common.ForwardRequestMessage)
 }

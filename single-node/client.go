@@ -39,6 +39,19 @@ func NewClient(query string, conn *net.Conn, death chan<- *Client) *Client {
 	}
 }
 
+// This creates a new client reference that represents an external broker.
+// "address" should be in the form of "ip:port"
+func ClientFromBrokerString(query, address string, death chan<- *Client) (*Client, error) {
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"address": address, "error": err,
+		}).Error("Could not dial remote broker")
+		return nil, err
+	}
+	return NewClient(query, &conn, death), nil
+}
+
 // queues a message to be sent
 func (c *Client) Send(m common.Sendable) {
 	// if our event loop isn't started, then start it

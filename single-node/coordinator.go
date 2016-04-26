@@ -22,7 +22,7 @@ type Coordinator struct {
 	// the maximum interval to increase to between attempts to contact
 	// the coordinator server
 	retryTimeMax int
-	requests *outstandingManager
+	requests     *outstandingManager
 }
 
 func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
@@ -138,10 +138,10 @@ func (c *Coordinator) startBeating() {
 //   	QueryMessage string
 //   	ClientAddr   string
 //   }
-func (c *Coordinator) forwardSubscription(query common.QueryMessage, client net.Conn) {
+func (c *Coordinator) forwardSubscription(query string, clientID common.UUID, client net.Conn) {
 	bqm := &common.BrokerQueryMessage{
-		QueryMessage: string(query),
-		ClientAddr:   client.RemoteAddr().String(),
+		Query: query,
+		UUID:  clientID,
 	}
 	bqm.MessageID = common.GetMessageID()
 	bqm.Encode(c.encoder)

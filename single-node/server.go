@@ -140,7 +140,7 @@ func (s *Server) dispatch(conn net.Conn) {
 	}
 	switch m := msg.(type) {
 	case *common.QueryMessage:
-		s.handleSubscribe(*m, dec, conn)
+		s.handleSubscribe(m, dec, conn)
 	case *common.PublishMessage:
 		s.handlePublish(m, dec, conn)
 	default:
@@ -151,11 +151,11 @@ func (s *Server) dispatch(conn net.Conn) {
 // We have buffered the initial contents into bufio.Reader, so we pass that
 // to this handler so we can finish decoding it. We also pass in the connection
 // so that we can transmit back to the client.
-func (s *Server) handleSubscribe(query common.QueryMessage, dec *msgp.Reader, conn net.Conn) {
+func (s *Server) handleSubscribe(query *common.QueryMessage, dec *msgp.Reader, conn net.Conn) {
 	log.WithFields(log.Fields{
 		"from": conn.RemoteAddr(), "query": query,
 	}).Debug("Got a new Subscription!")
-	s.broker.NewSubscription(string(query), conn)
+	s.broker.NewSubscription(query.Query, query.UUID, conn)
 }
 
 func (s *Server) handlePublish(first *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {

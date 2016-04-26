@@ -75,12 +75,12 @@ func (s *Server) handleMessage(brokerMessage *MessageFromBroker) {
 		s.fwdTable.HandlePublish(msg, brokerID)
 		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.BrokerQueryMessage:
-		s.fwdTable.HandleSubscription(msg.QueryMessage, msg.ClientAddr, brokerID)
+		s.fwdTable.HandleSubscription(msg.Query, msg.UUID, brokerID)
 		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.PublisherTerminationMessage:
 		s.fwdTable.HandlePublisherDeath(msg.PublisherID, brokerID)
 	case *common.ClientTerminationMessage:
-		s.fwdTable.HandleSubscriberDeath(msg.ClientAddr, brokerID)
+		s.fwdTable.HandleSubscriberDeath(msg.ClientID, brokerID)
 	default:
 		log.WithFields(log.Fields{
 			"message": msg, "messageType": common.GetMessageType(msg), "brokerID": brokerID,

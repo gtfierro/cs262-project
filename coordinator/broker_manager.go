@@ -242,9 +242,9 @@ func (bm *BrokerManagerImpl) HandlePubClientRemapping(msg *common.BrokerRequestM
 	if brokerDead { // actions to take if broker determined dead
 		newBroker = bm.GetLiveBroker()
 		if msg.IsPublisher {
-			newBroker.AddRemotePublisher(common.UUID(msg.PublisherIdOrClientAddr), &homeBroker.BrokerID)
+			newBroker.AddRemotePublisher(common.UUID(msg.UUID), &homeBroker.BrokerID)
 		} else {
-			newBroker.AddRemoteClient(msg.PublisherIdOrClientAddr, &homeBroker.BrokerID)
+			newBroker.AddRemoteClient(msg.UUID, &homeBroker.BrokerID)
 		}
 	} else {
 		newBroker = homeBroker // no real redirect necessary
@@ -290,7 +290,7 @@ func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageH
 			brokerMessage.broker.Terminate()
 		// Messages below this take some action in the BrokerManager but also forward beyond
 		case *common.ClientTerminationMessage:
-			brokerMessage.broker.RemoveClient(msg.ClientAddr)
+			brokerMessage.broker.RemoveClient(msg.ClientID)
 			bm.MessageBuffer <- brokerMessage
 		case *common.PublisherTerminationMessage:
 			brokerMessage.broker.RemovePublisher(msg.PublisherID)
@@ -299,7 +299,7 @@ func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageH
 			brokerMessage.broker.AddLocalPublisher(msg.UUID)
 			bm.MessageBuffer <- brokerMessage
 		case *common.BrokerQueryMessage:
-			brokerMessage.broker.AddLocalClient(msg.ClientAddr)
+			brokerMessage.broker.AddLocalClient(msg.UUID)
 			bm.MessageBuffer <- brokerMessage
 		default:
 			bm.MessageBuffer <- brokerMessage

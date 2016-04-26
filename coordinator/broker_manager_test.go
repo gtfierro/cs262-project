@@ -160,15 +160,15 @@ func TestBrokerDeathWithClientFailover(t *testing.T) {
 	// Set up broker 1 with 1 publisher, broker 2 with 2 clients, broker 3 with 1 client
 	publishMessage1.Metadata["Building"] = "Soda"
 	respMsg1 <- publishMessage1
-	respMsg2 <- &common.BrokerQueryMessage{QueryMessage: queryStr, ClientAddr: "127.0.0.1:10001"}
+	respMsg2 <- &common.BrokerQueryMessage{Query: queryStr, UUID: common.UUID("11")}
 	sendDummyMessage(conn2, expectMsg2)
-	respMsg2 <- &common.BrokerQueryMessage{QueryMessage: queryStr + " and Room = '2'", ClientAddr: "127.0.0.1:10002"}
-	respMsg3 <- &common.BrokerQueryMessage{QueryMessage: queryStr + " and Room = '3'", ClientAddr: "127.0.0.1:10003"}
+	respMsg2 <- &common.BrokerQueryMessage{Query: queryStr + " and Room = '2'", UUID: common.UUID("12")}
+	respMsg3 <- &common.BrokerQueryMessage{Query: queryStr + " and Room = '3'", UUID: common.UUID("13")}
 
 	clientResp := make(chan common.Sendable)
 	go func() {
 		resp, _ := bm.HandlePubClientRemapping(&common.BrokerRequestMessage{LocalBrokerAddr: "0.0.0.0:0002",
-			IsPublisher: false, PublisherIdOrClientAddr: "127.0.0.1:10002"})
+			IsPublisher: false, UUID: common.UUID("12")})
 		clientResp <- resp
 	}()
 
@@ -195,7 +195,7 @@ func TestBrokerDeathWithClientFailover(t *testing.T) {
 
 	// client 3 needs a new broker as well
 	resp, _ := bm.HandlePubClientRemapping(&common.BrokerRequestMessage{LocalBrokerAddr: "0.0.0.0:0002",
-		IsPublisher: false, PublisherIdOrClientAddr: "127.0.0.1:10002"})
+		IsPublisher: false, UUID: common.UUID("12")})
 	common.AssertStrEqual(assert, &common.BrokerAssignmentMessage{
 		BrokerInfo: common.BrokerInfo{BrokerID: common.UUID("3"), BrokerAddr: "0.0.0.0:0003"},
 	}, resp)
@@ -211,9 +211,9 @@ func TestBrokerDeathWithClientFailover(t *testing.T) {
 	assert.True(bm.IsBrokerAlive(uuid2))
 	assert.Equal(&uuid2, <-liveChan)
 	clientTermResp := (<-expectMsg1).(*common.ClientTerminationRequest)
-	assert.Equal("127.0.0.1:10002", clientTermResp.ClientAddrs[0])
+	assert.Equal(common.UUID("12"), clientTermResp.ClientIDs[0])
 	respMsg1 <- &common.AcknowledgeMessage{MessageID: clientTermResp.MessageID}
 	clientTermResp = (<-expectMsg3).(*common.ClientTerminationRequest)
-	assert.Equal("127.0.0.1:10002", clientTermResp.ClientAddrs[0])
+	assert.Equal(common.UUID("12"), clientTermResp.ClientIDs[0])
 	respMsg1 <- &common.AcknowledgeMessage{MessageID: clientTermResp.MessageID}
 }

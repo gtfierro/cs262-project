@@ -109,15 +109,17 @@ type BrokerRequestMessage struct {
 	// They send it to Coordinator so that when this broker comes back online,
 	// it knows which clients to inform to reconnect
 	// "ip:port"
-	LocalBrokerAddr         string
-	IsPublisher             bool   // false if a client
-	PublisherIdOrClientAddr string // if IsPublisher is true, this is the Publisher's UUID
-	// otherwise, this is the client's address
+	LocalBrokerAddr string
+	IsPublisher     bool // false if a client
+	UUID            UUID // UUID of client or publisher
 }
 
 /***** QueryMessage *****/
 // Client starts a query with this
-type QueryMessage string
+type QueryMessage struct {
+	UUID  UUID
+	Query string
+}
 
 ///////////////////////////////////////
 /********** Publish Message **********/
@@ -277,7 +279,7 @@ type BrokerDeathMessage struct {
 type ClientTerminationRequest struct {
 	MessageIDStruct
 	// "ip:port"
-	ClientAddrs []string
+	ClientIDs []UUID
 }
 
 /***** PublisherTerminationRequest *****/
@@ -334,9 +336,9 @@ func (m *BrokerPublishMessage) FromPublishMessage(pm *PublishMessage) {
 // from brokers to the coordinator so that it is possible
 // to tell which client the query is attached to
 type BrokerQueryMessage struct {
-	QueryMessage string
-	ClientAddr   string
 	MessageIDStruct
+	Query string
+	UUID  UUID
 }
 
 /***** ClientTermination Message *****/
@@ -346,8 +348,7 @@ type BrokerQueryMessage struct {
 type ClientTerminationMessage struct {
 	MessageIDStruct
 	// the client that has left
-	// "ip:port"
-	ClientAddr string
+	ClientID UUID
 }
 
 /****** PublisherTermination Message *****/

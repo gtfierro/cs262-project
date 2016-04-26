@@ -27,11 +27,12 @@ type Broker struct {
 	clock                  common.Clock
 	deathChannel           chan *Broker
 	listElem               *list.Element
-	remoteClientMap        map[string]*common.UUID      // ClientAddr -> HomeBrokerID
-	remotePublisherMap     map[common.UUID]*common.UUID // PublisherID -> HomeBrokerID
-	localClientMap         map[string]struct{}          // ClientAddr -> HomeBrokerID
-	localPublisherMap      map[common.UUID]struct{}     // PublisherID -> HomeBrokerID
-	pubClientMapLock       sync.RWMutex
+	// TODO ETK combine the client and pub map?
+	remoteClientMap    map[common.UUID]*common.UUID // ClientID -> HomeBrokerID
+	remotePublisherMap map[common.UUID]*common.UUID // PublisherID -> HomeBrokerID
+	localClientMap     map[common.UUID]struct{}     // ClientID -> HomeBrokerID
+	localPublisherMap  map[common.UUID]struct{}     // PublisherID -> HomeBrokerID
+	pubClientMapLock   sync.RWMutex
 }
 
 func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
@@ -50,9 +51,9 @@ func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
 	bc.heartbeatInterval = heartbeatInterval
 	bc.clock = clock
 	bc.deathChannel = deathChannel
-	bc.remoteClientMap = make(map[string]*common.UUID)
+	bc.remoteClientMap = make(map[common.UUID]*common.UUID)
 	bc.remotePublisherMap = make(map[common.UUID]*common.UUID)
-	bc.localClientMap = make(map[string]struct{})
+	bc.localClientMap = make(map[common.UUID]struct{})
 	bc.localPublisherMap = make(map[common.UUID]struct{})
 	return bc
 }
@@ -135,12 +136,12 @@ func (bc *Broker) AddLocalPublisher(publisherID common.UUID) {
 // Called LocalClient because the QueryMessage came from
 // this broker, but it may actually be remote - if it is,
 // and it's already in the remote map, no need to add it
-func (bc *Broker) AddLocalClient(clientAddr string) {
+func (bc *Broker) AddLocalClient(clientID common.UUID) {
 	bc.pubClientMapLock.Lock()
 	defer bc.pubClientMapLock.Unlock()
 
-	if _, found := bc.localClientMap[clientAddr]; !found {
-		bc.localClientMap[clientAddr] = struct{}{}
+	if _, found := bc.localClientMap[clientID]; !found {
+		bc.localClientMap[clientID] = struct{}{}
 	}
 }
 
@@ -152,12 +153,12 @@ func (bc *Broker) RemovePublisher(publisherID common.UUID) {
 	delete(bc.remotePublisherMap, publisherID)
 }
 
-func (bc *Broker) RemoveClient(clientAddr string) {
+func (bc *Broker) RemoveClient(clientID common.UUID) {
 	bc.pubClientMapLock.Lock()
 	defer bc.pubClientMapLock.Unlock()
 
-	delete(bc.localClientMap, clientAddr)
-	delete(bc.remoteClientMap, clientAddr)
+	delete(bc.localClientMap, clientID)
+	delete(bc.remoteClientMap, clientID)
 }
 
 func (bc *Broker) GetAndClearPublishers() map[common.UUID]struct{} {
@@ -174,16 +175,16 @@ func (bc *Broker) GetAndClearPublishers() map[common.UUID]struct{} {
 	return localMap
 }
 
-func (bc *Broker) GetAndClearClients() map[string]struct{} {
+func (bc *Broker) GetAndClearClients() map[common.UUID]struct{} {
 	bc.pubClientMapLock.Lock()
 	remoteMap := bc.remoteClientMap
 	localMap := bc.localClientMap
-	bc.remoteClientMap = make(map[string]*common.UUID)
-	bc.localClientMap = make(map[string]struct{})
+	bc.remoteClientMap = make(map[common.UUID]*common.UUID)
+	bc.localClientMap = make(map[common.UUID]struct{})
 	bc.pubClientMapLock.Unlock()
 
-	for clientAddr, _ := range remoteMap {
-		localMap[clientAddr] = struct{}{}
+	for clientID, _ := range remoteMap {
+		localMap[clientID] = struct{}{}
 	}
 	return localMap
 }
@@ -195,11 +196,11 @@ func (bc *Broker) AddRemotePublisher(publisherID common.UUID, homeBrokerID *comm
 	bc.remotePublisherMap[publisherID] = homeBrokerID
 }
 
-func (bc *Broker) AddRemoteClient(clientAddr string, homeBrokerID *common.UUID) {
+func (bc *Broker) AddRemoteClient(clientID common.UUID, homeBrokerID *common.UUID) {
 	bc.pubClientMapLock.Lock()
 	defer bc.pubClientMapLock.Unlock()
 
-	bc.remoteClientMap[clientAddr] = homeBrokerID
+	bc.remoteClientMap[clientID] = homeBrokerID
 }
 
 // Send a termination message to the broker instructing it to
@@ -208,15 +209,15 @@ func (bc *Broker) AddRemoteClient(clientAddr string, homeBrokerID *common.UUID) 
 func (bc *Broker) TerminateRemotePubClients(homeBrokerID *common.UUID) {
 	bc.pubClientMapLock.Lock()
 	defer bc.pubClientMapLock.Unlock()
-	clientAddrs := make([]string, 0, 50)
+	clientIDs := make([]common.UUID, 0, 50)
 	for clientAddr, brokerID := range bc.remoteClientMap {
 		if *brokerID == *homeBrokerID {
-			if cap(clientAddrs) == len(clientAddrs) {
-				clientAddrsTmp := clientAddrs
-				clientAddrs = make([]string, len(clientAddrs), cap(clientAddrs)*2)
-				copy(clientAddrs, clientAddrsTmp)
+			if cap(clientIDs) == len(clientIDs) {
+				clientIDsTmp := clientIDs
+				clientIDs = make([]common.UUID, len(clientIDs), cap(clientIDs)*2)
+				copy(clientIDs, clientIDsTmp)
 			}
-			clientAddrs = append(clientAddrs, clientAddr)
+			clientIDs = append(clientIDs, clientAddr)
 			delete(bc.remoteClientMap, clientAddr)
 		}
 	}
@@ -232,10 +233,10 @@ func (bc *Broker) TerminateRemotePubClients(homeBrokerID *common.UUID) {
 			delete(bc.remotePublisherMap, publisherID)
 		}
 	}
-	if len(clientAddrs) > 0 {
+	if len(clientIDs) > 0 {
 		bc.Send(&common.ClientTerminationRequest{
 			MessageIDStruct: common.GetMessageIDStruct(),
-			ClientAddrs:     clientAddrs,
+			ClientIDs:       clientIDs,
 		})
 	}
 	if len(publisherIDs) > 0 {

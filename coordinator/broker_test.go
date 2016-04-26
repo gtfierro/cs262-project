@@ -5,7 +5,6 @@ import (
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/stretchr/testify/require"
 	"net"
-	"sync"
 	"testing"
 	"time"
 )
@@ -41,7 +40,7 @@ func TestSendAndReceive(t *testing.T) {
 	}()
 
 	bc.StartAsynchronously(conn)
-	smsg1 := common.BrokerPublishMessage{"", make(map[string]interface{}), nil, sync.RWMutex{}}
+	smsg1 := common.BrokerAssignmentMessage{common.BrokerInfo{common.UUID("5"), ""}}
 	rmsg1 := common.BrokerTerminateMessage{}
 	smsg2 := common.ForwardRequestMessage{common.MessageIDStruct{MessageID: 1}, nil, common.BrokerInfo{}, ""}
 	rmsg2 := common.AcknowledgeMessage{MessageID: 1}

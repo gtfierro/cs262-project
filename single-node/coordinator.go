@@ -157,10 +157,10 @@ func (c *Coordinator) startBeating() {
 //   	QueryMessage string
 //   	ClientAddr   string
 //   }
-func (c *Coordinator) forwardSubscription(query common.QueryMessage, client net.Conn) {
+func (c *Coordinator) forwardSubscription(query string, clientID common.UUID, client net.Conn) {
 	bqm := &common.BrokerQueryMessage{
-		QueryMessage: string(query),
-		ClientAddr:   client.RemoteAddr().String(),
+		Query: query,
+		UUID:  clientID,
 	}
 	bqm.MessageID = common.GetMessageID()
 	c.send(bqm)

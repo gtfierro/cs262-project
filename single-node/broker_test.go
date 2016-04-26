@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/gtfierro/cs262-project/common"
 	"math/rand"
 	"net"
@@ -29,12 +30,12 @@ func BenchmarkNewSubscriptionAllUniqueWarm(b *testing.B) {
 		randStr := strings.Join(randChars, "")
 		querystrings[i] = "Room = '" + randStr + "'"
 		// we run these first to warm them up
-		broker.NewSubscription(querystrings[i], conn)
+		broker.NewSubscription(querystrings[i], common.UUID(fmt.Sprintf("%v", i)), conn)
 	}
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		broker.NewSubscription(querystrings[i], conn)
+		broker.NewSubscription(querystrings[i], common.UUID(fmt.Sprintf("%v", i)), conn)
 	}
 }
 
@@ -62,6 +63,6 @@ func BenchmarkNewSubscriptionAllUniqueCold(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		broker.NewSubscription(querystrings[i], conn)
+		broker.NewSubscription(querystrings[i], common.UUID(fmt.Sprintf("%v", i)), conn)
 	}
 }

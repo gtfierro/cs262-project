@@ -15,7 +15,7 @@ type ForwardingTable struct {
 
 	// map of client addresses to clients
 	clientLock sync.RWMutex
-	clientMap  map[string]*Client
+	clientMap  map[common.UUID]*Client
 
 	// map of publisher ids to queries
 	pubQueryLock sync.RWMutex
@@ -47,7 +47,7 @@ type ForwardingTable struct {
 type PubClientDeaths struct {
 	BrokerID        *common.UUID
 	PublisherDeaths map[common.UUID]struct{}
-	ClientDeaths    map[string]struct{}
+	ClientDeaths    map[common.UUID]struct{}
 }
 
 type Publisher struct {
@@ -93,7 +93,7 @@ func NewForwardingTable(metadata *common.MetadataStore, brokerManager BrokerMana
 	brokerLiveChan chan *common.UUID, pubClientDeathChan chan *PubClientDeaths) *ForwardingTable {
 	return &ForwardingTable{
 		metadata:           metadata,
-		clientMap:          make(map[string]*Client),
+		clientMap:          make(map[common.UUID]*Client),
 		pubQueryMap:        make(map[common.UUID]*queryList),
 		queryPubMap:        make(map[*ForwardedQuery]map[*common.UUID]struct{}),
 		publisherMap:       make(map[common.UUID]*Publisher),
@@ -118,15 +118,15 @@ func (ft *ForwardingTable) monitorInboundChannels() {
 				for publisherID, _ := range deaths.PublisherDeaths {
 					ft.HandlePublisherDeath(publisherID, *deaths.BrokerID)
 				}
-				for clientAddr, _ := range deaths.ClientDeaths {
-					ft.HandleSubscriberDeath(clientAddr, *deaths.BrokerID)
+				for clientID, _ := range deaths.ClientDeaths {
+					ft.HandleSubscriberDeath(clientID, *deaths.BrokerID)
 				}
 			}()
 		}
 	}
 }
 
-func (ft *ForwardingTable) HandleSubscription(queryStr string, clientAddr string, brokerID common.UUID) {
+func (ft *ForwardingTable) HandleSubscription(queryStr string, clientID common.UUID, brokerID common.UUID) {
 	// create a new client object and add to mapping
 	// check if a query object already exists, if not create it and add to mapping
 	//       if it does, add client to the list in the appropriate spot
@@ -137,16 +137,16 @@ func (ft *ForwardingTable) HandleSubscription(queryStr string, clientAddr string
 
 	// Create new client; add to client mapping
 	ft.clientLock.Lock()
-	if c, found := ft.clientMap[clientAddr]; found {
+	if c, found := ft.clientMap[clientID]; found {
 		log.WithFields(log.Fields{
-			"current_client": c, "client_addr": clientAddr,
+			"currentClient": c, "clientID": clientID,
 		}).Warn("Got new client but already exists in client table for that address; replacing")
 	}
 	newClient := &Client{
 		CurrentBrokerID: &brokerID,
 		query:           fq,
 	}
-	ft.clientMap[clientAddr] = newClient
+	ft.clientMap[clientID] = newClient
 	ft.clientLock.Unlock()
 
 	// Add new client to the appropriate query's list of clients
@@ -199,7 +199,7 @@ func (ft *ForwardingTable) HandlePublish(msg *common.BrokerPublishMessage, broke
 	ft.reevaluateQueries(candidateQueries)
 }
 
-func (ft *ForwardingTable) HandleSubscriberDeath(clientAddr string, brokerID common.UUID) {
+func (ft *ForwardingTable) HandleSubscriberDeath(clientID common.UUID, brokerID common.UUID) {
 	// find out which queries the client was involved in
 	// for each, if this client was the only one from brokerID, remove any forward mappings to that query
 	// if this client was the only one from any broker, remove the query from our mappings
@@ -210,20 +210,20 @@ func (ft *ForwardingTable) HandleSubscriberDeath(clientAddr string, brokerID com
 		found         bool
 	)
 	ft.clientLock.Lock()
-	if client, found = ft.clientMap[clientAddr]; !found {
+	if client, found = ft.clientMap[clientID]; !found {
 		log.WithFields(log.Fields{
-			"clientAddr": clientAddr, "brokerID": brokerID,
+			"clientID": clientID, "brokerID": brokerID,
 		}).Warn("Attempted to handle death of a subscriber that did not exist")
 		return
 	}
-	delete(ft.clientMap, clientAddr)
+	delete(ft.clientMap, clientID)
 	ft.clientLock.Unlock()
 
 	fq := client.query
 	fq.Lock()
 	if clientList, found = fq.CurrentBrokerIDs[brokerID]; !found {
 		log.WithFields(log.Fields{
-			"query": fq.QueryString, "brokerID": brokerID, "clientAddr": clientAddr,
+			"query": fq.QueryString, "brokerID": brokerID, "clientID": clientID,
 		}).Warn("Broker attempted to terminate client but not found under that broker")
 		return
 	}

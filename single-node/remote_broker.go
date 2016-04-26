@@ -98,13 +98,13 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 	}(p)
 }
 
-func (b *RemoteBroker) NewSubscription(querystring string, conn net.Conn) *Client {
+func (b *RemoteBroker) NewSubscription(query string, clientID common.UUID, conn net.Conn) *Client {
 	// create the local client
-	c := NewClient(querystring, &conn, b.killClient)
+	c := NewClient(query, &conn, b.killClient)
 	// map the local client to the query
-	b.mapQueryToClient(querystring, c)
+	b.mapQueryToClient(query, c)
 	// forward our subscription information to the coordinator
-	b.coordinator.forwardSubscription(common.QueryMessage(querystring), conn)
+	b.coordinator.forwardSubscription(query, clientID, conn)
 	return c
 }
 

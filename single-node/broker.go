@@ -280,7 +280,7 @@ func (b *LocalBroker) SendSubscriptionDiffs(query string, added, removed []commo
 
 // Evaluates the query and establishes the forwarding decisions.
 // Returns the client
-func (b *LocalBroker) NewSubscription(querystring string, conn net.Conn) *Client {
+func (b *LocalBroker) NewSubscription(querystring string, clientID common.UUID, conn net.Conn) *Client {
 	var (
 		query *common.Query
 		found bool

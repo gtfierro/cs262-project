@@ -22,6 +22,7 @@ type Coordinator struct {
 	// the maximum interval to increase to between attempts to contact
 	// the coordinator server
 	retryTimeMax int
+	requests *outstandingManager
 }
 
 func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
@@ -30,6 +31,7 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 	c := &Coordinator{broker: s.broker,
 		retryTime:    1,
 		retryTimeMax: 60,
+		requests:     newOutstandingManager(),
 	}
 
 	coordinatorAddress := fmt.Sprintf("%s:%d", config.CoordinatorHost, config.CoordinatorPort)
@@ -99,8 +101,9 @@ func (c *Coordinator) handleStateMachine() {
 		case *common.RequestHeartbeatMessage:
 			log.Info("Received heartbeat from coordinator")
 			c.sendHeartbeat()
-		case *common.BrokerSubscriptionDiffMessage:
-			log.Info("Received Subscription Diff from Coordinator")
+		case common.Message:
+			log.Infof("Got a message %v", m)
+			c.requests.GotMessage(m)
 		default:
 			log.WithFields(log.Fields{
 				"message": m, "coordinator": c.address,
@@ -147,6 +150,8 @@ func (c *Coordinator) forwardSubscription(query common.QueryMessage, client net.
 			"query": query, "client": client.RemoteAddr(), "error": err, "coordinator": c.address,
 		}).Error("Could not forward query to coordinator")
 	}
+	response, _ := c.requests.WaitForMessage(bqm.GetID())
+	log.Debugf("Response %v", response.(*common.BrokerSubscriptionDiffMessage))
 }
 
 // this forwards a publish message from a local producer to the coordinator and receives
@@ -160,4 +165,7 @@ func (c *Coordinator) forwardPublish(msg *common.PublishMessage) *common.Forward
 			"query": msg, "error": err, "coordinator": c.address,
 		}).Error("Could not forward query to coordinator")
 	}
+	log.Debug("Waiting for publish response")
+	response, _ := c.requests.WaitForMessage(bpm.GetID())
+	return response.(*common.ForwardRequestMessage)
 }

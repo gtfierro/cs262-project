@@ -28,6 +28,10 @@ type Sendable interface {
 	Encode(enc *msgp.Writer) error
 }
 
+type Message interface {
+	GetID() MessageIDType
+}
+
 type SendableWithID interface {
 	Encode(enc *msgp.Writer) error
 	GetID() MessageIDType
@@ -126,6 +130,18 @@ type PublishMessage struct {
 	L        sync.RWMutex `msg:"-"`
 }
 
+func (m *PublishMessage) ToBroker() *BrokerPublishMessage {
+	bpm := new(BrokerPublishMessage)
+	bpm.FromPublishMessage(m)
+	return bpm
+}
+
+func (m *PublishMessage) FromBroker(bpm *BrokerPublishMessage) {
+	m.UUID = bpm.UUID
+	m.Metadata = bpm.Metadata
+	m.Value = bpm.Value
+}
+
 func (m *PublishMessage) FromArray(array []interface{}) error {
 	var (
 		ok     bool
@@ -220,6 +236,7 @@ type CancelForwardRequest struct {
 // Analogous to SubscriptionDiffMessage, but used for internal comm., i.e. when
 // coordinator notifies a broker to talk to its client
 type BrokerSubscriptionDiffMessage struct {
+	MessageIDStruct
 	NewPublishers []UUID
 	DelPublishers []UUID
 	Query         string
@@ -291,10 +308,24 @@ type HeartbeatMessage struct{}
 // Analogous to PublishMessage, but used for internal communication, i.e. when
 // a broker forwards a PublishMessage to another broker
 type BrokerPublishMessage struct {
+	MessageIDStruct
 	UUID     UUID
 	Metadata map[string]interface{}
 	Value    interface{}
 	L        sync.RWMutex `msg:"-"`
+}
+
+func (m *BrokerPublishMessage) ToRegular() *PublishMessage {
+	pm := new(PublishMessage)
+	pm.FromBroker(m)
+	return pm
+}
+
+func (m *BrokerPublishMessage) FromPublishMessage(pm *PublishMessage) {
+	m.UUID = pm.UUID
+	m.Metadata = pm.Metadata
+	m.Value = pm.Value
+	m.SetID(GetMessageID())
 }
 
 /***** BrokerQueryMessage ********/
@@ -305,6 +336,7 @@ type BrokerPublishMessage struct {
 type BrokerQueryMessage struct {
 	QueryMessage string
 	ClientAddr   string
+	MessageIDStruct
 }
 
 /***** ClientTermination Message *****/

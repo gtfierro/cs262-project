@@ -9,7 +9,6 @@ import (
 )
 
 func TestBrokerDeath(t *testing.T) {
-	t.Skip()
 	assert := require.New(t)
 
 	deathChan := make(chan *common.UUID, 5)
@@ -98,13 +97,13 @@ func TestBrokerDeath(t *testing.T) {
 	assert.Contains(ids, &uuid2)
 }
 
-func TestBrokerDeathWithClientFailover(t *testing.T) {
+func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 	assert := require.New(t)
 
 	deathChan := make(chan *common.UUID, 5)
 	liveChan := make(chan *common.UUID, 5)
 	brokerDeathChan := make(chan bool, 4)
-	pubClientDeathChan := make(chan *PubClientDeaths, 10)
+	brokerReassignChan := make(chan *BrokerReassignment, 10)
 	clock := common.NewFakeClock(time.Now())
 
 	expectMsg1 := make(chan common.Sendable, 5)
@@ -134,7 +133,7 @@ func TestBrokerDeathWithClientFailover(t *testing.T) {
 	broker3 := common.BrokerInfo{BrokerID: uuid3, BrokerAddr: "0.0.0.0:0003"}
 
 	msgBuf := make(chan *MessageFromBroker, 100)
-	bm := NewBrokerManager(10, deathChan, liveChan, msgBuf, pubClientDeathChan, clock)
+	bm := NewBrokerManager(10, deathChan, liveChan, msgBuf, brokerReassignChan, clock)
 
 	defer func() {
 		bm.TerminateBroker(uuid1)
@@ -200,7 +199,6 @@ func TestBrokerDeathWithClientFailover(t *testing.T) {
 		BrokerInfo: common.BrokerInfo{BrokerID: common.UUID("3"), BrokerAddr: "0.0.0.0:0003"},
 	}, resp)
 
-	// brokerManager now assumes clients are connected to new locations, if broker 2 comes alive it should terminate
 	close(respMsg2)
 	<-brokerDeathChan // wait for death
 
@@ -210,10 +208,4 @@ func TestBrokerDeathWithClientFailover(t *testing.T) {
 
 	assert.True(bm.IsBrokerAlive(uuid2))
 	assert.Equal(&uuid2, <-liveChan)
-	clientTermResp := (<-expectMsg1).(*common.ClientTerminationRequest)
-	assert.Equal(common.UUID("12"), clientTermResp.ClientIDs[0])
-	respMsg1 <- &common.AcknowledgeMessage{MessageID: clientTermResp.MessageID}
-	clientTermResp = (<-expectMsg3).(*common.ClientTerminationRequest)
-	assert.Equal(common.UUID("12"), clientTermResp.ClientIDs[0])
-	respMsg1 <- &common.AcknowledgeMessage{MessageID: clientTermResp.MessageID}
 }

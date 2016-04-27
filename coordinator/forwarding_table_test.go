@@ -173,7 +173,7 @@ func TestPublisherDeath(t *testing.T) {
 	publishMessage1.Metadata["Building"] = "Soda"
 	ft.HandlePublish(publishMessage1, "brokerid0")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid1")
-	ft.HandlePublisherDeath("pub0", "brokerid0")
+	ft.HandlePublisherTermination("pub0", "brokerid0")
 	ft.HandleSubscription(queryStr+" and Foo != 'Bar'", "127.0.0.1:4243", "brokerid2")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4244", "brokerid0")
 
@@ -222,7 +222,7 @@ func TestSubscriberDeathSharedQuery(t *testing.T) {
 	ft.HandleSubscription(queryStr, "127.0.0.1:4243", "brokerid2")
 	publishMessage1.Metadata["Building"] = "Soda"
 	ft.HandlePublish(publishMessage1, "brokerid0")
-	ft.HandleSubscriberDeath("127.0.0.1:4242", "brokerid1")
+	ft.HandleSubscriberTermination("127.0.0.1:4242", "brokerid1")
 	var publishMessage2 = &common.BrokerPublishMessage{
 		MessageIDStruct: common.MessageIDStruct{2},
 		UUID:            "pub1", Metadata: make(map[string]interface{}), Value: "2",
@@ -265,7 +265,7 @@ func TestSubscriberDeathSharedQuerySharedBroker(t *testing.T) {
 	ft.HandleSubscription(queryStr, "127.0.0.1:4243", "brokerid1")
 	publishMessage1.Metadata["Building"] = "Soda"
 	ft.HandlePublish(publishMessage1, "brokerid0")
-	ft.HandleSubscriberDeath("127.0.0.1:4242", "brokerid1")
+	ft.HandleSubscriberTermination("127.0.0.1:4242", "brokerid1")
 	var publishMessage2 = &common.BrokerPublishMessage{
 		MessageIDStruct: common.MessageIDStruct{2},
 		UUID:            "pub1", Metadata: make(map[string]interface{}), Value: "2",
@@ -309,7 +309,7 @@ func TestSingleSubscriberQueryDeath(t *testing.T) {
 	ft.HandleSubscription("Building = 'Cory'", "127.0.0.1:4243", "brokerid1")
 	publishMessage1.Metadata["Building"] = "Soda"
 	ft.HandlePublish(publishMessage1, "brokerid0")
-	ft.HandleSubscriberDeath("127.0.0.1:4242", "brokerid1")
+	ft.HandleSubscriberTermination("127.0.0.1:4242", "brokerid1")
 	ft.HandleSubscription(queryStr, "127.0.0.1:4242", "brokerid1")
 
 	bm.AssertExpectations(t)

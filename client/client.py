@@ -3,6 +3,8 @@ import socket
 import uuid as uuidlib
 from io import BytesIO, BufferedRWPair
 
+uuid = "295b3cd0-0bf8-11e6-81fc-0cc47a0f7eea"
+
 class Client:
     def __init__(self, host, port, uuid=None):
         self.uuid = uuid if uuid is not None else uuidlib.uuid4()
@@ -18,7 +20,7 @@ class Client:
         self.s.connect((self.host, self.port))
 
     def subscribe(self, query):
-        self.s.send(chr(0x01)+msgpack.packb(query))
+        self.s.send(chr(0x01)+msgpack.packb({"UUID": uuid, "Query": query}))
         self.unpacker = msgpack.Unpacker()
         while 1:
             data = self.s.recv(1024)

@@ -223,3 +223,17 @@ func (c *Coordinator) forwardPublish(msg *common.PublishMessage) {
 		}).Error("Did not get a proper acknowledgement")
 	}
 }
+
+func (c *Coordinator) terminateClient(client *Client) {
+	var ctm = &common.ClientTerminationMessage{
+		ClientID: client.ID,
+	}
+	ctm.MessageID = common.GetMessageID()
+	c.send(ctm)
+	response, _ := c.requests.WaitForMessage(ctm.GetID())
+	switch response.(type) {
+	case *common.AcknowledgeMessage:
+	default:
+		log.Error("Did not get an ACK!")
+	}
+}

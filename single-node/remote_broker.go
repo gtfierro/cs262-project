@@ -50,6 +50,7 @@ func NewRemoteBroker(metadata *common.MetadataStore, coordinator *Coordinator) *
 			(&cl).removeClient(deadClient)
 			b.subscribers[deadClient.query] = cl
 			b.subscriber_lock.Unlock()
+			b.coordinator.terminateClient(deadClient)
 		}
 	}(b)
 
@@ -101,7 +102,7 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 
 func (b *RemoteBroker) NewSubscription(query string, clientID common.UUID, conn net.Conn) *Client {
 	// create the local client
-	c := NewClient(query, &conn, b.killClient)
+	c := NewClient(query, clientID, &conn, b.killClient)
 	// map the local client to the query
 	b.mapQueryToClient(query, c)
 	// forward our subscription information to the coordinator

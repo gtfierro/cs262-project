@@ -321,7 +321,7 @@ func (b *LocalBroker) NewSubscription(querystring string, clientID common.UUID, 
 		}).Debug("Evaluated query")
 	}
 
-	c := NewClient(querystring, &conn, b.killClient)
+	c := NewClient(querystring, clientID, &conn, b.killClient)
 
 	// set up forwarding for all initial producers
 	b.updateForwardingTable(query)

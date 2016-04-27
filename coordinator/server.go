@@ -61,6 +61,7 @@ func NewServer(config *common.Config) *Server {
 	s.brokerManager = NewBrokerManager(config.Coordinator.HeartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
 	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
+	go s.fwdTable.monitorInboundChannels()
 	s.stop = make(chan bool)
 	s.stopped = false
 

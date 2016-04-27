@@ -15,10 +15,14 @@ type LoggingConfig struct {
 
 // server configuration
 type ServerConfig struct {
-	// Client Interface
-	Port int
 	// if true, listens on 0.0.0.0
 	Global bool
+	// Client Interface
+	Port int
+	// the public-facing address of the broker
+	Host string
+	// A unique key for this Broker
+	BrokerID UUID
 	// the name of the coordinator server
 	CoordinatorHost string
 	// the port of the coordinator server

@@ -385,3 +385,7 @@ type BrokerTerminateMessage struct {
 type AcknowledgeMessage struct {
 	MessageID MessageIDType
 }
+
+func (m *AcknowledgeMessage) GetID() MessageIDType {
+	return m.MessageID
+}

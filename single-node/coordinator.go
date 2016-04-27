@@ -7,31 +7,40 @@ import (
 	"github.com/tinylib/msgp/msgp"
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
 type Coordinator struct {
-	address  *net.TCPAddr
-	conn     *net.TCPConn
-	broker   Broker
-	brokerID common.UUID
-	encoder  *msgp.Writer
+	address      *net.TCPAddr
+	conn         *net.TCPConn
+	localaddress string
+	sendL        sync.Mutex
+	broker       *RemoteBroker
+	brokerID     common.UUID
+	encoder      *msgp.Writer
+
 	// the number of seconds to wait before retrying to
 	// contact coordinator server
 	retryTime int
 	// the maximum interval to increase to between attempts to contact
 	// the coordinator server
 	retryTimeMax int
-	requests     *outstandingManager
+	// handles outstanding messages that need an ACK
+	requests *outstandingManager
+	queue    *sendableQueue
 }
 
 func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 	var err error
 
-	c := &Coordinator{broker: s.broker,
+	c := &Coordinator{broker: s.broker.(*RemoteBroker),
 		retryTime:    1,
 		retryTimeMax: 60,
 		requests:     newOutstandingManager(),
+		queue:        newSendableQueue(100),
+		localaddress: fmt.Sprintf("%s:%d", config.Host, config.Port),
+		brokerID:     config.BrokerID,
 	}
 
 	coordinatorAddress := fmt.Sprintf("%s:%d", config.CoordinatorHost, config.CoordinatorPort)
@@ -42,6 +51,21 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 		}).Fatal("Could not resolve the generated TCP address")
 	}
 	// Dial a connection to the Coordinator server
+	c.rebuildConnection()
+	// send a heartbeat as well
+	c.sendHeartbeat()
+	// before we send, we want to setup the ping/pong service
+	go c.handleStateMachine()
+	go c.startBeating()
+
+	return c
+}
+
+func (c *Coordinator) rebuildConnection() {
+	var err error
+	c.sendL.Lock()
+	defer c.sendL.Unlock()
+
 	c.conn, err = net.DialTCP("tcp", nil, c.address)
 	for err != nil {
 		log.WithFields(log.Fields{
@@ -66,18 +90,18 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 	// TODO should do something else for the BrokerID since we want it to persist after restarts
 	bcm := &common.BrokerConnectMessage{BrokerInfo: common.BrokerInfo{
 		BrokerID:   c.brokerID,
-		BrokerAddr: c.address.String(),
+		BrokerAddr: c.localaddress,
 	}, MessageIDStruct: common.GetMessageIDStruct()}
 	bcm.Encode(c.encoder)
 	// do the actual sending
 	c.encoder.Flush()
-	// send a heartbeat as well
-	c.sendHeartbeat()
-	// before we send, we want to setup the ping/pong service
-	go c.handleStateMachine()
-	go c.startBeating()
 
-	return c
+	//TODO: does this actually work as expected?
+	// do replay
+	//c.queue.startReplay()
+	//for msg := range c.queue.c {
+	//	c.send(msg)
+	//}
 }
 
 // This method handles the bookkeeping messages from the coordinator server
@@ -85,9 +109,10 @@ func (c *Coordinator) handleStateMachine() {
 	reader := msgp.NewReader(c.conn)
 	for {
 		msg, err := common.MessageFromDecoderMsgp(reader)
-		//TODO: when the connection with the coordinator breaks,
-		//WHAT DO WE DO?!
+		// when the connection with the coordinator breaks, buffer
+		// all outgoing messages
 		if err == io.EOF {
+			c.rebuildConnection()
 			log.Warn("Coordinator is no longer reachable!")
 			break
 		}
@@ -101,8 +126,27 @@ func (c *Coordinator) handleStateMachine() {
 		case *common.RequestHeartbeatMessage:
 			log.Info("Received heartbeat from coordinator")
 			c.sendHeartbeat()
+		case *common.ForwardRequestMessage:
+			log.Infof("Received forward request message %v", m)
+			c.broker.AddForwardingEntries(m)
+			c.ack(m.GetID())
+		case *common.BrokerSubscriptionDiffMessage:
+			log.Infof("Subscription Diff message %v", m)
+			c.broker.ForwardSubscriptionDiffs(m)
+			c.broker.UpdateForwardingEntries(m)
+			c.ack(m.GetID())
+		case *common.CancelForwardRequest:
+			c.broker.RemoveForwardingEntry(m)
+			c.requests.GotMessage(m)
+			c.ack(m.GetID())
+		case *common.AcknowledgeMessage:
+			c.requests.GotMessage(m)
+		case *common.BrokerDeathMessage:
+			log.Infof("Got Broker Death Message %v", m)
+			//TODO: handle broker death
+			c.ack(m.GetID())
 		case common.Message:
-			log.Infof("Got a message %v", m)
+			log.Infof("Got a %T message %v", m, m)
 			c.requests.GotMessage(m)
 		default:
 			log.WithFields(log.Fields{
@@ -112,17 +156,34 @@ func (c *Coordinator) handleStateMachine() {
 	}
 }
 
+func (c *Coordinator) send(m common.Sendable) {
+	c.sendL.Lock()
+	defer c.sendL.Unlock()
+	if err := m.Encode(c.encoder); err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "coordinator": c.address, "message": m,
+		}).Error("Could not send message to coordinator")
+		return
+	}
+	if err := c.encoder.Flush(); err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "coordinator": c.address, "message": m,
+		}).Error("Could not send message to coordinator")
+		// buffer!
+		//c.queue.append(m)
+	}
+}
+
+func (c *Coordinator) ack(id common.MessageIDType) {
+	c.send(&common.AcknowledgeMessage{MessageID: id})
+}
+
 func (c *Coordinator) sendHeartbeat() {
 	log.WithFields(log.Fields{
 		"coordinator": c.address,
 	}).Debug("Sending hearbeat")
 	hb := &common.HeartbeatMessage{}
-	hb.Encode(c.encoder)
-	if err := c.encoder.Flush(); err != nil {
-		log.WithFields(log.Fields{
-			"error": err, "coordinator": c.address,
-		}).Error("Could not send heartbeat to coordinator")
-	}
+	c.send(hb)
 }
 
 func (c *Coordinator) startBeating() {
@@ -144,28 +205,42 @@ func (c *Coordinator) forwardSubscription(query string, clientID common.UUID, cl
 		UUID:  clientID,
 	}
 	bqm.MessageID = common.GetMessageID()
-	bqm.Encode(c.encoder)
-	if err := c.encoder.Flush(); err != nil {
-		log.WithFields(log.Fields{
-			"query": query, "client": client.RemoteAddr(), "error": err, "coordinator": c.address,
-		}).Error("Could not forward query to coordinator")
-	}
+	c.send(bqm)
 	response, _ := c.requests.WaitForMessage(bqm.GetID())
-	log.Debugf("Response %v", response.(*common.BrokerSubscriptionDiffMessage))
+	switch m := response.(type) {
+	case *common.AcknowledgeMessage:
+		log.Debugf("Response %v", m)
+	case *common.CancelForwardRequest:
+		log.Debugf("Got cancel forward request %v", m)
+	}
 }
 
 // this forwards a publish message from a local producer to the coordinator and receives
 // a BrokerSubscriptionDiffMessage in response
-func (c *Coordinator) forwardPublish(msg *common.PublishMessage) *common.ForwardRequestMessage {
-	var bpm common.BrokerPublishMessage
+func (c *Coordinator) forwardPublish(msg *common.PublishMessage) {
+	var bpm = new(common.BrokerPublishMessage)
 	bpm.FromPublishMessage(msg)
-	bpm.Encode(c.encoder)
-	if err := c.encoder.Flush(); err != nil {
-		log.WithFields(log.Fields{
-			"query": msg, "error": err, "coordinator": c.address,
-		}).Error("Could not forward query to coordinator")
-	}
+	c.send(bpm)
 	log.Debug("Waiting for publish response")
 	response, _ := c.requests.WaitForMessage(bpm.GetID())
-	return response.(*common.ForwardRequestMessage)
+	log.Debugf("Got response for pub %v", response)
+	if _, ok := response.(*common.AcknowledgeMessage); !ok {
+		log.WithFields(log.Fields{
+			"response": response,
+		}).Error("Did not get a proper acknowledgement")
+	}
+}
+
+func (c *Coordinator) terminateClient(client *Client) {
+	var ctm = &common.ClientTerminationMessage{
+		ClientID: client.ID,
+	}
+	ctm.MessageID = common.GetMessageID()
+	c.send(ctm)
+	response, _ := c.requests.WaitForMessage(ctm.GetID())
+	switch response.(type) {
+	case *common.AcknowledgeMessage:
+	default:
+		log.Error("Did not get an ACK!")
+	}
 }

@@ -11,6 +11,8 @@ import (
 type Client struct {
 	// the connection back to the client
 	conn *net.Conn
+	// the unique client identifier
+	ID common.UUID
 	// the query this client is subscribed to
 	query string
 	// buffer of messages to send out
@@ -24,9 +26,10 @@ type Client struct {
 	encoder *msgp.Writer
 }
 
-func NewClient(query string, conn *net.Conn, death chan<- *Client) *Client {
+func NewClient(query string, clientID common.UUID, conn *net.Conn, death chan<- *Client) *Client {
 	return &Client{
 		query:   query,
+		ID:      clientID,
 		conn:    conn,
 		buffer:  make(chan common.Sendable, 1e6), // TODO buffer size?
 		active:  &AtomicBool{0},
@@ -37,6 +40,19 @@ func NewClient(query string, conn *net.Conn, death chan<- *Client) *Client {
 		encoder: msgp.NewWriter(*conn),
 		death:   death,
 	}
+}
+
+// This creates a new client reference that represents an external broker.
+// "address" should be in the form of "ip:port"
+func ClientFromBrokerString(brokerID common.UUID, query, address string, death chan<- *Client) (*Client, error) {
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"address": address, "error": err,
+		}).Error("Could not dial remote broker")
+		return nil, err
+	}
+	return NewClient(query, brokerID, &conn, death), nil
 }
 
 // queues a message to be sent

@@ -38,18 +38,19 @@ func NewRemoteBroker(metadata *common.MetadataStore, coordinator *Coordinator) *
 		killClient:  make(chan *Client),
 	}
 
+	// background loop to wait for clients to die so that we can
+	// garbage collect them from our internal control structures.
 	go func(b *RemoteBroker) {
 		for deadClient := range b.killClient {
 			log.WithFields(log.Fields{
 				"client": deadClient,
 			}).Info("Removing dead client")
 			b.subscriber_lock.Lock()
-			// TODO this seems inefficient - only one query will actually map
-			// to this client, so why not just store that pointer in the client?
-			for _, cl := range b.subscribers {
-				cl.removeClient(deadClient)
-			}
+			cl := b.subscribers[deadClient.query]
+			(&cl).removeClient(deadClient)
+			b.subscribers[deadClient.query] = cl
 			b.subscriber_lock.Unlock()
+			b.coordinator.terminateClient(deadClient)
 		}
 	}(b)
 
@@ -62,8 +63,7 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 		p     *Producer
 	)
 	// forward the new message to the coordinator
-	diff := b.coordinator.forwardPublish(msg)
-	log.Debugf("got diff %v", diff)
+	b.coordinator.forwardPublish(msg)
 	// now wait for the response from the coordinator to tell us what changed
 	// The PROBLEM here is that a) we only have a single connection to the broker and we need
 	// to multiplex many publishers among it. How do I know that I have received the subscription
@@ -87,15 +87,13 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 				return
 			case msg := <-p.C:
 				msg.L.RLock()
-				// if doing local reevaluation then we save metadata
-				// and handle differences here
-				diff := b.coordinator.forwardPublish(msg)
-				log.Debugf("GOT DIFF %v", diff)
+				// if we have metadata, then subscriptions could change
 				if len(msg.Metadata) > 0 {
-					//err = b.metadata.Save(msg)
-					//b.RemapProducer(p, msg)
+					// this blocks until the acknowledgement has been sent
+					b.coordinator.forwardPublish(msg)
 				}
-				//b.ForwardMessage(msg)
+				log.Debugf("Forwarding msg to clients: %v", msg)
+				b.ForwardMessage(msg)
 				msg.L.RUnlock()
 			}
 		}
@@ -104,7 +102,7 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 
 func (b *RemoteBroker) NewSubscription(query string, clientID common.UUID, conn net.Conn) *Client {
 	// create the local client
-	c := NewClient(query, &conn, b.killClient)
+	c := NewClient(query, clientID, &conn, b.killClient)
 	// map the local client to the query
 	b.mapQueryToClient(query, c)
 	// forward our subscription information to the coordinator
@@ -113,6 +111,136 @@ func (b *RemoteBroker) NewSubscription(query string, clientID common.UUID, conn 
 }
 
 func (b *RemoteBroker) ForwardMessage(msg *common.PublishMessage) {
+	var (
+		matchingQueries *queryList
+		found           bool
+	)
+	b.forwarding_lock.RLock()
+	// return if we can't find anyone to forward to
+	matchingQueries, found = b.forwarding[msg.UUID]
+	b.forwarding_lock.RUnlock()
+
+	if !found || matchingQueries.empty() {
+		log.Debugf("no forwarding targets")
+		return
+	}
+
+	var deliveries clientList
+	for _, query := range matchingQueries.queries {
+		b.subscriber_lock.RLock()
+		deliveries, found = b.subscribers[query]
+		b.subscriber_lock.RUnlock()
+		if !found || len(deliveries.List) == 0 {
+			log.Debugf("found no clients")
+			break
+		}
+		log.Debugf("found clients %v", deliveries)
+		deliveries.sendToList(msg)
+	}
+}
+
+// This method is called to add forwarding entries for remote brokers.
+// The received structure has this form:
+//	// list of publishers whose messages should be forwarded
+//	PublisherList []UUID
+//	// the destination broker
+//	BrokerInfo
+//	// the query string which defines this forward request
+//	Query string
+func (b *RemoteBroker) AddForwardingEntries(msg *common.ForwardRequestMessage) {
+	//TODO: figure out what to do with the error here
+	client, err := ClientFromBrokerString(b.coordinator.brokerID, msg.Query, msg.BrokerAddr, b.killClient)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "address": msg.BrokerAddr,
+		}).Error("Could not create broker client")
+		return
+	}
+	// for this list of publishers, setup forwarding to the client
+	b.remapPublishers(msg.PublisherList, msg.Query)
+	b.mapQueryToClient(msg.Query, client)
+}
+
+// The coordinator may send us a CancelForwardRequest which contains:
+// 	 MessageIDStruct
+// 	 // list of publishers whose messages should be cancelled
+// 	 PublisherList []UUID
+// 	 // the query that has been cancelled
+// 	 Query string
+// 	 // Necessary so you know who you need to stop forwarding to, since you
+// 	 // may be forwarding to multiple brokers for the same query
+// 	 BrokerInfo
+// We want to find the client that corresponds to the broker that we want to cancel
+// forwarding to and kill it.
+//TODO implement this
+func (b *RemoteBroker) RemoveForwardingEntry(msg *common.CancelForwardRequest) {
+
+}
+
+//	NewPublishers []UUID
+//	DelPublishers []UUID
+//	Query         string
+func (b *RemoteBroker) UpdateForwardingEntries(msg *common.BrokerSubscriptionDiffMessage) {
+	var (
+		list  *queryList
+		found bool
+	)
+	// TODO this will only activate when a query no longer applies to a publisher due to
+	// metadata changes - what about when a query should no longer exist due to no more clients?
+	b.forwarding_lock.Lock()
+	if len(msg.DelPublishers) > 0 {
+		for _, rm_uuid := range msg.DelPublishers {
+			if list, found = b.forwarding[rm_uuid]; !found {
+				// no subscribers for this uuid
+				continue
+			}
+			for _, tmp_query := range list.queries {
+				if tmp_query == msg.Query {
+					list.removeQuery(msg.Query)
+					continue
+				}
+			}
+		}
+	}
+	b.forwarding_lock.Unlock()
+	b.remapPublishers(msg.NewPublishers, msg.Query)
+}
+
+func (b *RemoteBroker) remapPublishers(new []common.UUID, query string) {
+	var (
+		list  *queryList
+		found bool
+	)
+	if len(new) == 0 {
+		return
+	}
+	b.forwarding_lock.Lock()
+	for _, add_uuid := range new {
+		if list, found = b.forwarding[add_uuid]; !found {
+			b.forwarding[add_uuid] = &queryList{queries: []string{query}}
+			log.WithFields(log.Fields{
+				"producerID": add_uuid, "query": query, "list": list,
+			}).Debug("Adding query to new query list")
+		} else {
+			list.addQuery(query)
+			b.forwarding[add_uuid] = list
+			log.WithFields(log.Fields{
+				"producerID": add_uuid, "query": query, "list": list,
+			}).Debug("Adding query to existing query list")
+		}
+	}
+	b.forwarding_lock.Unlock()
+}
+
+func (b *RemoteBroker) ForwardSubscriptionDiffs(msg *common.BrokerSubscriptionDiffMessage) {
+	if len(msg.NewPublishers) == 0 && len(msg.DelPublishers) == 0 {
+		return
+	}
+	sdm := common.SubscriptionDiffMessage{"New": msg.NewPublishers, "Del": msg.DelPublishers}
+	b.subscriber_lock.RLock()
+	subscribers := b.subscribers[msg.Query]
+	b.subscriber_lock.RUnlock()
+	go subscribers.sendToList(&sdm)
 }
 
 // safely adds entry to map[query][]Client map

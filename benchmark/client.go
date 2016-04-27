@@ -27,7 +27,7 @@ func (c *Client) subscribe() {
 
 	enc := msgp.NewWriter(conn)
 	log.WithField("query", c.Query).Debug("Submitting query")
-	qmsg := common.QueryMessage(c.Query)
+	qmsg := &common.QueryMessage{UUID: common.UUID("asdf"), Query: c.Query}
 	err = qmsg.Encode(enc)
 	if err != nil {
 		log.WithFields(log.Fields{

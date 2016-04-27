@@ -149,11 +149,9 @@ func NewBroker(metadata *common.MetadataStore) *LocalBroker {
 				"client": deadClient,
 			}).Info("Removing dead client")
 			b.subscriber_lock.Lock()
-			// TODO this seems inefficient - only one query will actually map
-			// to this client, so why not just store that pointer in the client?
-			for _, cl := range b.subscribers {
-				cl.removeClient(deadClient)
-			}
+			cl := b.subscribers[deadClient.query]
+			cl.removeClient(deadClient)
+			b.subscribers[deadClient.query] = cl
 			b.subscriber_lock.Unlock()
 		}
 	}(b)
@@ -323,7 +321,7 @@ func (b *LocalBroker) NewSubscription(querystring string, clientID common.UUID, 
 		}).Debug("Evaluated query")
 	}
 
-	c := NewClient(querystring, &conn, b.killClient)
+	c := NewClient(querystring, clientID, &conn, b.killClient)
 
 	// set up forwarding for all initial producers
 	b.updateForwardingTable(query)

@@ -126,8 +126,18 @@ func (c *Coordinator) handleStateMachine() {
 		case *common.ForwardRequestMessage:
 			log.Infof("Received forward request message %v", m)
 			c.broker.AddForwardingEntries(m)
-		case *common.SubscriptionDiffMessage:
+			c.ack(m.GetID())
+		case *common.BrokerSubscriptionDiffMessage:
 			log.Infof("Subscription Diff message %v", m)
+			c.broker.ForwardSubscriptionDiffs(m)
+			c.broker.UpdateForwardingEntries(m)
+			c.ack(m.GetID())
+		case *common.CancelForwardRequest:
+			c.broker.RemoveForwardingEntry(m)
+			c.requests.GotMessage(m)
+			c.ack(m.GetID())
+		case *common.AcknowledgeMessage:
+			c.requests.GotMessage(m)
 		case common.Message:
 			log.Infof("Got a message %v", m)
 			c.requests.GotMessage(m)
@@ -155,6 +165,10 @@ func (c *Coordinator) send(m common.Sendable) {
 		// buffer!
 		c.queue.append(m)
 	}
+}
+
+func (c *Coordinator) ack(id common.MessageIDType) {
+	c.send(&common.AcknowledgeMessage{MessageID: id})
 }
 
 func (c *Coordinator) sendHeartbeat() {
@@ -186,17 +200,26 @@ func (c *Coordinator) forwardSubscription(query string, clientID common.UUID, cl
 	bqm.MessageID = common.GetMessageID()
 	c.send(bqm)
 	response, _ := c.requests.WaitForMessage(bqm.GetID())
-	log.Debugf("Response %v", response.(*common.AcknowledgeMessage))
+	switch m := response.(type) {
+	case *common.AcknowledgeMessage:
+		log.Debugf("Response %v", m)
+	case *common.CancelForwardRequest:
+		log.Debugf("Got cancel forward request %v", m)
+	}
 }
 
 // this forwards a publish message from a local producer to the coordinator and receives
 // a BrokerSubscriptionDiffMessage in response
-func (c *Coordinator) forwardPublish(msg *common.PublishMessage) *common.ForwardRequestMessage {
-	var bpm *common.BrokerPublishMessage
+func (c *Coordinator) forwardPublish(msg *common.PublishMessage) {
+	var bpm = new(common.BrokerPublishMessage)
 	bpm.FromPublishMessage(msg)
 	c.send(bpm)
 	log.Debug("Waiting for publish response")
 	response, _ := c.requests.WaitForMessage(bpm.GetID())
 	log.Debugf("Got response for pub %v", response)
-	return response.(*common.ForwardRequestMessage)
+	if _, ok := response.(*common.AcknowledgeMessage); !ok {
+		log.WithFields(log.Fields{
+			"response": response,
+		}).Error("Did not get a proper acknowledgement")
+	}
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"sync"
 )

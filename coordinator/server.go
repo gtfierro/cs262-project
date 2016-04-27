@@ -15,10 +15,10 @@ type Server struct {
 	fwdTable      *ForwardingTable
 	brokerManager BrokerManager
 
-	pubClientDeathChan chan *PubClientDeaths
 	messageBuffer      chan *MessageFromBroker
 	brokerDeathChan    chan *common.UUID
 	brokerLiveChan     chan *common.UUID
+	brokerReassignChan chan *BrokerReassignment
 
 	stop    chan bool
 	stopped bool
@@ -53,15 +53,14 @@ func NewServer(config *common.Config) *Server {
 	}
 
 	s.metadata = common.NewMetadataStore(config)
-	s.brokerDeathChan = make(chan *common.UUID)
-	s.brokerLiveChan = make(chan *common.UUID)
+	s.brokerDeathChan = make(chan *common.UUID, 10)
+	s.brokerLiveChan = make(chan *common.UUID, 10)
+	s.brokerReassignChan = make(chan *BrokerReassignment, 500)
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
-	s.pubClientDeathChan = make(chan *PubClientDeaths, 25)
 
 	s.brokerManager = NewBrokerManager(config.Coordinator.HeartbeatInterval, s.brokerDeathChan,
-		s.brokerLiveChan, s.messageBuffer, s.pubClientDeathChan, new(common.RealClock))
-	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.brokerDeathChan, s.brokerLiveChan,
-		s.pubClientDeathChan)
+		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
+	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
 	s.stop = make(chan bool)
 	s.stopped = false
 
@@ -78,9 +77,11 @@ func (s *Server) handleMessage(brokerMessage *MessageFromBroker) {
 		s.fwdTable.HandleSubscription(msg.Query, msg.UUID, brokerID)
 		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.PublisherTerminationMessage:
-		s.fwdTable.HandlePublisherDeath(msg.PublisherID, brokerID)
+		s.fwdTable.HandlePublisherTermination(msg.PublisherID, brokerID)
+		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.ClientTerminationMessage:
-		s.fwdTable.HandleSubscriberDeath(msg.ClientID, brokerID)
+		s.fwdTable.HandleSubscriberTermination(msg.ClientID, brokerID)
+		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	default:
 		log.WithFields(log.Fields{
 			"message": msg, "messageType": common.GetMessageType(msg), "brokerID": brokerID,

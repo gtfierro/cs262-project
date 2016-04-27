@@ -27,12 +27,7 @@ type Broker struct {
 	clock                  common.Clock
 	deathChannel           chan *Broker
 	listElem               *list.Element
-	// TODO ETK combine the client and pub map?
-	remoteClientMap    map[common.UUID]*common.UUID // ClientID -> HomeBrokerID
-	remotePublisherMap map[common.UUID]*common.UUID // PublisherID -> HomeBrokerID
-	localClientMap     map[common.UUID]struct{}     // ClientID -> HomeBrokerID
-	localPublisherMap  map[common.UUID]struct{}     // PublisherID -> HomeBrokerID
-	pubClientMapLock   sync.RWMutex
+	pubClientMapLock       sync.RWMutex
 }
 
 func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
@@ -51,10 +46,6 @@ func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
 	bc.heartbeatInterval = heartbeatInterval
 	bc.clock = clock
 	bc.deathChannel = deathChannel
-	bc.remoteClientMap = make(map[common.UUID]*common.UUID)
-	bc.remotePublisherMap = make(map[common.UUID]*common.UUID)
-	bc.localClientMap = make(map[common.UUID]struct{})
-	bc.localPublisherMap = make(map[common.UUID]struct{})
 	return bc
 }
 
@@ -119,132 +110,6 @@ func (bc *Broker) IsAlive() (alive bool) {
 	alive = bc.alive
 	bc.aliveLock.Unlock()
 	return
-}
-
-// Called LocalPublisher because the PublishMessage came from
-// this broker, but it may actually be remote - if it is,
-// and it's already in the remote map, no need to add it
-func (bc *Broker) AddLocalPublisher(publisherID common.UUID) {
-	bc.pubClientMapLock.Lock()
-	defer bc.pubClientMapLock.Unlock()
-
-	if _, found := bc.remotePublisherMap[publisherID]; !found {
-		bc.localPublisherMap[publisherID] = struct{}{}
-	}
-}
-
-// Called LocalClient because the QueryMessage came from
-// this broker, but it may actually be remote - if it is,
-// and it's already in the remote map, no need to add it
-func (bc *Broker) AddLocalClient(clientID common.UUID) {
-	bc.pubClientMapLock.Lock()
-	defer bc.pubClientMapLock.Unlock()
-
-	if _, found := bc.localClientMap[clientID]; !found {
-		bc.localClientMap[clientID] = struct{}{}
-	}
-}
-
-func (bc *Broker) RemovePublisher(publisherID common.UUID) {
-	bc.pubClientMapLock.Lock()
-	defer bc.pubClientMapLock.Unlock()
-
-	delete(bc.localPublisherMap, publisherID)
-	delete(bc.remotePublisherMap, publisherID)
-}
-
-func (bc *Broker) RemoveClient(clientID common.UUID) {
-	bc.pubClientMapLock.Lock()
-	defer bc.pubClientMapLock.Unlock()
-
-	delete(bc.localClientMap, clientID)
-	delete(bc.remoteClientMap, clientID)
-}
-
-func (bc *Broker) GetAndClearPublishers() map[common.UUID]struct{} {
-	bc.pubClientMapLock.Lock()
-	remoteMap := bc.remotePublisherMap
-	localMap := bc.localPublisherMap
-	bc.remotePublisherMap = make(map[common.UUID]*common.UUID)
-	bc.localPublisherMap = make(map[common.UUID]struct{})
-	bc.pubClientMapLock.Unlock()
-
-	for publisherID, _ := range remoteMap {
-		localMap[publisherID] = struct{}{}
-	}
-	return localMap
-}
-
-func (bc *Broker) GetAndClearClients() map[common.UUID]struct{} {
-	bc.pubClientMapLock.Lock()
-	remoteMap := bc.remoteClientMap
-	localMap := bc.localClientMap
-	bc.remoteClientMap = make(map[common.UUID]*common.UUID)
-	bc.localClientMap = make(map[common.UUID]struct{})
-	bc.pubClientMapLock.Unlock()
-
-	for clientID, _ := range remoteMap {
-		localMap[clientID] = struct{}{}
-	}
-	return localMap
-}
-
-func (bc *Broker) AddRemotePublisher(publisherID common.UUID, homeBrokerID *common.UUID) {
-	bc.pubClientMapLock.Lock()
-	defer bc.pubClientMapLock.Unlock()
-
-	bc.remotePublisherMap[publisherID] = homeBrokerID
-}
-
-func (bc *Broker) AddRemoteClient(clientID common.UUID, homeBrokerID *common.UUID) {
-	bc.pubClientMapLock.Lock()
-	defer bc.pubClientMapLock.Unlock()
-
-	bc.remoteClientMap[clientID] = homeBrokerID
-}
-
-// Send a termination message to the broker instructing it to
-// terminate its connection with all clients and publishers whose
-// home broker is homeBrokerID
-func (bc *Broker) TerminateRemotePubClients(homeBrokerID *common.UUID) {
-	bc.pubClientMapLock.Lock()
-	defer bc.pubClientMapLock.Unlock()
-	clientIDs := make([]common.UUID, 0, 50)
-	for clientAddr, brokerID := range bc.remoteClientMap {
-		if *brokerID == *homeBrokerID {
-			if cap(clientIDs) == len(clientIDs) {
-				clientIDsTmp := clientIDs
-				clientIDs = make([]common.UUID, len(clientIDs), cap(clientIDs)*2)
-				copy(clientIDs, clientIDsTmp)
-			}
-			clientIDs = append(clientIDs, clientAddr)
-			delete(bc.remoteClientMap, clientAddr)
-		}
-	}
-	publisherIDs := make([]common.UUID, 0, 50)
-	for publisherID, brokerID := range bc.remotePublisherMap {
-		if *brokerID == *homeBrokerID {
-			if cap(publisherIDs) == len(publisherIDs) {
-				publisherIDsTmp := publisherIDs
-				publisherIDs = make([]common.UUID, len(publisherIDs), cap(publisherIDs)*2)
-				copy(publisherIDs, publisherIDsTmp)
-			}
-			publisherIDs = append(publisherIDs, publisherID)
-			delete(bc.remotePublisherMap, publisherID)
-		}
-	}
-	if len(clientIDs) > 0 {
-		bc.Send(&common.ClientTerminationRequest{
-			MessageIDStruct: common.GetMessageIDStruct(),
-			ClientIDs:       clientIDs,
-		})
-	}
-	if len(publisherIDs) > 0 {
-		bc.Send(&common.PublisherTerminationRequest{
-			MessageIDStruct: common.GetMessageIDStruct(),
-			PublisherIDs:    publisherIDs,
-		})
-	}
 }
 
 // Monitor heartbeats from the broker and determine death if necessary

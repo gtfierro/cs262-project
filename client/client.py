@@ -1,4 +1,5 @@
 import msgpack
+import sys
 import socket
 import uuid as uuidlib
 from io import BytesIO, BufferedRWPair
@@ -42,7 +43,8 @@ class Client:
         self._dirty_metadata = {}
 
 if __name__ == '__main__':
-    c = Client("localhost", "4444")
+    host = sys.argv[1] if len(sys.argv) > 1 else "localhost"
+    c = Client(host, "4444")
     #c.add_metadata({"Room": "410", "Building": "Soda", "Device": "Temperature Sensor"})
 
     #import time

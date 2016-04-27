@@ -27,6 +27,7 @@ type Coordinator struct {
 	retryTimeMax int
 	// handles outstanding messages that need an ACK
 	requests *outstandingManager
+	queue    *sendableQueue
 }
 
 func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
@@ -36,6 +37,7 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 		retryTime:    1,
 		retryTimeMax: 60,
 		requests:     newOutstandingManager(),
+		queue:        newSendableQueue(100),
 	}
 
 	coordinatorAddress := fmt.Sprintf("%s:%d", config.CoordinatorHost, config.CoordinatorPort)
@@ -90,6 +92,13 @@ func (c *Coordinator) rebuildConnection() {
 	bcm.Encode(c.encoder)
 	// do the actual sending
 	c.encoder.Flush()
+
+	//TODO: does this actually work as expected?
+	// do replay
+	c.queue.startReplay()
+	for msg := range c.queue.c {
+		c.send(msg)
+	}
 }
 
 // This method handles the bookkeeping messages from the coordinator server
@@ -97,11 +106,10 @@ func (c *Coordinator) handleStateMachine() {
 	reader := msgp.NewReader(c.conn)
 	for {
 		msg, err := common.MessageFromDecoderMsgp(reader)
-		//TODO: when the connection with the coordinator breaks, buffer
+		// when the connection with the coordinator breaks, buffer
 		// all outgoing messages
-		c.rebuildConnection()
-		//WHAT DO WE DO?!
 		if err == io.EOF {
+			c.rebuildConnection()
 			log.Warn("Coordinator is no longer reachable!")
 			break
 		}
@@ -145,6 +153,7 @@ func (c *Coordinator) send(m common.Sendable) {
 			"error": err, "coordinator": c.address, "message": m,
 		}).Error("Could not send message to coordinator")
 		// buffer!
+		c.queue.append(m)
 	}
 }
 

@@ -202,20 +202,31 @@ func (b *RemoteBroker) UpdateForwardingEntries(msg *common.BrokerSubscriptionDif
 			}
 		}
 	}
-	if len(msg.NewPublishers) > 0 {
-		for _, add_uuid := range msg.NewPublishers {
-			if list, found = b.forwarding[add_uuid]; !found {
-				b.forwarding[add_uuid] = &queryList{queries: []string{msg.Query}}
-				log.WithFields(log.Fields{
-					"producerID": add_uuid, "query": msg.Query, "list": list,
-				}).Debug("Adding query to new query list")
-			} else {
-				list.addQuery(msg.Query)
-				b.forwarding[add_uuid] = list
-				log.WithFields(log.Fields{
-					"producerID": add_uuid, "query": msg.Query, "list": list,
-				}).Debug("Adding query to existing query list")
-			}
+	b.forwarding_lock.Unlock()
+	b.remapPublishers(msg.NewPublishers, msg.Query)
+}
+
+func (b *RemoteBroker) remapPublishers(new []common.UUID, query string) {
+	var (
+		list  *queryList
+		found bool
+	)
+	if len(new) == 0 {
+		return
+	}
+	b.forwarding_lock.Lock()
+	for _, add_uuid := range new {
+		if list, found = b.forwarding[add_uuid]; !found {
+			b.forwarding[add_uuid] = &queryList{queries: []string{query}}
+			log.WithFields(log.Fields{
+				"producerID": add_uuid, "query": query, "list": list,
+			}).Debug("Adding query to new query list")
+		} else {
+			list.addQuery(query)
+			b.forwarding[add_uuid] = list
+			log.WithFields(log.Fields{
+				"producerID": add_uuid, "query": query, "list": list,
+			}).Debug("Adding query to existing query list")
 		}
 	}
 	b.forwarding_lock.Unlock()

@@ -7,15 +7,18 @@ import (
 	"github.com/tinylib/msgp/msgp"
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
 type Coordinator struct {
 	address  *net.TCPAddr
 	conn     *net.TCPConn
+	sendL    sync.Mutex
 	broker   *RemoteBroker
 	brokerID common.UUID
 	encoder  *msgp.Writer
+
 	// the number of seconds to wait before retrying to
 	// contact coordinator server
 	retryTime int
@@ -55,8 +58,10 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 
 func (c *Coordinator) rebuildConnection() {
 	var err error
+	c.sendL.Lock()
+	defer c.sendL.Unlock()
+
 	c.conn, err = net.DialTCP("tcp", nil, c.address)
-	//c.conn2, _ = net.DialTCP("tcp", nil, c.address)
 	for err != nil {
 		log.WithFields(log.Fields{
 			"err": err, "server": c.address, "retry": c.retryTime,
@@ -127,7 +132,14 @@ func (c *Coordinator) handleStateMachine() {
 }
 
 func (c *Coordinator) send(m common.Sendable) {
-	m.Encode(c.encoder)
+	c.sendL.Lock()
+	defer c.sendL.Unlock()
+	if err := m.Encode(c.encoder); err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "coordinator": c.address, "message": m,
+		}).Error("Could not send message to coordinator")
+		return
+	}
 	if err := c.encoder.Flush(); err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "coordinator": c.address, "message": m,

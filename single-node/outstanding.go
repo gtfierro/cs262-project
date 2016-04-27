@@ -60,7 +60,10 @@ func (om *outstandingManager) GotMessage(m common.Message) {
 	om.Lock()
 	if o, found := om.outstanding[m.GetID()]; found {
 		if o.V.Load() != nil {
-			log.Panicf("Duplicate message id %v", m.GetID())
+			om.Unlock()
+			log.Errorf("Duplicate message id %v. Original type %T new type %T", m.GetID(), o.V.Load(), m)
+			return
+			//log.Panicf("Duplicate message id %v. Original type %T new type %T", m.GetID(), o.V.Load(), m)
 		}
 		o.V.Store(m)
 		delete(om.outstanding, m.GetID())

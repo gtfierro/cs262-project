@@ -149,7 +149,15 @@ func (b *RemoteBroker) ForwardMessage(msg *common.PublishMessage) {
 //	Query string
 func (b *RemoteBroker) AddForwardingEntries(msg *common.ForwardRequestMessage) {
 	//TODO: figure out what to do with the error here
-	client, _ := ClientFromBrokerString(msg.Query, msg.BrokerAddr, b.killClient)
+	client, err := ClientFromBrokerString(b.coordinator.brokerID, msg.Query, msg.BrokerAddr, b.killClient)
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "address": msg.BrokerAddr,
+		}).Error("Could not create broker client")
+		return
+	}
+	// for this list of publishers, setup forwarding to the client
+	b.remapPublishers(msg.PublisherList, msg.Query)
 	b.mapQueryToClient(msg.Query, client)
 }
 

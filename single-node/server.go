@@ -56,8 +56,8 @@ func NewServer(c *common.Config) *Server {
 		}).Fatal("Could not listen on the provided address")
 	}
 
-	s.metadata = common.NewMetadataStore(c)
 	if s.local {
+		s.metadata = common.NewMetadataStore(c)
 		s.broker = NewBroker(s.metadata)
 	} else {
 		s.broker = NewRemoteBroker(s.metadata, s.coordinator)
@@ -144,6 +144,8 @@ func (s *Server) dispatch(conn net.Conn) {
 		s.handleSubscribe(m, dec, conn)
 	case *common.PublishMessage:
 		s.handlePublish(m, dec, conn)
+	case *common.BrokerPublishMessage:
+		log.Warnf("got broker publish message %v", m)
 	default:
 		log.WithField("message", msg).Warn("Server received unexpected message type!")
 	}

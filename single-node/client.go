@@ -44,7 +44,7 @@ func NewClient(query string, clientID common.UUID, conn *net.Conn, death chan<- 
 
 // This creates a new client reference that represents an external broker.
 // "address" should be in the form of "ip:port"
-func ClientFromBrokerString(query, address string, death chan<- *Client) (*Client, error) {
+func ClientFromBrokerString(brokerID common.UUID, query, address string, death chan<- *Client) (*Client, error) {
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		log.WithFields(log.Fields{
@@ -52,8 +52,7 @@ func ClientFromBrokerString(query, address string, death chan<- *Client) (*Clien
 		}).Error("Could not dial remote broker")
 		return nil, err
 	}
-	// use the address as the client ID?
-	return NewClient(query, common.UUID(address), &conn, death), nil
+	return NewClient(query, brokerID, &conn, death), nil
 }
 
 // queues a message to be sent

@@ -12,12 +12,13 @@ import (
 )
 
 type Coordinator struct {
-	address  *net.TCPAddr
-	conn     *net.TCPConn
-	sendL    sync.Mutex
-	broker   *RemoteBroker
-	brokerID common.UUID
-	encoder  *msgp.Writer
+	address      *net.TCPAddr
+	conn         *net.TCPConn
+	localaddress string
+	sendL        sync.Mutex
+	broker       *RemoteBroker
+	brokerID     common.UUID
+	encoder      *msgp.Writer
 
 	// the number of seconds to wait before retrying to
 	// contact coordinator server
@@ -38,6 +39,8 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 		retryTimeMax: 60,
 		requests:     newOutstandingManager(),
 		queue:        newSendableQueue(100),
+		localaddress: fmt.Sprintf("%s:%d", config.Host, config.Port),
+		brokerID:     config.BrokerID,
 	}
 
 	coordinatorAddress := fmt.Sprintf("%s:%d", config.CoordinatorHost, config.CoordinatorPort)
@@ -87,7 +90,7 @@ func (c *Coordinator) rebuildConnection() {
 	// TODO should do something else for the BrokerID since we want it to persist after restarts
 	bcm := &common.BrokerConnectMessage{BrokerInfo: common.BrokerInfo{
 		BrokerID:   c.brokerID,
-		BrokerAddr: c.address.String(),
+		BrokerAddr: c.localaddress,
 	}, MessageIDStruct: common.GetMessageIDStruct()}
 	bcm.Encode(c.encoder)
 	// do the actual sending
@@ -138,8 +141,12 @@ func (c *Coordinator) handleStateMachine() {
 			c.ack(m.GetID())
 		case *common.AcknowledgeMessage:
 			c.requests.GotMessage(m)
+		case *common.BrokerDeathMessage:
+			log.Infof("Got Broker Death Message %v", m)
+			//TODO: handle broker death
+			c.ack(m.GetID())
 		case common.Message:
-			log.Infof("Got a message %v", m)
+			log.Infof("Got a %T message %v", m, m)
 			c.requests.GotMessage(m)
 		default:
 			log.WithFields(log.Fields{

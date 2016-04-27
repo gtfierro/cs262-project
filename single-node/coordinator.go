@@ -98,10 +98,10 @@ func (c *Coordinator) rebuildConnection() {
 
 	//TODO: does this actually work as expected?
 	// do replay
-	c.queue.startReplay()
-	for msg := range c.queue.c {
-		c.send(msg)
-	}
+	//c.queue.startReplay()
+	//for msg := range c.queue.c {
+	//	c.send(msg)
+	//}
 }
 
 // This method handles the bookkeeping messages from the coordinator server
@@ -170,7 +170,7 @@ func (c *Coordinator) send(m common.Sendable) {
 			"error": err, "coordinator": c.address, "message": m,
 		}).Error("Could not send message to coordinator")
 		// buffer!
-		c.queue.append(m)
+		//c.queue.append(m)
 	}
 }
 

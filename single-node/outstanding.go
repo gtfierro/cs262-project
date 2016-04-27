@@ -1,6 +1,7 @@
 package main
 
 import (
+	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"sync"
 	"sync/atomic"
@@ -58,6 +59,9 @@ func (om *outstandingManager) WaitForMessage(id common.MessageIDType) (common.Me
 func (om *outstandingManager) GotMessage(m common.Message) {
 	om.Lock()
 	if o, found := om.outstanding[m.GetID()]; found {
+		if o.V.Load() != nil {
+			log.Panicf("Duplicate message id %v", m.GetID())
+		}
 		o.V.Store(m)
 		delete(om.outstanding, m.GetID())
 		o.Cond.Broadcast()

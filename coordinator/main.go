@@ -55,6 +55,33 @@ func main() {
 		})
 	}
 
+	//cfg := etcdc.Config{
+	//	Endpoints: []string{"127.0.0.1:2377"},
+	//	DialTimeout: 5*time.Second,
+	//}
+	//ctx, _ := context.WithTimeout(context.Background(), 2*time.Second)
+	//etclient, _ := etcdc.New(cfg)
+	//defer etclient.Close()
+	//
+	//bam := common.BrokerAssignmentMessage{BrokerInfo: common.BrokerInfo{
+	//	BrokerID: common.UUID("b0"), BrokerAddr: "127.0.0.1:5555",
+	//}}
+	//b, _ := bam.MarshalMsg([]byte{})
+	//
+	//_, err := etclient.Put(ctx, "/foo", string(b))
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//
+	//resp, err := etclient.Get(ctx, "/foo")
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//respBam := new(common.BrokerAssignmentMessage)
+	//respBam.UnmarshalMsg([]byte(resp.Kvs[0].Value))
+	//
+	//fmt.Printf("%v %v\n", len(resp.Kvs), respBam.BrokerInfo)
+
 	server := NewServer(config)
 	server.startBrokerMessageHandler()
 	server.listenAndDispatch()

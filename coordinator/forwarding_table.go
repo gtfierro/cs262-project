@@ -3,15 +3,20 @@ package main
 import (
 	"container/list"
 	log "github.com/Sirupsen/logrus"
+	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gtfierro/cs262-project/common"
 	"sync"
 )
 
 var emptyList = []common.UUID{}
 
+const UNASSIGNED = common.UUID("__BROKER_ID_UNASSIGNED__")
+
 // Handles the subscriptions, updates, forwarding routes
 type ForwardingTable struct {
-	metadata *common.MetadataStore
+	metadata      *common.MetadataStore
+	brokerManager BrokerManager
+	etcdManager   *EtcdManager
 
 	// map of client addresses to clients
 	clientLock sync.RWMutex
@@ -40,8 +45,6 @@ type ForwardingTable struct {
 	brokerDeathChan    chan *common.UUID
 	brokerLiveChan     chan *common.UUID
 	brokerReassignChan chan *BrokerReassignment
-
-	brokerManager BrokerManager
 }
 
 type BrokerReassignment struct {
@@ -50,21 +53,21 @@ type BrokerReassignment struct {
 	HomeBrokerID *common.UUID
 }
 
-type Publisher struct {
-	PublisherID     *common.UUID
-	CurrentBrokerID *common.UUID
-	HomeBrokerID    *common.UUID
-	Metadata        map[string]interface{}
-}
-
-type Client struct {
-	sync.RWMutex
-	ClientID           *common.UUID
-	CurrentBrokerID    *common.UUID
-	HomeBrokerID       *common.UUID
-	subscriberListElem *list.Element
-	query              *ForwardedQuery
-}
+//type Publisher struct {
+//	PublisherID     common.UUID
+//	CurrentBrokerID common.UUID
+//	HomeBrokerID    common.UUID
+//	Metadata        map[string]interface{}
+//}
+//
+//type Client struct {
+//	ClientID           common.UUID
+//	CurrentBrokerID    common.UUID
+//	HomeBrokerID       common.UUID
+//	QueryString        *string
+//	subscriberListElem *list.Element
+//	query              *ForwardedQuery
+//}
 
 type ForwardedQuery struct {
 	common.Query
@@ -78,7 +81,7 @@ func (fq *ForwardedQuery) addClient(client *Client, brokerID *common.UUID) (exis
 	defer fq.Unlock()
 	if clientList, existingBroker = fq.CurrentBrokerIDs[*brokerID]; !existingBroker {
 		log.WithFields(log.Fields{
-			"clientID": *client.ClientID, "query": fq.QueryString, "brokerID": *brokerID,
+			"clientID": client.ClientID, "query": client.QueryString, "brokerID": brokerID,
 		}).Debug("Not yet forwarding to this broker for this query; creating new subscribe list")
 		clientList = list.New()
 		fq.CurrentBrokerIDs[*brokerID] = clientList
@@ -86,7 +89,7 @@ func (fq *ForwardedQuery) addClient(client *Client, brokerID *common.UUID) (exis
 		return false
 	} else {
 		log.WithFields(log.Fields{
-			"clientID": *client.ClientID, "query": fq.QueryString, "brokerID": *brokerID,
+			"clientID": client.ClientID, "query": client.QueryString, "brokerID": brokerID,
 		}).Debug("Already forwarding to this broker for this query; adding to subscribe list")
 		if client.subscriberListElem != nil {
 			// we already knew about this client and it should be in the list so remove it if it is
@@ -97,10 +100,12 @@ func (fq *ForwardedQuery) addClient(client *Client, brokerID *common.UUID) (exis
 	}
 }
 
-func NewForwardingTable(metadata *common.MetadataStore, brokerManager BrokerManager, brokerDeathChan,
-	brokerLiveChan chan *common.UUID, brokerReassignChan chan *BrokerReassignment) *ForwardingTable {
+func NewForwardingTable(metadata *common.MetadataStore, brokerMgr BrokerManager, etcdMgr *EtcdManager,
+	brokerDeathChan, brokerLiveChan chan *common.UUID, brokerReassignChan chan *BrokerReassignment) *ForwardingTable {
 	return &ForwardingTable{
 		metadata:           metadata,
+		brokerManager:      brokerMgr,
+		etcdManager:        etcdMgr,
 		clientMap:          make(map[common.UUID]*Client),
 		pubQueryMap:        make(map[common.UUID]*queryList),
 		queryPubMap:        make(map[*ForwardedQuery]map[*common.UUID]struct{}),
@@ -110,8 +115,78 @@ func NewForwardingTable(metadata *common.MetadataStore, brokerManager BrokerMana
 		brokerDeathChan:    brokerDeathChan,
 		brokerLiveChan:     brokerLiveChan,
 		brokerReassignChan: brokerReassignChan,
-		brokerManager:      brokerManager,
 	}
+}
+
+func (ft *ForwardingTable) RebuildFromEtcd() (watchStartRev int64, err error) {
+	watchStartRev = -1
+	clientChan, clientRev, err := ft.etcdManager.IterateOverAllEntities(ClientEntity, ft.rebuildClientState)
+	if err != nil {
+		log.WithField("error", err).Fatal("Error while iterating over clients when rebuilding")
+		return
+	}
+	pubChan, pubRev, err := ft.etcdManager.IterateOverAllEntities(PublisherEntity, ft.rebuildPublisherState)
+	if err != nil {
+		log.WithField("error", err).Fatal("Error while iterating over publishers when rebuilding")
+		return
+	}
+Loop:
+	for {
+		select {
+		case watchResp := <-clientChan:
+			for _, event := range watchResp.Events {
+				if event.Type == mvccpb.PUT {
+					client := new(*Client)
+					client.UnmarshalMsg(event.Kv.Value)
+					if event.IsCreate() {
+						ft.rebuildClientState(client)
+					} else {
+						// TODO ismodify
+					}
+				} else {
+					//deletedClientID := common.UUID(event.Kv.Key) // TODO
+				}
+			}
+			if watchResp.Header.Revision > clientRev {
+				clientRev = watchResp.Header.Revision
+			}
+		case watchResp := <-pubChan:
+			for _, event := range watchResp.Events {
+				if event.Type == mvccpb.PUT {
+					pub := new(*Publisher)
+					pub.UnmarshalMsg(event.Kv.Value)
+					if event.IsCreate() {
+						ft.rebuildPublisherState(pub)
+					} else {
+						// TODO ismodify
+					}
+				} else {
+					//deletedClientID := common.UUID(event.Kv.Key) // TODO
+				}
+			}
+			if watchResp.Header.Revision > pubRev {
+				pubRev = watchResp.Header.Revision
+			}
+		default: // once there's no more events available
+			break Loop
+		}
+	}
+	if pubRev < clientRev {
+		watchStartRev = pubRev
+	} else {
+		watchStartRev = clientRev
+	}
+	return
+}
+
+func (ft *ForwardingTable) rebuildClientState(entity EtcdSerializable) {
+	client := entity.(*Client)
+	ft.HandleSubscription(client.QueryString, client.ClientID, client.CurrentBrokerID, &client.HomeBrokerID)
+}
+
+func (ft *ForwardingTable) rebuildPublisherState(entity EtcdSerializable) {
+	publisher := entity.(*Publisher)
+	ft.HandlePublish(publisher.PublisherID, publisher.Metadata, publisher.CurrentBrokerID, &publisher.HomeBrokerID)
 }
 
 func (ft *ForwardingTable) monitorInboundChannels() {
@@ -132,17 +207,19 @@ func (ft *ForwardingTable) HandleBrokerDeath(deadID *common.UUID) {
 	log.WithField("brokerID", *deadID).Info("Forwarding table handling the death of broker")
 	ft.clientLock.Lock()
 	for _, client := range ft.clientMap {
-		if client.CurrentBrokerID != nil && *client.CurrentBrokerID == *deadID {
+		if client.CurrentBrokerID == *deadID {
 			ft.CancelSubscriberForwarding(client) // clear out forwarding routes for this client
-			client.CurrentBrokerID = nil          // mark as currently homeless
+			client.CurrentBrokerID = UNASSIGNED   // mark as currently homeless
+			ft.etcdManager.UpdateEntity(client)
 		}
 	}
 	ft.clientLock.Unlock()
 	ft.publisherLock.Lock()
 	for _, pub := range ft.publisherMap {
-		if pub.CurrentBrokerID != nil && *pub.CurrentBrokerID == *deadID {
-			ft.CancelPublisherForwarding(*pub.PublisherID)
-			pub.CurrentBrokerID = nil // mark as currently homeless
+		if pub.CurrentBrokerID == *deadID {
+			ft.CancelPublisherForwarding(pub.PublisherID)
+			pub.CurrentBrokerID = UNASSIGNED // mark as currently homeless
+			ft.etcdManager.UpdateEntity(pub)
 		}
 	}
 	ft.publisherLock.Unlock()
@@ -157,27 +234,38 @@ func (ft *ForwardingTable) HandleBrokerReassignment(brokerReassign *BrokerReassi
 	if brokerReassign.IsPublisher {
 		ft.publisherLock.Lock()
 		if pub, found := ft.publisherMap[*brokerReassign.UUID]; !found {
-			ft.publisherMap[*brokerReassign.UUID] = &Publisher{
-				PublisherID:     brokerReassign.UUID,
-				HomeBrokerID:    brokerReassign.HomeBrokerID,
-				CurrentBrokerID: nil, // will be set when the publisher actually connects
-				Metadata:        nil, // will be set when the publisher actually connects
+			pub = &Publisher{
+				PublisherID:     *brokerReassign.UUID,
+				HomeBrokerID:    *brokerReassign.HomeBrokerID,
+				CurrentBrokerID: UNASSIGNED, // will be set when the publisher actually connects
+				Metadata:        nil,        // will be set when the publisher actually connects
 			}
+			ft.publisherMap[*brokerReassign.UUID] = pub
+			ft.etcdManager.UpdateEntity(pub)
 		} else {
-			pub.HomeBrokerID = brokerReassign.HomeBrokerID // reset just in case it was set wrong previously
+			if pub.HomeBrokerID != *brokerReassign.HomeBrokerID { // Check just in case it was set wrong somehow
+				pub.HomeBrokerID = *brokerReassign.HomeBrokerID
+				ft.etcdManager.UpdateEntity(pub)
+			}
 		}
 		ft.publisherLock.Unlock()
 	} else {
 		ft.clientLock.Lock()
 		if client, found := ft.clientMap[*brokerReassign.UUID]; !found {
-			ft.clientMap[*brokerReassign.UUID] = &Client{
-				ClientID:        brokerReassign.UUID,
-				HomeBrokerID:    brokerReassign.HomeBrokerID,
-				CurrentBrokerID: nil, // will be set when the client actually connects
-				query:           nil, // will be set when the client actually connects
+			client = &Client{
+				ClientID:        *brokerReassign.UUID,
+				HomeBrokerID:    *brokerReassign.HomeBrokerID,
+				CurrentBrokerID: UNASSIGNED, // will be set when the client actually connects
+				QueryString:     "",         // will be set when the client actually connects
+				query:           nil,        // will be set when the client actually connects
 			}
+			ft.clientMap[*brokerReassign.UUID] = client
+			ft.etcdManager.UpdateEntity(client)
 		} else {
-			client.HomeBrokerID = brokerReassign.HomeBrokerID // reset just in case it was set wrong previously
+			if client.HomeBrokerID != *brokerReassign.HomeBrokerID { // Check just in case it was set wrong somehow
+				client.HomeBrokerID = *brokerReassign.HomeBrokerID
+				ft.etcdManager.UpdateEntity(client)
+			}
 		}
 		ft.clientLock.Unlock()
 	}
@@ -191,40 +279,42 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 	ft.clientLock.Lock()
 	brokerClientMap := make(map[common.UUID][]common.UUID)
 	for _, client := range ft.clientMap {
-		if *client.HomeBrokerID == *liveID {
-			if client.CurrentBrokerID == nil {
+		if client.HomeBrokerID == *liveID {
+			if client.CurrentBrokerID == UNASSIGNED {
 				client.CurrentBrokerID = client.HomeBrokerID
-				fq := ft.getOrEvaluateQuery(client.query.QueryString)
-				ft.activateClient(client, fq, client.CurrentBrokerID)
+				fq := ft.getOrEvaluateQuery(client.QueryString)
+				ft.activateClient(client, fq, &client.CurrentBrokerID)
 			} else {
 				ft.CancelSubscriberForwarding(client) // cancel old routes
-				if ids, found := brokerClientMap[*client.CurrentBrokerID]; found {
-					brokerClientMap[*client.CurrentBrokerID] = append(ids, *client.ClientID)
+				if ids, found := brokerClientMap[client.CurrentBrokerID]; found {
+					brokerClientMap[client.CurrentBrokerID] = append(ids, client.ClientID)
 				} else {
-					brokerClientMap[*client.CurrentBrokerID] = []common.UUID{*client.ClientID}
+					brokerClientMap[client.CurrentBrokerID] = []common.UUID{client.ClientID}
 				}
-				client.CurrentBrokerID = nil // mark as inactive for now
+				client.CurrentBrokerID = UNASSIGNED // mark as inactive for now
 			}
+			ft.etcdManager.UpdateEntity(client)
 		}
 	}
 	ft.clientLock.Unlock()
 	ft.publisherLock.Lock()
 	brokerPublisherMap := make(map[common.UUID][]common.UUID)
 	for _, publisher := range ft.publisherMap {
-		if *publisher.HomeBrokerID == *liveID {
-			if publisher.CurrentBrokerID == nil {
+		if publisher.HomeBrokerID == *liveID {
+			if publisher.CurrentBrokerID == UNASSIGNED {
 				publisher.CurrentBrokerID = publisher.HomeBrokerID
-				candidateQueries := ft.gatherCandidateQueries(publisher.PublisherID, publisher.Metadata)
+				candidateQueries := ft.gatherCandidateQueries(&publisher.PublisherID, publisher.Metadata)
 				ft.reevaluateQueries(candidateQueries, false)
 			} else {
-				ft.CancelPublisherForwarding(*publisher.PublisherID) // cancel old routes
-				if ids, found := brokerPublisherMap[*publisher.CurrentBrokerID]; found {
-					brokerPublisherMap[*publisher.CurrentBrokerID] = append(ids, *publisher.PublisherID)
+				ft.CancelPublisherForwarding(publisher.PublisherID) // cancel old routes
+				if ids, found := brokerPublisherMap[publisher.CurrentBrokerID]; found {
+					brokerPublisherMap[publisher.CurrentBrokerID] = append(ids, publisher.PublisherID)
 				} else {
-					brokerPublisherMap[*publisher.CurrentBrokerID] = []common.UUID{*publisher.PublisherID}
+					brokerPublisherMap[publisher.CurrentBrokerID] = []common.UUID{publisher.PublisherID}
 				}
-				publisher.CurrentBrokerID = nil // mark as inactive for now
+				publisher.CurrentBrokerID = UNASSIGNED // mark as inactive for now
 			}
+			ft.etcdManager.UpdateEntity(publisher)
 		}
 	}
 	ft.publisherLock.Unlock()
@@ -242,7 +332,9 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 	}
 }
 
-func (ft *ForwardingTable) HandleSubscription(queryStr string, clientID common.UUID, brokerID common.UUID) {
+// homeBrokerID can be specified if it is known and different from brokerID; otherwise leave as nil
+func (ft *ForwardingTable) HandleSubscription(queryStr string, clientID common.UUID, brokerID common.UUID,
+	homeBrokerID *common.UUID) {
 	// check for matching client; if one doesn't exist, create one and add to mapping
 	//                            otherwise, update its current broker
 	// check if a query object already exists, if not create it and add to mapping
@@ -251,39 +343,45 @@ func (ft *ForwardingTable) HandleSubscription(queryStr string, clientID common.U
 	// set up any additional routings as a result
 	// respond with a BrokerSubscriptionDiffMessage
 	var (
-		client *Client
-		found  bool
+		client     *Client
+		homeBroker *common.UUID
+		found      bool
 	)
 	fq := ft.getOrEvaluateQuery(queryStr)
 
 	// Create new client; add to client mapping
 	ft.clientLock.Lock()
 	if client, found = ft.clientMap[clientID]; found {
-		if client.CurrentBrokerID == nil {
-			client.CurrentBrokerID = &brokerID
+		if client.CurrentBrokerID == UNASSIGNED {
+			client.CurrentBrokerID = brokerID
 			client.query = fq
 			log.WithFields(log.Fields{
-				"homeBrokerID": *client.HomeBrokerID, "clientID": clientID, "brokerID": brokerID,
-				"query": client.query.QueryString,
+				"homeBrokerID": client.HomeBrokerID, "clientID": clientID, "brokerID": brokerID, "query": client.QueryString,
 			}).Info("New previously inactive client connected. Updating to new broker ID")
-		} else if *client.CurrentBrokerID != brokerID {
+		} else if client.CurrentBrokerID != brokerID {
 			log.WithFields(log.Fields{
-				"homeBrokerID": *client.HomeBrokerID, "clientID": clientID, "brokerID": brokerID,
-				"query": client.query.QueryString,
+				"homeBrokerID": client.HomeBrokerID, "clientID": clientID, "brokerID": brokerID, "query": client.QueryString,
 			}).Info("Client connected at new broker without going inactive first...")
 			ft.CancelSubscriberForwarding(client) // Cancel old routes before making new ones
-			client.CurrentBrokerID = &brokerID
+			client.CurrentBrokerID = brokerID
 			client.query = fq
 		}
 	} else {
+		if homeBrokerID == nil {
+			homeBroker = &brokerID
+		} else {
+			homeBroker = homeBrokerID
+		}
 		client = &Client{
-			ClientID:        &clientID,
-			CurrentBrokerID: &brokerID,
-			HomeBrokerID:    &brokerID, // should be connected to home broker
+			ClientID:        clientID,
+			CurrentBrokerID: brokerID,
+			HomeBrokerID:    *homeBroker, // should be connected to home broker
+			QueryString:     queryStr,
 			query:           fq,
 		}
+		ft.clientMap[clientID] = client
 	}
-	ft.clientMap[clientID] = client
+	ft.etcdManager.UpdateEntity(client)
 	ft.clientLock.Unlock()
 
 	ft.activateClient(client, fq, &brokerID)
@@ -308,50 +406,62 @@ func (ft *ForwardingTable) activateClient(client *Client, fq *ForwardedQuery, br
 }
 
 // Called anytime a publisher sends metadata (new publisher or MD update)
-func (ft *ForwardingTable) HandlePublish(msg *common.BrokerPublishMessage, brokerID common.UUID) {
-	if len(msg.Metadata) == 0 {
+// homeBrokerID can be specified if it is known and different from brokerID; otherwise leave as nil
+func (ft *ForwardingTable) HandlePublish(publisherID common.UUID, metadata map[string]interface{},
+	brokerID common.UUID, homeBrokerID *common.UUID) {
+	var (
+		publisher  *Publisher
+		homeBroker *common.UUID
+		found      bool
+	)
+	if len(metadata) == 0 {
 		// Ignore
 		log.WithFields(log.Fields{
-			"msg": msg, "brokerID": brokerID,
+			"publisherID": publisherID, "brokerID": brokerID,
 		}).Warn("Received a PublishMessage with no Metadata...")
 		return
 	}
 
 	// save the metadata
-	pm := msg.ToRegular()
-	err := ft.metadata.Save(pm)
+	err := ft.metadata.Save(&publisherID, metadata)
 	if err != nil {
 		log.WithFields(log.Fields{
-			"message": msg, "error": err,
+			"publisherID": publisherID, "metadata": metadata, "error": err,
 		}).Error("Could not save metadata")
 		return // TODO any other action?
 	}
 
 	// Add publisher to mappings if necessary
 	ft.publisherLock.Lock()
-	if publisher, found := ft.publisherMap[msg.UUID]; !found {
-		publisher = &Publisher{PublisherID: &msg.UUID, CurrentBrokerID: &brokerID,
-			HomeBrokerID: &brokerID, Metadata: msg.Metadata}
-		ft.publisherMap[msg.UUID] = publisher
+	if publisher, found = ft.publisherMap[publisherID]; !found {
+		if homeBrokerID == nil {
+			homeBroker = &brokerID
+		} else {
+			homeBroker = homeBrokerID
+		}
+		publisher = &Publisher{PublisherID: publisherID, CurrentBrokerID: brokerID,
+			HomeBrokerID: *homeBroker, Metadata: metadata}
+		ft.publisherMap[publisherID] = publisher
 	} else {
-		if publisher.CurrentBrokerID == nil {
-			publisher.CurrentBrokerID = &brokerID // publisher newly regarded as alive
-			publisher.Metadata = msg.Metadata
-		} else if *publisher.CurrentBrokerID != brokerID {
+		if publisher.CurrentBrokerID == UNASSIGNED {
+			publisher.CurrentBrokerID = brokerID // publisher newly regarded as alive
+			publisher.Metadata = metadata
+		} else if publisher.CurrentBrokerID != brokerID {
 			// publisher somehow switched brokers without going inactive between...
 			log.WithFields(log.Fields{
-				"publisherID": *publisher.PublisherID, "homeBrokerID": *publisher.HomeBrokerID,
-				"currentBrokerID": *publisher.CurrentBrokerID, "newBrokerID": brokerID,
+				"publisherID": publisher.PublisherID, "homeBrokerID": publisher.HomeBrokerID,
+				"currentBrokerID": publisher.CurrentBrokerID, "newBrokerID": brokerID,
 			}).Warn("Publisher switched brokers without going inactive first")
-			ft.CancelPublisherForwarding(*publisher.PublisherID) // cancel old forwarding before setting up new
-			publisher.CurrentBrokerID = &brokerID
-			publisher.Metadata = msg.Metadata
+			ft.CancelPublisherForwarding(publisher.PublisherID) // cancel old forwarding before setting up new
+			publisher.CurrentBrokerID = brokerID
+			publisher.Metadata = metadata
 		}
 		// Otherwise just a metadata change
 	}
+	ft.etcdManager.UpdateEntity(publisher)
 	ft.publisherLock.Unlock()
 
-	candidateQueries := ft.gatherCandidateQueries(&pm.UUID, pm.Metadata)
+	candidateQueries := ft.gatherCandidateQueries(&publisherID, metadata)
 	ft.reevaluateQueries(candidateQueries, true)
 }
 
@@ -366,11 +476,11 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 		found         bool
 	)
 	log.WithFields(log.Fields{
-		"clientID": *client.ClientID, "homeBrokerID": *client.HomeBrokerID, "currentBrokerID": *client.CurrentBrokerID,
+		"clientID": client.ClientID, "homeBrokerID": client.HomeBrokerID, "currentBrokerID": client.CurrentBrokerID,
 	}).Debug("Cancelling all forwarding relevant to client")
 	fq := client.query
 	fq.Lock()
-	if clientList, found = fq.CurrentBrokerIDs[*client.CurrentBrokerID]; !found {
+	if clientList, found = fq.CurrentBrokerIDs[client.CurrentBrokerID]; !found {
 		log.WithFields(log.Fields{
 			"query": fq.QueryString, "brokerID": client.CurrentBrokerID, "clientID": client.ClientID,
 		}).Warn("Broker attempted to cancel client forwarding but not found under current broker ID")
@@ -379,7 +489,7 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 	clientList.Remove(client.subscriberListElem)
 	remainingClientsFromBroker := clientList.Len()
 	if remainingClientsFromBroker == 0 {
-		delete(fq.CurrentBrokerIDs, *client.CurrentBrokerID)
+		delete(fq.CurrentBrokerIDs, client.CurrentBrokerID)
 	}
 	remainingBrokers := len(fq.CurrentBrokerIDs)
 	fq.Unlock()
@@ -411,14 +521,14 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 	// Determine which forwarding routes must be cancelled
 	for publisherID, _ := range oldPublishers {
 		publisherBrokerID := ft.publisherMap[*publisherID].CurrentBrokerID
-		addPublishRouteToMap(cancelForwardRoutes, publisherBrokerID, client.CurrentBrokerID, publisherID)
+		addPublishRouteToMap(cancelForwardRoutes, &publisherBrokerID, &client.CurrentBrokerID, publisherID)
 	}
 	ft.publisherLock.RUnlock()
 	ft.queryPubLock.Unlock()
 
 	if len(cancelForwardRoutes) > 0 {
 		log.WithFields(log.Fields{
-			"clientID": *client.ClientID, "homeBrokerID": *client.HomeBrokerID, "currentBrokerID": *client.CurrentBrokerID,
+			"clientID": client.ClientID, "homeBrokerID": client.HomeBrokerID, "currentBrokerID": client.CurrentBrokerID,
 			"query": fq.QueryString, "routesToCancel": cancelForwardRoutes,
 		}).Debug("Sending forward cancellation requests")
 		ft.sendForwardingChanges(cancelForwardRoutes, fq.QueryString, true)
@@ -441,6 +551,7 @@ func (ft *ForwardingTable) HandleSubscriberTermination(clientID common.UUID, bro
 	delete(ft.clientMap, clientID)
 	ft.clientLock.Unlock()
 
+	ft.etcdManager.DeleteEntity(client)
 	ft.CancelSubscriberForwarding(client)
 }
 
@@ -472,6 +583,10 @@ func (ft *ForwardingTable) CancelPublisherForwarding(publisherID common.UUID) {
 }
 
 func (ft *ForwardingTable) HandlePublisherTermination(publisherID common.UUID, brokerID common.UUID) {
+	var (
+		publisher *Publisher
+		found     bool
+	)
 	// simply remove publisher from local mappings and save its metadata as blank
 	// send BrokerSubscriptionDiffMessage to any currently mapped
 	err := ft.metadata.RemovePublisher(publisherID)
@@ -482,7 +597,7 @@ func (ft *ForwardingTable) HandlePublisherTermination(publisherID common.UUID, b
 	}
 
 	ft.publisherLock.Lock()
-	if _, found := ft.publisherMap[publisherID]; !found {
+	if publisher, found = ft.publisherMap[publisherID]; !found {
 		log.WithFields(log.Fields{
 			"brokerID": brokerID, "publisherID": publisherID,
 		}).Warn("Attempted to terminate a non-existent publisher")
@@ -490,6 +605,7 @@ func (ft *ForwardingTable) HandlePublisherTermination(publisherID common.UUID, b
 	delete(ft.publisherMap, publisherID) // delete is a no-op if the ID doesn't exist
 	ft.publisherLock.Unlock()
 
+	ft.etcdManager.DeleteEntity(publisher)
 	ft.CancelPublisherForwarding(publisherID)
 }
 
@@ -536,7 +652,7 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 
 	for publisherID, _ := range fq.MatchingProducers {
 		publishBrokerID := ft.publisherMap[publisherID].CurrentBrokerID
-		if publishBrokerID == nil {
+		if publishBrokerID == UNASSIGNED {
 			// this publisher isn't currently active
 			continue
 		}
@@ -547,7 +663,7 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 				continue // no new broker and the query exists so nothing to be done for this pub
 			} else if queryFound && newBrokerID != nil {
 				// query was found but there's a new broker, need to set up forward to new broker
-				addPublishRouteToMap(newPublishRoutes, publishBrokerID, newBrokerID, &publisherID)
+				addPublishRouteToMap(newPublishRoutes, &publishBrokerID, newBrokerID, &publisherID)
 				continue
 			} else { // we're an entirely new query for this publisher
 				log.WithFields(log.Fields{
@@ -569,10 +685,10 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 		}
 		log.WithFields(log.Fields{
 			"publisherID": publisherID, "query": fq.QueryString,
-			"sourceBrokerID": *publishBrokerID, "destinations": fq.CurrentBrokerIDs,
+			"sourceBrokerID": publishBrokerID, "destinations": fq.CurrentBrokerIDs,
 		}).Debug("Submitting a new forwarding route from publisherID to query at destinations")
 		for destBroker, _ := range fq.CurrentBrokerIDs {
-			addPublishRouteToMap(newPublishRoutes, publishBrokerID, &destBroker, &publisherID)
+			addPublishRouteToMap(newPublishRoutes, &publishBrokerID, &destBroker, &publisherID)
 		}
 	}
 	//log.Debugf("forwarding table %v", ft.forwarding)
@@ -606,7 +722,7 @@ func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []
 			continue // no subscribers for this uuid
 		}
 		publisherBrokerID := ft.publisherMap[rm_uuid].CurrentBrokerID
-		if publisherBrokerID == nil {
+		if publisherBrokerID == UNASSIGNED {
 			log.WithFields(log.Fields{
 				"queries": queries, "publisherID": rm_uuid,
 			}).Warn("Found queries in pubQueryMap for an inactive publisher!")
@@ -623,7 +739,7 @@ func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []
 			queries.removeQuery(fq)
 			fq.RLock()
 			for destBrokerID, _ := range fq.CurrentBrokerIDs {
-				addPublishRouteToMap(cancelPublishRoutes, publisherBrokerID, &destBrokerID, &rm_uuid)
+				addPublishRouteToMap(cancelPublishRoutes, &publisherBrokerID, &destBrokerID, &rm_uuid)
 			}
 			fq.RUnlock()
 		}

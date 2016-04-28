@@ -3,9 +3,12 @@ package main
 import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	etcdc "github.com/coreos/etcd/clientv3"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/tinylib/msgp/msgp"
+	"golang.org/x/net/context"
 	"net"
+	"time"
 )
 
 type Server struct {
@@ -14,6 +17,7 @@ type Server struct {
 	metadata      *common.MetadataStore
 	fwdTable      *ForwardingTable
 	brokerManager BrokerManager
+	etcdManager   *etcdc.Client
 
 	messageBuffer      chan *MessageFromBroker
 	brokerDeathChan    chan *common.UUID
@@ -58,9 +62,11 @@ func NewServer(config *common.Config) *Server {
 	s.brokerReassignChan = make(chan *BrokerReassignment, 500)
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
 
-	s.brokerManager = NewBrokerManager(config.Coordinator.HeartbeatInterval, s.brokerDeathChan,
+	// TODO move to real config
+	s.etcdManager = NewEtcdManager([]string{"127.0.0.1:2377"}, 2*time.Second)
+	s.brokerManager = NewBrokerManager(s.etcdManager, config.Coordinator.HeartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
-	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
+	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.etcdManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
 	go s.fwdTable.monitorInboundChannels()
 	s.stop = make(chan bool)
 	s.stopped = false
@@ -72,10 +78,10 @@ func (s *Server) handleMessage(brokerMessage *MessageFromBroker) {
 	brokerID := brokerMessage.broker.BrokerID
 	switch msg := brokerMessage.message.(type) {
 	case *common.BrokerPublishMessage:
-		s.fwdTable.HandlePublish(msg, brokerID)
+		s.fwdTable.HandlePublish(msg.UUID, msg.Metadata, brokerID, nil)
 		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.BrokerQueryMessage:
-		s.fwdTable.HandleSubscription(msg.Query, msg.UUID, brokerID)
+		s.fwdTable.HandleSubscription(msg.Query, msg.UUID, brokerID, nil)
 		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.PublisherTerminationMessage:
 		s.fwdTable.HandlePublisherTermination(msg.PublisherID, brokerID)

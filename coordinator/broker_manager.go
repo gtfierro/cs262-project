@@ -31,6 +31,7 @@ type MessageFromBroker struct {
 }
 
 type BrokerManagerImpl struct {
+	etcdManager        *EtcdManager
 	brokerMap          map[common.UUID]*Broker
 	brokerAddrMap      map[string]*Broker // Map of Broker contact address -> broker
 	mapLock            sync.RWMutex
@@ -46,9 +47,10 @@ type BrokerManagerImpl struct {
 	MessageBuffer      chan *MessageFromBroker  // Buffers incoming messages meant for other systems
 }
 
-func NewBrokerManager(heartbeatInterval int, brokerDeathChan, brokerLiveChan chan *common.UUID,
+func NewBrokerManager(etcdMgr *EtcdManager, heartbeatInterval int, brokerDeathChan, brokerLiveChan chan *common.UUID,
 	messageBuffer chan *MessageFromBroker, brokerReassignChan chan *BrokerReassignment, clock common.Clock) *BrokerManagerImpl {
 	bm := new(BrokerManagerImpl)
+	bm.etcdManager = etcdMgr
 	bm.brokerMap = make(map[common.UUID]*Broker)
 	bm.brokerAddrMap = make(map[string]*Broker)
 	bm.mapLock = sync.RWMutex{}

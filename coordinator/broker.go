@@ -13,15 +13,15 @@ import (
 
 type Broker struct {
 	common.BrokerInfo
+	alive                  bool
+	aliveLock              sync.Mutex
+	aliveCond              *sync.Cond
 	outstandingMessages    map[common.MessageIDType]common.SendableWithID // messageID -> message
 	outMessageLock         sync.RWMutex
 	messageHandler         MessageHandler
 	messageSendBuffer      chan common.Sendable
 	requestHeartbeatBuffer chan chan bool
 	heartbeatBuffer        chan bool
-	alive                  bool
-	aliveLock              sync.Mutex
-	aliveCond              *sync.Cond
 	heartbeatInterval      time.Duration
 	terminating            chan bool // send on this channel when broker is shutting down permanently
 	clock                  common.Clock

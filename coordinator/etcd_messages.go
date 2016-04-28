@@ -3,12 +3,20 @@ package main
 
 import (
 	"container/list"
+	"fmt"
 	"github.com/gtfierro/cs262-project/common"
 )
 
 const BrokerEntity = "broker"
 const ClientEntity = "client"
 const PublisherEntity = "publisher"
+
+const BrokerLog = "log/broker/"
+const GeneralLog = "log/general/"
+
+func GetBrokerLogPrefix(brokerID common.UUID) string {
+	return fmt.Sprintf("%v%v/", BrokerLog, brokerID)
+}
 
 type SerializableBroker struct {
 	common.BrokerInfo

@@ -3,6 +3,7 @@ package main
 import (
 	log "github.com/Sirupsen/logrus"
 	etcdc "github.com/coreos/etcd/clientv3"
+	"github.com/coreos/etcd/contrib/recipes"
 	"github.com/gtfierro/cs262-project/common"
 	"golang.org/x/net/context"
 	"time"
@@ -11,6 +12,7 @@ import (
 type EtcdManager struct {
 	client            *etcdc.Client
 	kv                etcdc.KV
+	watcher           etcdc.Watcher
 	context           context.Context
 	maxKeysPerRequest int
 }
@@ -36,6 +38,7 @@ func NewEtcdManager(endpoints []string, timeout time.Duration, maxKeysPerRequest
 		log.WithField("endpoints", endpoints).Fatal("Unable to contact etcd server!")
 	}
 	em.kv = etcdc.NewKV(em.client)
+	em.watcher = etcdc.Watcher(em.client)
 	//defer etcdm.client.Close() TODO
 
 	return em
@@ -66,6 +69,40 @@ func (em *EtcdManager) DeleteEntity(entity EtcdSerializable) error {
 		log.WithFields(log.Fields{
 			"UUID": id, "error": err, "type": prefix,
 		}).Error("Error while deleting entity from etcd")
+	}
+	return err
+}
+
+func (em *EtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, error) {
+	resp, err := em.kv.Get(em.context, prefix, etcdc.WithRev(rev), etcdc.WithFromKey(), etcdc.WithLastKey())
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "revision": rev, "prefix": prefix,
+		}).Error("Error while attempting to find highest key at revision ")
+		return "", err
+	}
+	if len(resp.Kvs) == 0 {
+		return "", nil
+	}
+	return resp.Kvs[0].Key, nil
+}
+
+func (em *EtcdManager) WatchFromKeyAtRevision(prefix string, startKey string) chan etcdc.WatchResponse {
+	return em.watcher.Watch(em.context, prefix+startKey, etcdc.WithFromKey())
+}
+
+func (em *EtcdManager) WriteToLog(prefix string, msg common.Sendable) error {
+	bytePacked, err := msg.Marshal()
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "message": *msg,
+		}).Error("Error while marshalling message to write to log")
+	}
+	resp, err := recipe.NewSequentialKV(em.kv, prefix, string(bytePacked))
+	if err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "prefix": prefix, "message": *msg, "key": resp.Key(),
+		}).Error("Error while storing into log")
 	}
 	return err
 }
@@ -122,7 +159,6 @@ func (em *EtcdManager) IterateOverAllEntities(entityType string,
 		}
 	}
 
-	watcher := etcdc.NewWatcher(em.client)
-	watchChan := watcher.Watch(em.context, entityType+"/", etcdc.WithPrefix(), etcdc.WithRev(startingRevision))
+	watchChan := em.watcher.Watch(em.context, entityType+"/", etcdc.WithPrefix(), etcdc.WithRev(startingRevision))
 	return watchChan, startingRevision, nil
 }

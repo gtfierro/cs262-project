@@ -1,12 +1,10 @@
 package main
 
 import (
-	"github.com/gtfierro/cs262-project/common"
-	"github.com/tinylib/msgp/msgp"
 	"sync"
 )
 
-type CommService struct {
+type LeaderService struct {
 	isLeader          bool
 	leaderLock        sync.RWMutex
 	leaderWaitChans   []chan bool
@@ -14,63 +12,54 @@ type CommService struct {
 	etcdManager       *EtcdManager
 }
 
-func NewCommService(isLeader bool, etcdManager *EtcdManager) *CommService {
-	cs := new(CommService)
-	cs.isLeader = isLeader
+func NewLeaderService(etcdManager *EtcdManager) *LeaderService {
+	cs := new(LeaderService)
+	cs.isLeader = false
 	cs.etcdManager = etcdManager
 	cs.leaderWaitChans = []chan bool{}
 	cs.unleaderWaitChans = []chan bool{}
+	// TODO need to set up a watch to monitor leadership changes
 	return cs
 }
 
-func (cs *CommService) SendAndFlush(msg common.Sendable, writer msgp.Writer) error {
-	if cs.IsLeader() {
-		err := msg.Encode(writer)
-		if err != nil {
-			return err
-		}
-		err = writer.Flush()
-		return err
-	} else {
-		// TODO
-		return nil
-	}
+func (cs *LeaderService) GetLeadershipChangeRevision() int64 {
+	// Get the revision of the last leadership change
+	// TODO
 }
 
-func (cs *CommService) ReceiveMessage(reader msgp.Reader) (common.Sendable, error) {
-	if cs.IsLeader() {
-		msg, err := common.MessageFromDecoderMsgp(reader)
-		return msg, err
-	} else {
-		return nil, nil // TODO
-	}
+func (cs *LeaderService) AttemptToBecomeInitialLeader() bool {
+	// TODO do a CAS transaction checking if a leader exists
 }
 
-func (cs *CommService) IsLeader() bool {
+func (cs *LeaderService) AttemptToBecomeLeader() bool {
+	// TODO do a CAS transaction checking if someone else already leadered up
+}
+
+func (cs *LeaderService) IsLeader() bool {
 	cs.leaderLock.RLock()
 	defer cs.leaderLock.RUnlock()
 	return cs.isLeader
 }
 
-func (cs *CommService) SetLeader(isLeader bool) {
+func (cs *LeaderService) SetLeader(isLeader bool) {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
 	cs.isLeader = isLeader
 	if isLeader {
 		for _, c := range cs.leaderWaitChans {
-			c <- true
+			close(c)
 		}
 		cs.leaderWaitChans = []chan bool{}
 	} else {
 		for _, c := range cs.unleaderWaitChans {
-			c <- true
+			close(c)
 		}
 		cs.unleaderWaitChans = []chan bool{}
 	}
 }
 
-// Returns a channel which will be sent to when this is leader
-func (cs *CommService) WaitForLeadership() chan bool {
+// Returns a channel which will be closed when this is leader
+func (cs *LeaderService) WaitForLeadership() chan bool {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
 	c := make(chan bool)
@@ -83,8 +72,8 @@ func (cs *CommService) WaitForLeadership() chan bool {
 	}
 }
 
-// Returns a channel which will be sent to when this is nonleader
-func (cs *CommService) WaitForNonleadership() chan bool {
+// Returns a channel which will be closed when this is nonleader
+func (cs *LeaderService) WaitForNonleadership() chan bool {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
 	c := make(chan bool)

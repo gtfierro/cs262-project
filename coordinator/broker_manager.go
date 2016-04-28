@@ -35,7 +35,7 @@ type BrokerManagerImpl struct {
 	brokerMap          map[common.UUID]*Broker
 	brokerAddrMap      map[string]*Broker // Map of Broker contact address -> broker
 	mapLock            sync.RWMutex
-	heartbeatInterval  int // seconds
+	heartbeatInterval  time.Duration
 	clock              common.Clock
 	deadBrokerQueue    *list.List
 	liveBrokerQueue    *list.List
@@ -47,7 +47,7 @@ type BrokerManagerImpl struct {
 	MessageBuffer      chan *MessageFromBroker  // Buffers incoming messages meant for other systems
 }
 
-func NewBrokerManager(etcdMgr *EtcdManager, heartbeatInterval int, brokerDeathChan, brokerLiveChan chan *common.UUID,
+func NewBrokerManager(etcdMgr *EtcdManager, heartbeatInterval time.Duration, brokerDeathChan, brokerLiveChan chan *common.UUID,
 	messageBuffer chan *MessageFromBroker, brokerReassignChan chan *BrokerReassignment, clock common.Clock) *BrokerManagerImpl {
 	bm := new(BrokerManagerImpl)
 	bm.etcdManager = etcdMgr
@@ -72,7 +72,7 @@ func NewBrokerManager(etcdMgr *EtcdManager, heartbeatInterval int, brokerDeathCh
 // If broker already exists in the mapping, this should be a reconnection
 //   so simply update with the new connection and restart
 // Otherwise, create a new Broker, put it into the map, and start it
-func (bm *BrokerManagerImpl) ConnectBroker(brokerInfo *common.BrokerInfo, conn *net.TCPConn) (err error) {
+func (bm *BrokerManagerImpl) ConnectBroker(brokerInfo *common.BrokerInfo, commConn *CommConn) (err error) {
 	bm.mapLock.RLock()
 	brokerConn, ok := bm.brokerMap[brokerInfo.BrokerID]
 	bm.mapLock.RUnlock()
@@ -81,23 +81,16 @@ func (bm *BrokerManagerImpl) ConnectBroker(brokerInfo *common.BrokerInfo, conn *
 		bm.queueLock.Lock()
 		brokerConn.RemoveFromList(bm.deadBrokerQueue)
 		bm.queueLock.Unlock()
-		bm.mapLock.RLock()
-		//for _, brok := range bm.brokerMap {
-		// TODO I think this will be handled within the forwarding table now
-		//	// Terminate any clients which migrated so that they will come back
-		//	brok.TerminateRemotePubClients(&brokerInfo.BrokerID)
-		//}
-		bm.mapLock.RUnlock()
 	} else {
 		messageHandler := bm.createMessageHandler(brokerInfo.BrokerID)
-		brokerConn = NewBroker(brokerInfo, messageHandler, time.Duration(bm.heartbeatInterval)*time.Second,
+		brokerConn = NewBroker(brokerInfo, messageHandler, bm.heartbeatInterval,
 			bm.clock, bm.internalDeathChan)
 		bm.mapLock.Lock()
 		bm.brokerMap[brokerInfo.BrokerID] = brokerConn
 		bm.brokerAddrMap[brokerInfo.BrokerAddr] = brokerConn
 		bm.mapLock.Unlock()
 	}
-	brokerConn.StartAsynchronously(conn)
+	brokerConn.StartAsynchronously(commConn)
 	bm.queueLock.Lock()
 	brokerConn.PushToList(bm.liveBrokerQueue)
 	bm.queueLock.Unlock()
@@ -265,21 +258,6 @@ func (bm *BrokerManagerImpl) HandlePubClientRemapping(msg *common.BrokerRequestM
 	}, nil
 }
 
-// Send a request for a heartbeat to broker; should be sent if contacted by a client
-// saying that they couldn't contact the broker
-// TODO this shouldn't be necessary?
-//func (bm *BrokerManagerImpl) RequestHeartbeat(brokerID common.UUID) (err error) {
-//	bm.mapLock.RLock()
-//	defer bm.mapLock.RUnlock()
-//	brokerConn, ok := bm.brokerMap[brokerID]
-//	if !ok {
-//		log.WithField("brokerID", brokerID).Warn("Attempted to send heartbeat request to nonexistent broker")
-//		return errors.New("Broker was unable to be found")
-//	}
-//	brokerConn.RequestHeartbeat()
-//	return
-//}
-
 func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageHandler {
 	return func(brokerMessage *MessageFromBroker) {
 		message := brokerMessage.message
@@ -296,20 +274,6 @@ func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageH
 			delete(bm.brokerAddrMap, brokerMessage.broker.BrokerAddr)
 			bm.mapLock.Unlock()
 			brokerMessage.broker.Terminate()
-		// Messages below this take some action in the BrokerManager but also forward beyond
-		// TODO cleanup once I'm sure this isn't needed
-		//case *common.ClientTerminationMessage:
-		//	brokerMessage.broker.RemoveClient(msg.ClientID)
-		//	bm.MessageBuffer <- brokerMessage
-		//case *common.PublisherTerminationMessage:
-		//	brokerMessage.broker.RemovePublisher(msg.PublisherID)
-		//	bm.MessageBuffer <- brokerMessage
-		//case *common.BrokerPublishMessage:
-		//	brokerMessage.broker.AddLocalPublisher(msg.UUID)
-		//	bm.MessageBuffer <- brokerMessage
-		//case *common.BrokerQueryMessage:
-		//	brokerMessage.broker.AddLocalClient(msg.UUID)
-		//	bm.MessageBuffer <- brokerMessage
 		default:
 			bm.MessageBuffer <- brokerMessage
 		}

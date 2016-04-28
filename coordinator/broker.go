@@ -4,9 +4,7 @@ import (
 	"container/list"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
-	"github.com/tinylib/msgp/msgp"
 	"io"
-	"net"
 	"sync"
 	"time"
 )
@@ -19,7 +17,6 @@ type Broker struct {
 	outstandingMessages    map[common.MessageIDType]common.SendableWithID // messageID -> message
 	outMessageLock         sync.RWMutex
 	messageHandler         MessageHandler
-	commService            *CommService
 	messageSendBuffer      chan common.Sendable
 	requestHeartbeatBuffer chan chan bool
 	heartbeatBuffer        chan bool
@@ -31,7 +28,7 @@ type Broker struct {
 	pubClientMapLock       sync.RWMutex
 }
 
-func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler, commService *CommService,
+func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
 	heartbeatInterval time.Duration, clock common.Clock, deathChannel chan *Broker) *Broker {
 	bc := new(Broker)
 	bc.BrokerInfo = *broker
@@ -44,7 +41,6 @@ func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler, commSer
 	bc.aliveCond = sync.NewCond(&bc.aliveLock)
 	bc.outMessageLock = sync.RWMutex{}
 	bc.messageHandler = messageHandler
-	bc.commService = commService
 	bc.heartbeatInterval = heartbeatInterval
 	bc.clock = clock
 	bc.deathChannel = deathChannel
@@ -62,7 +58,7 @@ func (bc *Broker) RemoveFromList(l *list.List) {
 // Start up communication with this broker, asynchronously
 // Calling this on an existing Broker before calling WaitForCleanup
 // will result in undefined behavior
-func (bc *Broker) StartAsynchronously(conn *net.TCPConn) {
+func (bc *Broker) StartAsynchronously(commConn CommConn) {
 	bc.aliveLock.Lock()
 	bc.alive = true
 	bc.terminating = make(chan bool)
@@ -70,10 +66,10 @@ func (bc *Broker) StartAsynchronously(conn *net.TCPConn) {
 	done := make(chan bool)
 	wg := new(sync.WaitGroup)
 	receiveFinishChannel := make(chan bool)
-	go bc.receiveLoop(conn, done, receiveFinishChannel)
-	go bc.sendLoop(conn, done, wg)
+	go bc.receiveLoop(commConn, done, receiveFinishChannel)
+	go bc.sendLoop(commConn, done, wg)
 	go bc.monitorHeartbeats(done, wg)
-	go bc.cleanupWhenDone(conn, done, receiveFinishChannel, wg)
+	go bc.cleanupWhenDone(commConn, done, receiveFinishChannel, wg)
 }
 
 // Instruct this Broker to terminate itself
@@ -114,23 +110,8 @@ func (bc *Broker) IsAlive() bool {
 
 // Monitor heartbeats from the broker and determine death if necessary
 func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
-	if !bc.commService.IsLeader() {
-		go func(d chan bool, w *sync.WaitGroup) {
-			waitChan := bc.commService.WaitForLeadership()
-			select {
-			case <-waitChan:
-				bc.monitorHeartbeats(d, w)
-			case <-d:
-				return
-			case <-bc.terminating:
-				return
-			}
-		}(done, wg)
-		return
-	}
 	wg.Add(1)
 	defer wg.Done()
-	lostLeadership := bc.commService.WaitForNonleadership()
 	lastHeartbeat := time.Now()
 	nextHeartbeat := lastHeartbeat.Add(bc.heartbeatInterval)
 	heartbeatRequested := false
@@ -180,8 +161,6 @@ func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
 			for respChan, _ := range outstandingRespChans {
 				respChan <- true // Broker is still alive
 			}
-		case <-lostLeadership:
-			go bc.monitorHeartbeats(done, wg) // Exit & wait for leadership to come back
 			return
 		case <-done:
 			return
@@ -192,15 +171,15 @@ func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
 }
 
 // Wait for a signal on done or bc.terminating, and then close conn
-func (bc *Broker) cleanupWhenDone(conn *net.TCPConn, done, rcvLoopDone chan bool, wg *sync.WaitGroup) {
+func (bc *Broker) cleanupWhenDone(commConn CommConn, done, rcvLoopDone chan bool, wg *sync.WaitGroup) {
 	// Simply wait for a done or terminating signal
 	select {
 	case <-done:
 	case <-bc.terminating:
 	}
 	log.WithField("broker", bc.BrokerID).Debug("Broker cleanup; waiting on the workGroup")
-	wg.Wait()    // Wait for heartbeat monitoring and sendLoop
-	conn.Close() // Close connection to force receiveLoop to finish
+	wg.Wait()        // Wait for heartbeat monitoring and sendLoop
+	commConn.Close() // Close connection to force receiveLoop to finish
 	log.WithField("broker", bc.BrokerID).Debug("Broker cleanup; waiting on the rcvLoop")
 	<-rcvLoopDone
 	bc.deathChannel <- bc
@@ -213,12 +192,11 @@ func (bc *Broker) cleanupWhenDone(conn *net.TCPConn, done, rcvLoopDone chan bool
 // Watch for incoming messages from the broker. Internally handles acknowledgments and heartbeats;
 // other messages are provided to bc.messageHandler.
 // Watches for messages until bc.alive is false or an EOF is reached
-func (bc *Broker) receiveLoop(conn *net.TCPConn, done chan bool, loopFinished chan bool) {
-	reader := msgp.NewReader(conn)
+func (bc *Broker) receiveLoop(commConn CommConn, done chan bool, loopFinished chan bool) {
 	log.WithField("brokerID", bc.BrokerID).Info("Beginning to receive messages from broker")
 	defer func() { loopFinished <- true }()
 	for {
-		msg, err := bc.commService.ReceiveMessage(reader)
+		msg, err := commConn.ReceiveMessage()
 		select {
 		case <-done:
 			log.WithField("brokerID", bc.BrokerID).Warn("No longer receiving messages from broker (death)")
@@ -254,10 +232,9 @@ func (bc *Broker) receiveLoop(conn *net.TCPConn, done chan bool, loopFinished ch
 	}
 }
 
-func (bc *Broker) sendLoop(conn *net.TCPConn, done chan bool, wg *sync.WaitGroup) {
+func (bc *Broker) sendLoop(commConn CommConn, done chan bool, wg *sync.WaitGroup) {
 	var err error
 	wg.Add(1)
-	writer := msgp.NewWriter(conn)
 	log.WithField("brokerID", bc.BrokerID).Info("Beginning the send loop to broker")
 	defer wg.Done()
 	for {
@@ -265,12 +242,12 @@ func (bc *Broker) sendLoop(conn *net.TCPConn, done chan bool, wg *sync.WaitGroup
 		case msg := <-bc.messageSendBuffer:
 			switch m := msg.(type) {
 			case common.SendableWithID:
-				err = bc.sendEnsureDelivery(writer, m, done)
+				err = bc.sendEnsureDelivery(commConn, m, done)
 			case common.Sendable:
 				log.WithFields(log.Fields{
 					"brokerID": bc.BrokerID, "message": m, "messageType": common.GetMessageType(m),
 				}).Debug("Sending message to broker...")
-				err = bc.sendInternal(writer, m)
+				err = commConn.Send(m)
 			}
 			if err != nil {
 				if err == io.EOF {
@@ -294,12 +271,12 @@ func (bc *Broker) sendLoop(conn *net.TCPConn, done chan bool, wg *sync.WaitGroup
 	}
 }
 
-func (bc *Broker) sendEnsureDelivery(writer *msgp.Writer, message common.SendableWithID,
+func (bc *Broker) sendEnsureDelivery(commConn CommConn, message common.SendableWithID,
 	done chan bool) (err error) {
 	log.WithFields(log.Fields{
 		"brokerID": bc.BrokerID, "message": message, "messageType": common.GetMessageType(message),
 	}).Debug("Sending message to broker with ensured delivery...")
-	err = bc.sendInternal(writer, message)
+	err = commConn.Send(message)
 	if err != nil {
 		return err
 	}
@@ -323,12 +300,6 @@ func (bc *Broker) sendEnsureDelivery(writer *msgp.Writer, message common.Sendabl
 			bc.messageSendBuffer <- msg // put back onto the queue to be sent again
 		}
 	}()
-	return
-}
-
-func (bc *Broker) sendInternal(writer *msgp.Writer, message common.Sendable) (err error) {
-	err = message.Encode(writer)
-	writer.Flush()
 	return
 }
 

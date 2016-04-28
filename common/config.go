@@ -75,21 +75,20 @@ type Config struct {
 // return the desired log message to be logged later if desired
 func LoadConfig(filename string) (config *Config, logmsg string) {
 	config = new(Config)
-	err := gcfg.ReadFileInto(config, "./default_config.ini")
-	defaultConfigMsg := ""
+	err := gcfg.ReadFileInto(config, filename)
 	if err == nil {
-		defaultConfigMsg = "Using default configuration found at ./default_config.ini. "
-	}
-	err = gcfg.ReadFileInto(config, filename)
-	if err == nil {
-		logmsg = fmt.Sprintf("%vUsing local config at %v", defaultConfigMsg, filename)
+		logmsg = fmt.Sprintf("Using local config at %v", filename)
 		return
 	}
 	err = gcfg.ReadFileInto(config, "./config.ini")
-	if err != nil && defaultConfigMsg == "" {
-		logmsg = fmt.Sprintf("Unable to find any configuration file at ./default_config.ini, ./config.ini, or %v", filename)
+	if err == nil {
+		return
+	}
+	err = gcfg.ReadFileInto(config, "./default_config.ini")
+	if err == nil {
+		logmsg = "Using default configuration found at ./default_config.ini. "
 	} else {
-		logmsg = fmt.Sprintf("%vUsing local config at ./config.ini", defaultConfigMsg)
+		logmsg = fmt.Sprintf("Unable to find any configuration file at ./default_config.ini, ./config.ini, or %v", filename)
 	}
 	return
 }

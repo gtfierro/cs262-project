@@ -1,4 +1,4 @@
-package client
+package client_test
 
 import (
 	"github.com/gtfierro/cs262-project/client"

@@ -3,9 +3,7 @@ package main
 import (
 	"github.com/ccding/go-logging/logging"
 	"github.com/gtfierro/cs262-project/client"
-	"github.com/gtfierro/cs262-project/common"
 	"os"
-	"sync/atomic"
 	"time"
 )
 
@@ -26,13 +24,9 @@ func main() {
 		log.Criticalf("Could not create client: %v", err)
 		os.Exit(1)
 	}
-	C.AttachPublishHandler(func(m *common.PublishMessage) {
-		log.Infof("MESSAGE %v", m)
-	})
-	C.Subscribe("Room = '410'")
-	pub := C.AddPublisher(client.UUIDFromName("pub1"))
 
-	var sent uint32 = 0
+	pub := C.AddPublisher(client.UUIDFromName("publishSlow"))
+
 	go func() {
 		i := 0
 		pub.AddMetadata(map[string]interface{}{"Room": "410"})
@@ -41,14 +35,11 @@ func main() {
 				log.Error(err)
 			}
 			time.Sleep(1 * time.Second)
-			atomic.AddUint32(&sent, 1)
 			i++
 		}
 	}()
 
-	C.StopIn(300 * time.Second)
-
 	<-C.Stop
-	numPublish := atomic.LoadUint32(&sent)
-	log.Infof("Sent %d msg. %.2f per sec", numPublish, float64(numPublish)/float64(300))
+	stats := pub.GetStats()
+	log.Infof("Sent %d msg. %.2f per sec", stats.MessagesAttempted, float64(stats.MessagesAttempted)/float64(30))
 }

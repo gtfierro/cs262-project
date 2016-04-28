@@ -6,6 +6,7 @@ import (
 	"github.com/tinylib/msgp/msgp"
 	"net"
 	"sync"
+	"sync/atomic"
 )
 
 type Publisher struct {
@@ -27,27 +28,45 @@ type Publisher struct {
 	// to the broker in its next publish message
 	dirtyMetadata bool
 	metadata      map[string]interface{}
+
+	sentMessagesAttempt uint32
+	sentMessagesTotal   uint32
 }
 
 func NewPublisher(id common.UUID, brokerAddress, coordAddress *net.TCPAddr) *Publisher {
-	var err error
 	p := &Publisher{
-		ID:            id,
-		brokerAddress: brokerAddress,
-		coordAddress:  coordAddress,
-		metadata:      make(map[string]interface{}),
+		ID:                  id,
+		brokerAddress:       brokerAddress,
+		coordAddress:        coordAddress,
+		metadata:            make(map[string]interface{}),
+		sentMessagesAttempt: 0,
+		sentMessagesTotal:   0,
 	}
 	// TODO: failover
 	// TODO: connect to coordinator
-	if p.brokerConn, err = net.DialTCP("tcp", nil, brokerAddress); err != nil {
-		log.Error(errors.Wrap(err, "Could not dial broker"))
+	for p.connectBroker(p.brokerAddress) != nil {
 	}
-	p.brokerEncoder = msgp.NewWriter(p.brokerConn)
 
 	return p
 }
 
-func (p *Publisher) SendBroker(m common.Sendable) error {
+// What is our failover technique?
+// TODO
+func (p *Publisher) doFailover() {
+}
+
+func (p *Publisher) connectBroker(address *net.TCPAddr) error {
+	var err error
+	if p.brokerConn, err = net.DialTCP("tcp", nil, address); err != nil {
+		return errors.Wrap(err, "Could not dial broker")
+	}
+	p.brokerEncodeLock.Lock()
+	p.brokerEncoder = msgp.NewWriter(p.brokerConn)
+	p.brokerEncodeLock.Unlock()
+	return nil
+}
+
+func (p *Publisher) sendBroker(m common.Sendable) error {
 	p.brokerEncodeLock.Lock()
 	defer p.brokerEncodeLock.Unlock()
 	if err := m.Encode(p.brokerEncoder); err != nil {
@@ -60,8 +79,9 @@ func (p *Publisher) SendBroker(m common.Sendable) error {
 }
 
 func (p *Publisher) Publish(value interface{}) error {
+	atomic.AddUint32(&p.sentMessagesAttempt, 1)
 	m := &common.PublishMessage{
-		UUID:  "12345",
+		UUID:  p.ID,
 		Value: value,
 	}
 	p.metadataLock.RLock()
@@ -70,7 +90,21 @@ func (p *Publisher) Publish(value interface{}) error {
 	}
 	p.dirtyMetadata = false
 	p.metadataLock.RUnlock()
-	return p.SendBroker(m)
+	// if we fail to send, then reconnect
+	var err error
+	if err = p.sendBroker(m); err != nil {
+		p.doFailover()
+	}
+	atomic.AddUint32(&p.sentMessagesTotal, 1)
+	return err
+}
+
+func (p *Publisher) GetStats() PublisherStats {
+	stats := PublisherStats{
+		MessagesAttempted:  atomic.LoadUint32(&p.sentMessagesAttempt),
+		MessagesSuccessful: atomic.LoadUint32(&p.sentMessagesTotal),
+	}
+	return stats
 }
 
 func (p *Publisher) AddMetadata(newm map[string]interface{}) {
@@ -82,4 +116,9 @@ func (p *Publisher) AddMetadata(newm map[string]interface{}) {
 	}
 	p.dirtyMetadata = true
 	p.metadataLock.Unlock()
+}
+
+type PublisherStats struct {
+	MessagesAttempted  uint32
+	MessagesSuccessful uint32
 }

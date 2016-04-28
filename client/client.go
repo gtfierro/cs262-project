@@ -20,14 +20,20 @@ func init() {
 	log, _ = logging.WriterLogger("main", logging.DEBUG, logging.BasicFormat, logging.DefaultTimeFormat, os.Stderr, true)
 }
 
+// Creates a deterministic UUID from a given name. Names are easier to remember
+// than UUIDs, so this should make writing scripts easier
 func UUIDFromName(name string) common.UUID {
 	return common.UUID(uuidlib.NewV5(NamespaceUUID, name).String())
 }
 
+// configuration for a client
 type Config struct {
-	BrokerAddress      string
+	// ip:port of the initial, local broker
+	BrokerAddress string
+	// ip:port of the coordinator
 	CoordinatorAddress string
-	ID                 common.UUID
+	// the client identifier. Must be Unique!
+	ID common.UUID
 }
 
 type Client struct {
@@ -54,6 +60,8 @@ type Client struct {
 	publishersLock sync.RWMutex
 	publishers     map[common.UUID]*Publisher
 
+	brokerDead bool
+
 	// client signals on this channel when it is done
 	Stop chan bool
 
@@ -61,6 +69,7 @@ type Client struct {
 	query string
 }
 
+// Creates a new client with the given configuration
 func NewClient(cfg *Config) (*Client, error) {
 	var err error
 	c := &Client{
@@ -68,6 +77,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		Stop:              make(chan bool),
 		hasPublishHandler: false,
 		publishers:        make(map[common.UUID]*Publisher),
+		brokerDead:        true,
 	}
 	c.BrokerAddress, err = net.ResolveTCPAddr("tcp", cfg.BrokerAddress)
 	if err != nil {
@@ -82,9 +92,9 @@ func NewClient(cfg *Config) (*Client, error) {
 		return c, errors.Wrap(err, "Could not resolve coordinator address")
 	}
 
+	// start listening for messages from the broker
 	go c.listen()
-	// this blocks until it is successful
-	// c.connectCoordinator()
+
 	return c, nil
 }
 
@@ -94,13 +104,36 @@ func (c *Client) AttachPublishHandler(f func(m *common.PublishMessage)) {
 	c.publishHandler = f
 }
 
+// This should be triggered when we can no longer contact our local broker. In this
+// case, we sent a BrokerRequestMessage to the coordinator
+func (c *Client) doFailover() {
+	c.brokerDead = true
+	// establish the coordinator connection
+	c.connectCoordinator()
+	// prepare the BrokerRequestMessage
+	brm := &common.BrokerRequestMessage{
+		LocalBrokerAddr: c.BrokerAddress.String(),
+		IsPublisher:     false,
+		UUID:            "392c1b18-0c37-11e6-b352-1002b58053c7",
+	}
+	// loop until we can contact the coordinator
+	err := c.sendCoordinator(brm)
+	for err != nil {
+		time.Sleep(1)
+		err = c.sendCoordinator(brm)
+	}
+}
+
 // TODO:
 func (c *Client) connectBroker(address *net.TCPAddr) error {
 	var err error
 	if c.brokerConn, err = net.DialTCP("tcp", nil, address); err != nil {
 		return errors.Wrap(err, "Could not dial broker")
 	}
+	c.brokerEncodeLock.Lock()
 	c.brokerEncoder = msgp.NewWriter(c.brokerConn)
+	c.brokerEncodeLock.Unlock()
+	c.brokerDead = false
 	return nil
 }
 
@@ -122,14 +155,23 @@ func (c *Client) connectCoordinator() {
 		}
 		c.coordConn, err = net.DialTCP("tcp", nil, c.CoordinatorAddress)
 	}
-	c.coordEncoder = msgp.NewWriter(c.coordEncoder)
+	c.coordEncoder = msgp.NewWriter(c.coordConn)
 }
 
 //TODO: implement
 // This function should contact the coordinator to get the new broker
-func (c *Client) connectNewBroker() {
+func (c *Client) configureNewBroker(m *common.BrokerAssignmentMessage) {
+	var err error
+	c.BrokerAddress, err = net.ResolveTCPAddr("tcp", m.BrokerAddr)
+	if err != nil {
+		log.Critical(errors.Wrap(err, "Could not resolve local broker address"))
+	}
+	if err = c.connectBroker(c.BrokerAddress); err != nil {
+		log.Critical(errors.Wrap(err, "Could not connect to local broker"))
+	}
 }
 
+// Sends message to the currently configured broker
 func (c *Client) sendBroker(m common.Sendable) error {
 	c.brokerEncodeLock.Lock()
 	defer c.brokerEncodeLock.Unlock()
@@ -137,7 +179,22 @@ func (c *Client) sendBroker(m common.Sendable) error {
 		return errors.Wrap(err, "Could not encode message")
 	}
 	if err := c.brokerEncoder.Flush(); err != nil {
+		// do failover if we fail to send
+		go c.doFailover()
 		return errors.Wrap(err, "Could not send message to broker")
+	}
+	return nil
+}
+
+func (c *Client) sendCoordinator(m common.Sendable) error {
+	c.coordEncodeLock.Lock()
+	defer c.coordEncodeLock.Unlock()
+	if err := m.Encode(c.coordEncoder); err != nil {
+		return errors.Wrap(err, "Could not encode message")
+	}
+	if err := c.coordEncoder.Flush(); err != nil {
+		c.connectCoordinator()
+		return errors.Wrap(err, "Could not send message to coordinator")
 	}
 	return nil
 }
@@ -145,9 +202,12 @@ func (c *Client) sendBroker(m common.Sendable) error {
 func (c *Client) listen() {
 	reader := msgp.NewReader(net.Conn(c.brokerConn))
 	for {
+		if c.brokerDead {
+			return
+		}
 		msg, err := common.MessageFromDecoderMsgp(reader)
 		if err == io.EOF {
-			c.connectNewBroker()
+			c.doFailover()
 			break
 		}
 		if err != nil {
@@ -161,6 +221,8 @@ func (c *Client) listen() {
 			} else {
 				log.Infof("Got publish message %v", m)
 			}
+		case *common.BrokerAssignmentMessage:
+			c.configureNewBroker(m)
 		default:
 			log.Infof("Got %T message %v", m, m)
 		}

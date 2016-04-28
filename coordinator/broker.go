@@ -19,6 +19,7 @@ type Broker struct {
 	outstandingMessages    map[common.MessageIDType]common.SendableWithID // messageID -> message
 	outMessageLock         sync.RWMutex
 	messageHandler         MessageHandler
+	commService            *CommService
 	messageSendBuffer      chan common.Sendable
 	requestHeartbeatBuffer chan chan bool
 	heartbeatBuffer        chan bool
@@ -30,7 +31,7 @@ type Broker struct {
 	pubClientMapLock       sync.RWMutex
 }
 
-func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
+func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler, commService *CommService,
 	heartbeatInterval time.Duration, clock common.Clock, deathChannel chan *Broker) *Broker {
 	bc := new(Broker)
 	bc.BrokerInfo = *broker
@@ -43,6 +44,7 @@ func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
 	bc.aliveCond = sync.NewCond(&bc.aliveLock)
 	bc.outMessageLock = sync.RWMutex{}
 	bc.messageHandler = messageHandler
+	bc.commService = commService
 	bc.heartbeatInterval = heartbeatInterval
 	bc.clock = clock
 	bc.deathChannel = deathChannel
@@ -67,7 +69,6 @@ func (bc *Broker) StartAsynchronously(conn *net.TCPConn) {
 	bc.aliveLock.Unlock()
 	done := make(chan bool)
 	wg := new(sync.WaitGroup)
-	wg.Add(2)
 	receiveFinishChannel := make(chan bool)
 	go bc.receiveLoop(conn, done, receiveFinishChannel)
 	go bc.sendLoop(conn, done, wg)
@@ -105,21 +106,36 @@ func (bc *Broker) RequestHeartbeatAndWait() bool {
 }
 
 // Returns true iff currently alive
-func (bc *Broker) IsAlive() (alive bool) {
+func (bc *Broker) IsAlive() bool {
 	bc.aliveLock.Lock()
-	alive = bc.alive
-	bc.aliveLock.Unlock()
-	return
+	defer bc.aliveLock.Unlock()
+	return bc.alive
 }
 
 // Monitor heartbeats from the broker and determine death if necessary
 func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
+	if !bc.commService.IsLeader() {
+		go func(d chan bool, w *sync.WaitGroup) {
+			waitChan := bc.commService.WaitForLeadership()
+			select {
+			case <-waitChan:
+				bc.monitorHeartbeats(d, w)
+			case <-d:
+				return
+			case <-bc.terminating:
+				return
+			}
+		}(done, wg)
+		return
+	}
+	wg.Add(1)
+	defer wg.Done()
+	lostLeadership := bc.commService.WaitForNonleadership()
 	lastHeartbeat := time.Now()
 	nextHeartbeat := lastHeartbeat.Add(bc.heartbeatInterval)
 	heartbeatRequested := false
 	outstandingRespChans := make(map[chan bool]struct{})
 	hbRequest := common.RequestHeartbeatMessage{}
-	defer wg.Done()
 	for {
 		log.WithFields(log.Fields{
 			"broker": bc.BrokerID, "heartbeatInterval": bc.heartbeatInterval,
@@ -164,6 +180,9 @@ func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
 			for respChan, _ := range outstandingRespChans {
 				respChan <- true // Broker is still alive
 			}
+		case <-lostLeadership:
+			go bc.monitorHeartbeats(done, wg) // Exit & wait for leadership to come back
+			return
 		case <-done:
 			return
 		case <-bc.terminating:
@@ -199,7 +218,7 @@ func (bc *Broker) receiveLoop(conn *net.TCPConn, done chan bool, loopFinished ch
 	log.WithField("brokerID", bc.BrokerID).Info("Beginning to receive messages from broker")
 	defer func() { loopFinished <- true }()
 	for {
-		msg, err := common.MessageFromDecoderMsgp(reader)
+		msg, err := bc.commService.ReceiveMessage(reader)
 		select {
 		case <-done:
 			log.WithField("brokerID", bc.BrokerID).Warn("No longer receiving messages from broker (death)")
@@ -237,6 +256,7 @@ func (bc *Broker) receiveLoop(conn *net.TCPConn, done chan bool, loopFinished ch
 
 func (bc *Broker) sendLoop(conn *net.TCPConn, done chan bool, wg *sync.WaitGroup) {
 	var err error
+	wg.Add(1)
 	writer := msgp.NewWriter(conn)
 	log.WithField("brokerID", bc.BrokerID).Info("Beginning the send loop to broker")
 	defer wg.Done()

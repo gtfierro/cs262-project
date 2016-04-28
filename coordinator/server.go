@@ -96,6 +96,7 @@ func (s *Server) handleMessage(brokerMessage *MessageFromBroker) {
 	}
 }
 
+// TODO comm service here
 func (s *Server) dispatch(conn *net.TCPConn) {
 	reader := msgp.NewReader(conn)
 	writer := msgp.NewWriter(conn)

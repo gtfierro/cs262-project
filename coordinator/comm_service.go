@@ -3,24 +3,23 @@ package main
 import (
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/tinylib/msgp/msgp"
-	"sync/atomic"
+	"sync"
 )
 
 type CommService struct {
-	isLeader    *int32 // 0 for false, 1 for true - int32 so we can use atomics
-	etcdManager *EtcdManager
+	isLeader          bool
+	leaderLock        sync.RWMutex
+	leaderWaitChans   []chan bool
+	unleaderWaitChans []chan bool
+	etcdManager       *EtcdManager
 }
 
 func NewCommService(isLeader bool, etcdManager *EtcdManager) *CommService {
 	cs := new(CommService)
-	var leaderVal int32
-	if isLeader {
-		leaderVal = 1
-	} else {
-		leaderVal = 0
-	}
-	cs.isLeader = &leaderVal
+	cs.isLeader = isLeader
 	cs.etcdManager = etcdManager
+	cs.leaderWaitChans = []chan bool{}
+	cs.unleaderWaitChans = []chan bool{}
 	return cs
 }
 
@@ -48,16 +47,52 @@ func (cs *CommService) ReceiveMessage(reader msgp.Reader) (common.Sendable, erro
 }
 
 func (cs *CommService) IsLeader() bool {
-	val := atomic.LoadInt32(cs.isLeader)
-	return val == 1
+	cs.leaderLock.RLock()
+	defer cs.leaderLock.RUnlock()
+	return cs.isLeader
 }
 
 func (cs *CommService) SetLeader(isLeader bool) {
-	var val int32
+	cs.leaderLock.Lock()
+	defer cs.leaderLock.Unlock()
+	cs.isLeader = isLeader
 	if isLeader {
-		val = 1
+		for _, c := range cs.leaderWaitChans {
+			c <- true
+		}
+		cs.leaderWaitChans = []chan bool{}
 	} else {
-		val = 0
+		for _, c := range cs.unleaderWaitChans {
+			c <- true
+		}
+		cs.unleaderWaitChans = []chan bool{}
 	}
-	atomic.StoreInt32(cs.isLeader, val)
+}
+
+// Returns a channel which will be sent to when this is leader
+func (cs *CommService) WaitForLeadership() chan bool {
+	cs.leaderLock.Lock()
+	defer cs.leaderLock.Unlock()
+	c := make(chan bool)
+	if cs.isLeader {
+		c <- true
+		return c
+	} else {
+		cs.leaderWaitChans = append(cs.leaderWaitChans, c)
+		return c
+	}
+}
+
+// Returns a channel which will be sent to when this is nonleader
+func (cs *CommService) WaitForNonleadership() chan bool {
+	cs.leaderLock.Lock()
+	defer cs.leaderLock.Unlock()
+	c := make(chan bool)
+	if !cs.isLeader {
+		c <- true
+		return c
+	} else {
+		cs.unleaderWaitChans = append(cs.unleaderWaitChans, c)
+		return c
+	}
 }

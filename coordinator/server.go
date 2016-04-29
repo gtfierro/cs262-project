@@ -119,14 +119,6 @@ func (s *Server) monitorLog(startKey string) {
 		// If we're a leader, just wait... nothing to be done here
 		<-s.leaderService.WaitForNonleadership()
 
-		// TODO this will be different in the rebuilding case...
-		//watchStartRev := s.leaderService.GetLeadershipChangeRevision()
-		//watchStartKey, err := s.etcdManager.GetHighestKeyAtRev(LogPrefix, watchStartRev)
-		//if err != nil {
-		//	log.WithFields(log.Fields{
-		//		"error": err, "watchStartRev": watchStartRev,
-		//	}).Error("Error while attempting to get highest key at revision")
-		//}
 		endKey = s.etcdManager.WatchLog(endKey)
 	}
 }

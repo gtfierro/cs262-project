@@ -27,7 +27,6 @@ func (ec *EtcdConnection) GetCtx() context.Context {
 type EtcdManager interface {
 	UpdateEntity(entity EtcdSerializable) error
 	DeleteEntity(entity EtcdSerializable) error
-	GetHighestKeyAtRev(prefix string, rev int64) (string, error)
 	WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error
 	WatchLog(startKey string) string
 	//CancelWatch()
@@ -133,21 +132,6 @@ func (em *EtcdManagerImpl) DeleteEntity(entity EtcdSerializable) error {
 		}).Error("Error while deleting entity from etcd")
 	}
 	return err
-}
-
-func (em *EtcdManagerImpl) GetHighestKeyAtRev(prefix string, rev int64) (string, error) {
-	opts := append(append(etcdc.WithLastKey(), etcdc.WithRev(rev)), etcdc.WithFromKey())
-	resp, err := em.conn.kv.Get(em.conn.GetCtx(), prefix, opts...)
-	if err != nil {
-		log.WithFields(log.Fields{
-			"error": err, "revision": rev, "prefix": prefix,
-		}).Error("Error while attempting to find highest key at revision ")
-		return "", err
-	}
-	if len(resp.Kvs) == 0 {
-		return "", nil
-	}
-	return string(resp.Kvs[0].Key), nil
 }
 
 func (em *EtcdManagerImpl) WatchFromKey(startKey string) etcdc.WatchChan {

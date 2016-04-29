@@ -9,13 +9,13 @@ type LeaderService struct {
 	leaderLock        sync.RWMutex
 	leaderWaitChans   []chan bool
 	unleaderWaitChans []chan bool
-	etcdManager       *EtcdManager
+	etcdConn          *EtcdConnection
 }
 
-func NewLeaderService(etcdManager *EtcdManager) *LeaderService {
+func NewLeaderService(etcdConn *EtcdConnection) *LeaderService {
 	cs := new(LeaderService)
 	cs.isLeader = false
-	cs.etcdManager = etcdManager
+	cs.etcdConn = etcdConn
 	cs.leaderWaitChans = []chan bool{}
 	cs.unleaderWaitChans = []chan bool{}
 	// TODO need to set up a watch to monitor leadership changes

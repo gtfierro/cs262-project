@@ -9,10 +9,15 @@ import (
 	"time"
 )
 
+type EtcdConnection struct {
+	client  *etcdc.Client
+	kv      etcdc.KV
+	watcher etcdc.Watcher
+}
+
 type EtcdManager struct {
-	client            *etcdc.Client
-	kv                etcdc.KV
-	watcher           etcdc.Watcher
+	conn              *EtcdConnection
+	leaderService     *LeaderService
 	context           context.Context
 	maxKeysPerRequest int
 }
@@ -23,28 +28,37 @@ type EtcdSerializable interface {
 	GetIDType() (common.UUID, string)
 }
 
-func NewEtcdManager(endpoints []string, timeout time.Duration, maxKeysPerRequest int) *EtcdManager {
+func NewEtcdConnection(endpoints []string) *EtcdConnection {
 	var err error
-	em := new(EtcdManager)
-	em.maxKeysPerRequest = maxKeysPerRequest
-
+	ec := new(EtcdConnection)
 	etcdCfg := etcdc.Config{
 		Endpoints:   endpoints,
 		DialTimeout: 5 * time.Second,
 	}
-	em.context, _ = context.WithTimeout(context.Background(), timeout) // Do we need the cancel func?
-	em.client, err = etcdc.New(etcdCfg)
+	ec.client, err = etcdc.New(etcdCfg)
 	if err != nil {
 		log.WithField("endpoints", endpoints).Fatal("Unable to contact etcd server!")
 	}
-	em.kv = etcdc.NewKV(em.client)
-	em.watcher = etcdc.Watcher(em.client)
+	ec.kv = etcdc.NewKV(ec.client)
+	ec.watcher = etcdc.Watcher(ec.client)
 	//defer etcdm.client.Close() TODO
+	return ec
+}
+
+func NewEtcdManager(etcdConn *EtcdConnection, leaderService *LeaderService, timeout time.Duration, maxKeysPerRequest int) *EtcdManager {
+	em := new(EtcdManager)
+	em.maxKeysPerRequest = maxKeysPerRequest
+	em.conn = etcdConn
+	em.leaderService = leaderService
+	em.context, _ = context.WithTimeout(context.Background(), timeout) // Do we need the cancel func?
 
 	return em
 }
 
 func (em *EtcdManager) UpdateEntity(entity EtcdSerializable) error {
+	if !em.leaderService.IsLeader() {
+		return nil // No updates if you're not the leader
+	}
 	id, prefix := entity.GetIDType()
 	bytePacked, err := entity.MarshalMsg([]byte{})
 	if err != nil {
@@ -53,7 +67,7 @@ func (em *EtcdManager) UpdateEntity(entity EtcdSerializable) error {
 		}).Error("Error while serializing entity etcd")
 		return err
 	}
-	_, err = em.kv.Put(em.context, prefix+"/"+string(id), string(bytePacked))
+	_, err = em.conn.kv.Put(em.context, prefix+"/"+string(id), string(bytePacked))
 	if err != nil {
 		log.WithFields(log.Fields{
 			"UUID": id, "error": err, "type": prefix,
@@ -63,8 +77,11 @@ func (em *EtcdManager) UpdateEntity(entity EtcdSerializable) error {
 }
 
 func (em *EtcdManager) DeleteEntity(entity EtcdSerializable) error {
+	if !em.leaderService.IsLeader() {
+		return nil // No updates if you're not the leader
+	}
 	id, prefix := entity.GetIDType()
-	_, err := em.kv.Delete(em.context, prefix+"/"+string(id))
+	_, err := em.conn.kv.Delete(em.context, prefix+"/"+string(id))
 	if err != nil {
 		log.WithFields(log.Fields{
 			"UUID": id, "error": err, "type": prefix,
@@ -74,7 +91,7 @@ func (em *EtcdManager) DeleteEntity(entity EtcdSerializable) error {
 }
 
 func (em *EtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, error) {
-	resp, err := em.kv.Get(em.context, prefix, etcdc.WithRev(rev), etcdc.WithFromKey(), etcdc.WithLastKey())
+	resp, err := em.conn.kv.Get(em.context, prefix, etcdc.WithRev(rev), etcdc.WithFromKey(), etcdc.WithLastKey())
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "revision": rev, "prefix": prefix,
@@ -88,7 +105,7 @@ func (em *EtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, err
 }
 
 func (em *EtcdManager) WatchFromKeyAtRevision(prefix string, startKey string) chan etcdc.WatchResponse {
-	return em.watcher.Watch(em.context, prefix+startKey, etcdc.WithFromKey())
+	return em.conn.watcher.Watch(em.context, prefix+startKey, etcdc.WithFromKey())
 }
 
 func (em *EtcdManager) WriteToLog(prefix string, msg common.Sendable) error {
@@ -98,7 +115,7 @@ func (em *EtcdManager) WriteToLog(prefix string, msg common.Sendable) error {
 			"error": err, "message": *msg,
 		}).Error("Error while marshalling message to write to log")
 	}
-	resp, err := recipe.NewSequentialKV(em.kv, prefix, string(bytePacked))
+	resp, err := recipe.NewSequentialKV(em.conn.kv, prefix, string(bytePacked))
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "prefix": prefix, "message": *msg, "key": resp.Key(),
@@ -124,11 +141,11 @@ func (em *EtcdManager) IterateOverAllEntities(entityType string,
 	var startingRevision int64 = -1
 	for {
 		if startingRevision < 0 {
-			resp, err = em.kv.Get(em.context, lastKey,
+			resp, err = em.conn.kv.Get(em.context, lastKey,
 				etcdc.WithLimit(em.maxKeysPerRequest), etcdc.WithFromKey(), etcdc.WithSerializable())
 			startingRevision = resp.Header.Revision
 		} else {
-			resp, err = em.kv.Get(em.context, lastKey, etcdc.WithRev(startingRevision),
+			resp, err = em.conn.kv.Get(em.context, lastKey, etcdc.WithRev(startingRevision),
 				etcdc.WithLimit(em.maxKeysPerRequest), etcdc.WithFromKey(), etcdc.WithSerializable())
 		}
 		if err != nil {
@@ -159,6 +176,6 @@ func (em *EtcdManager) IterateOverAllEntities(entityType string,
 		}
 	}
 
-	watchChan := em.watcher.Watch(em.context, entityType+"/", etcdc.WithPrefix(), etcdc.WithRev(startingRevision))
+	watchChan := em.conn.watcher.Watch(em.context, entityType+"/", etcdc.WithPrefix(), etcdc.WithRev(startingRevision))
 	return watchChan, startingRevision, nil
 }

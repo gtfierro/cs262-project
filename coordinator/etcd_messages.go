@@ -23,6 +23,13 @@ type SerializableBroker struct {
 	Alive bool
 }
 
+func (b *Broker) ToSerializable() *SerializableBroker {
+	sb := new(SerializableBroker)
+	sb.BrokerInfo = b.BrokerInfo
+	sb.Alive = b.IsAlive()
+	return sb
+}
+
 func (sb *SerializableBroker) GetIDType() (common.UUID, string) {
 	return sb.BrokerID, BrokerEntity
 }

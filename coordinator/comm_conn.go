@@ -141,7 +141,10 @@ func (rcc *ReplicaCommConn) Send(msg common.Sendable) error {
 	case <-rcc.leaderChan:
 		return nil, io.EOF
 	}
-	// not leader; can safely ignore this message
+	// not leader; can safely ignore this message except for ACKing if necessary
+	if withID, ok := msg.(common.SendableWithID); ok {
+		rcc.messageBuffer <- &common.AcknowledgeMessage{MessageID: withID.GetID()}
+	}
 }
 
 func (rcc *ReplicaCommConn) Close() {

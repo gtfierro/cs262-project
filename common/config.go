@@ -73,6 +73,7 @@ type Config struct {
 
 // Don't want to log anything since this is called before SetupLogging;
 // return the desired log message to be logged later if desired
+// TODO this makes it so that default_config.ini overwrites config.ini...
 func LoadConfig(filename string) (config *Config, logmsg string) {
 	config = new(Config)
 	err := gcfg.ReadFileInto(config, filename)

@@ -346,7 +346,7 @@ func (b *LocalBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reade
 	)
 
 	// save the metadata
-	err = b.metadata.Save(msg)
+	err = b.metadata.Save(&msg.UUID, msg.Metadata)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"message": msg, "error": err,
@@ -376,7 +376,7 @@ func (b *LocalBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Reade
 			case msg := <-p.C:
 				msg.L.RLock()
 				if len(msg.Metadata) > 0 {
-					err = b.metadata.Save(msg)
+					err = b.metadata.Save(&msg.UUID, msg.Metadata)
 					b.RemapProducer(p, msg)
 				}
 				b.ForwardMessage(msg)

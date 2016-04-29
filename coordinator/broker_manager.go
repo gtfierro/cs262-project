@@ -21,6 +21,7 @@ type BrokerManager interface {
 	SendToBroker(brokerID common.UUID, message common.Sendable) (err error)
 	BroadcastToBrokers(message common.Sendable)
 	HandlePubClientRemapping(msg *common.BrokerRequestMessage) (*common.BrokerAssignmentMessage, error)
+	RebuildFromEtcd(upToRev int64) (err error)
 }
 
 type MessageFromBroker struct {
@@ -295,8 +296,8 @@ func (bm *BrokerManagerImpl) rebuildBrokerState(entity EtcdSerializable) {
 	bm.ConnectBroker(&serBroker.BrokerInfo, nil)
 }
 
-func (bm *BrokerManagerImpl) RebuildFromEtcd() (watchStartRev int64, err error) {
-	watchStartRev, err = bm.etcdManager.IterateOverAllEntities(BrokerEntity, bm.rebuildBrokerState)
+func (bm *BrokerManagerImpl) RebuildFromEtcd(upToRev int64) (err error) {
+	err = bm.etcdManager.IterateOverAllEntities(BrokerEntity, upToRev, bm.rebuildBrokerState)
 	if err != nil {
 		log.WithField("error", err).Fatal("Error while iterating over Brokers when rebuilding")
 		return

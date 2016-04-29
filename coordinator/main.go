@@ -101,10 +101,11 @@ func main() {
 	}
 	fmt.Printf("TTL: %v\n", lkar.TTL)
 
-	//server := NewServer(config)
-	//go server.handleLeadership()
-	//go server.handleBrokerMessages()
-	//go server.monitorLog()
-	//go server.monitorGeneralConnections()
-	//server.listenAndDispatch()
+	server := NewServer(config)
+	logStartKey := server.rebuildIfNecessary()
+	go server.handleLeadership()
+	go server.handleBrokerMessages()
+	go server.monitorLog(logStartKey)
+	go server.monitorGeneralConnections()
+	server.listenAndDispatch()
 }

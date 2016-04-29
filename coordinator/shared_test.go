@@ -103,8 +103,8 @@ func (dem *DummyEtcdManager) WatchLog(startKey string) string {
 	return ""
 }
 func (dem *DummyEtcdManager) CancelWatch() {}
-func (dem *DummyEtcdManager) IterateOverAllEntities(entityType string, processor func(EtcdSerializable)) (int64, error) {
-	return -1, nil
+func (dem *DummyEtcdManager) IterateOverAllEntities(entityType string, upToRev int64, processor func(EtcdSerializable)) error {
+	return nil
 }
 func (dem *DummyEtcdManager) RegisterLogHandler(idOrGeneral string, handler LogHandler) {}
 func (dem *DummyEtcdManager) UnregisterLogHandler(idOrGeneral string)                   {}

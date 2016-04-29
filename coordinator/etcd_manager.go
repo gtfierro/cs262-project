@@ -31,7 +31,7 @@ type EtcdManager interface {
 	WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error
 	WatchLog(startKey string) string
 	//CancelWatch()
-	IterateOverAllEntities(entityType string, processor func(EtcdSerializable)) (int64, error)
+	IterateOverAllEntities(entityType string, upToRev int64, processor func(EtcdSerializable)) error
 	RegisterLogHandler(idOrGeneral string, handler LogHandler)
 	UnregisterLogHandler(idOrGeneral string)
 }
@@ -271,58 +271,44 @@ func (em *EtcdManagerImpl) UnregisterLogHandler(idOrGeneral string) {
 	em.handlerLock.Unlock()
 }
 
-// Iterates over all of the entries that are currently in the system as of the time of
-// the first call to etcd. Then creates and returns a watchChannel which will contain all
-// entries added after that point, which should be processed externally. This channel should
-// be closed when processing is complete . Also returns the revision number at which everything
-// was processed; the watchChannel watches for revisions after this.
-func (em *EtcdManagerImpl) IterateOverAllEntities(entityType string, processor func(EtcdSerializable)) (int64, error) {
+// Iterates over all of the entries that are currently in the system up to upToRev
+// TODO this doesn't respect the maximum entity-at-once limit and just fetches ALL of them at once
+func (em *EtcdManagerImpl) IterateOverAllEntities(entityType string, upToRev int64, processor func(EtcdSerializable)) error {
 	var (
 		entity EtcdSerializable
 		resp   *etcdc.GetResponse
 		err    error
 	)
 
-	lastKey := entityType + "/"
-	var startingRevision int64 = -1
-	for {
-		if startingRevision < 0 {
-			resp, err = em.conn.kv.Get(em.conn.GetCtx(), lastKey,
-				etcdc.WithLimit(em.maxKeysPerRequest), etcdc.WithFromKey(), etcdc.WithSerializable())
-			startingRevision = resp.Header.Revision
-		} else {
-			resp, err = em.conn.kv.Get(em.conn.GetCtx(), lastKey, etcdc.WithRev(startingRevision),
-				etcdc.WithLimit(em.maxKeysPerRequest), etcdc.WithFromKey(), etcdc.WithSerializable())
-		}
-		if err != nil {
-			return -1, err
-		}
-		for _, kv := range resp.Kvs {
-			switch entityType {
-			case BrokerEntity:
-				entity = new(SerializableBroker)
-			case ClientEntity:
-				entity = new(Client)
-			case PublisherEntity:
-				entity = new(Publisher)
-			default:
-				log.WithField("entityType", entityType).Fatal("Invalid entity type passed to the EtcdManager")
-			}
-			entity.UnmarshalMsg(kv.Value)
-			// TODO do we want this in the hopes of getting better parallelism?
-			go func(ent EtcdSerializable) {
-				processor(ent)
-			}(entity)
-			if string(kv.Key) > lastKey {
-				lastKey = string(kv.Key)
-			}
-		}
-		if !resp.More { // No more keys to return
-			break
-		}
+	//for {
+	resp, err = em.conn.kv.Get(em.conn.GetCtx(), entityType+"/", etcdc.WithRev(upToRev),
+		etcdc.WithPrefix(), etcdc.WithSerializable())
+	if err != nil {
+		return err
 	}
+	for _, kv := range resp.Kvs {
+		switch entityType {
+		case BrokerEntity:
+			entity = new(SerializableBroker)
+		case ClientEntity:
+			entity = new(Client)
+		case PublisherEntity:
+			entity = new(Publisher)
+		default:
+			log.WithField("entityType", entityType).Fatal("Invalid entity type passed to the EtcdManager")
+		}
+		entity.UnmarshalMsg(kv.Value)
+		// TODO do we want this in the hopes of getting better parallelism?
+		go func(ent EtcdSerializable) {
+			processor(ent)
+		}(entity)
+	}
+	//if !resp.More { // No more keys to return
+	//	break
+	//}
+	//}
 
-	return startingRevision, nil
+	return nil
 }
 
 // newSequentialKV allocates a new sequential key <prefix>/nnnnn/suffix with a given

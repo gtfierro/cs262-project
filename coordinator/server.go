@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
+	etcdc "github.com/coreos/etcd/clientv3"
 	"github.com/gtfierro/cs262-project/common"
 	"io"
 	"net"
@@ -68,8 +69,8 @@ func NewServer(config *common.Config) *Server {
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
 
 	s.etcdConn = NewEtcdConnection(strings.Split(config.Coordinator.EtcdAddresses, ","))
-	s.leaderService = NewLeaderService(s.etcdConn, address, 2*time.Second)
-	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, 2*time.Second, 1000)
+	s.leaderService = NewLeaderService(s.etcdConn, address, 5*time.Second)
+	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, 5*time.Second, 1000)
 	s.brokerManager = NewBrokerManager(s.etcdManager, s.heartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
 	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.etcdManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
@@ -78,6 +79,25 @@ func NewServer(config *common.Config) *Server {
 	s.stopped = false
 
 	return s
+}
+
+// Check the log: if there is more than one entry (the initial leader entry),
+// then start the rebuild process
+// Returns the key at which the log should start being monitored
+func (s *Server) rebuildIfNecessary() string {
+	opts := append(etcdc.WithLastRev(), etcdc.WithLimit(2))
+	getResp, err := s.etcdConn.kv.Get(s.etcdConn.GetCtx(), LogPrefix, opts...)
+	if err != nil {
+		log.WithField("error", err).Fatal("Error contacting etcd")
+	}
+	if len(getResp.Kvs) <= 1 {
+		return LogPrefix
+	}
+	logRev := getResp.Kvs[0].ModRevision
+	logKey := string(getResp.Kvs[0].Key)
+	s.brokerManager.RebuildFromEtcd(logRev)
+	s.fwdTable.RebuildFromEtcd(logRev)
+	return logKey
 }
 
 // Doesn't return
@@ -93,8 +113,8 @@ func (s *Server) handleLeadership() {
 }
 
 // Won't return
-func (s *Server) monitorLog() {
-	endKey := LogPrefix
+func (s *Server) monitorLog(startKey string) {
+	endKey := startKey
 	for {
 		// If we're a leader, just wait... nothing to be done here
 		<-s.leaderService.WaitForNonleadership()

@@ -113,6 +113,20 @@ func (_m *MockBrokerManager) IsBrokerAlive(brokerID common.UUID) bool {
 	return r0
 }
 
+// RebuildFromEtcd provides a mock function with given fields: upToRev
+func (_m *MockBrokerManager) RebuildFromEtcd(upToRev int64) error {
+	ret := _m.Called(upToRev)
+
+	var r0 error
+	if rf, ok := ret.Get(0).(func(int64) error); ok {
+		r0 = rf(upToRev)
+	} else {
+		r0 = ret.Error(0)
+	}
+
+	return r0
+}
+
 // SendToBroker provides a mock function with given fields: brokerID, message
 func (_m *MockBrokerManager) SendToBroker(brokerID common.UUID, message common.Sendable) error {
 	ret := _m.Called(brokerID, message)

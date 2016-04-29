@@ -101,22 +101,16 @@ func NewForwardingTable(metadata *common.MetadataStore, brokerMgr BrokerManager,
 	}
 }
 
-func (ft *ForwardingTable) RebuildFromEtcd() (watchStartRev int64, err error) {
-	watchStartRev = -1
-	clientRev, err := ft.etcdManager.IterateOverAllEntities(ClientEntity, ft.rebuildClientState)
+func (ft *ForwardingTable) RebuildFromEtcd(upToRev int64) (err error) {
+	err = ft.etcdManager.IterateOverAllEntities(ClientEntity, upToRev, ft.rebuildClientState)
 	if err != nil {
 		log.WithField("error", err).Fatal("Error while iterating over clients when rebuilding")
 		return
 	}
-	pubRev, err := ft.etcdManager.IterateOverAllEntities(PublisherEntity, ft.rebuildPublisherState)
+	err = ft.etcdManager.IterateOverAllEntities(PublisherEntity, upToRev, ft.rebuildPublisherState)
 	if err != nil {
 		log.WithField("error", err).Fatal("Error while iterating over publishers when rebuilding")
 		return
-	}
-	if pubRev < clientRev {
-		watchStartRev = pubRev
-	} else {
-		watchStartRev = clientRev
 	}
 	return
 }

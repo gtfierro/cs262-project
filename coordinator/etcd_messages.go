@@ -3,7 +3,6 @@ package main
 
 import (
 	"container/list"
-	"fmt"
 	"github.com/gtfierro/cs262-project/common"
 )
 

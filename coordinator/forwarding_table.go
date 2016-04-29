@@ -15,7 +15,7 @@ const UNASSIGNED = common.UUID("__BROKER_ID_UNASSIGNED__")
 type ForwardingTable struct {
 	metadata      *common.MetadataStore
 	brokerManager BrokerManager
-	etcdManager   *EtcdManager
+	etcdManager   EtcdManager
 
 	// map of client addresses to clients
 	clientLock sync.RWMutex
@@ -52,22 +52,6 @@ type BrokerReassignment struct {
 	HomeBrokerID *common.UUID
 }
 
-//type Publisher struct {
-//	PublisherID     common.UUID
-//	CurrentBrokerID common.UUID
-//	HomeBrokerID    common.UUID
-//	Metadata        map[string]interface{}
-//}
-//
-//type Client struct {
-//	ClientID           common.UUID
-//	CurrentBrokerID    common.UUID
-//	HomeBrokerID       common.UUID
-//	QueryString        *string
-//	subscriberListElem *list.Element
-//	query              *ForwardedQuery
-//}
-
 type ForwardedQuery struct {
 	common.Query
 	// NOTE: Must hold the lock on query when using this map
@@ -99,7 +83,7 @@ func (fq *ForwardedQuery) addClient(client *Client, brokerID *common.UUID) (exis
 	}
 }
 
-func NewForwardingTable(metadata *common.MetadataStore, brokerMgr BrokerManager, etcdMgr *EtcdManager,
+func NewForwardingTable(metadata *common.MetadataStore, brokerMgr BrokerManager, etcdMgr EtcdManager,
 	brokerDeathChan, brokerLiveChan chan *common.UUID, brokerReassignChan chan *BrokerReassignment) *ForwardingTable {
 	return &ForwardingTable{
 		metadata:           metadata,

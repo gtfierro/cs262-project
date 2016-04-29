@@ -161,7 +161,6 @@ func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
 			for respChan, _ := range outstandingRespChans {
 				respChan <- true // Broker is still alive
 			}
-			return
 		case <-done:
 			return
 		case <-bc.terminating:

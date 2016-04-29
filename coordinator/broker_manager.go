@@ -4,9 +4,7 @@ import (
 	"container/list"
 	"errors"
 	log "github.com/Sirupsen/logrus"
-	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gtfierro/cs262-project/common"
-	"net"
 	"sync"
 	"time"
 )
@@ -14,7 +12,7 @@ import (
 type MessageHandler func(*MessageFromBroker)
 
 type BrokerManager interface {
-	ConnectBroker(brokerInfo *common.BrokerInfo, conn *net.TCPConn) (err error)
+	ConnectBroker(brokerInfo *common.BrokerInfo, commConn CommConn) (err error)
 	GetBrokerAddr(brokerID common.UUID) *string
 	GetBrokerInfo(brokerID common.UUID) *common.BrokerInfo
 	IsBrokerAlive(brokerID common.UUID) bool
@@ -31,7 +29,7 @@ type MessageFromBroker struct {
 }
 
 type BrokerManagerImpl struct {
-	etcdManager        *EtcdManager
+	etcdManager        EtcdManager
 	brokerMap          map[common.UUID]*Broker
 	brokerAddrMap      map[string]*Broker // Map of Broker contact address -> broker
 	mapLock            sync.RWMutex
@@ -47,7 +45,7 @@ type BrokerManagerImpl struct {
 	MessageBuffer      chan *MessageFromBroker  // Buffers incoming messages meant for other systems
 }
 
-func NewBrokerManager(etcdMgr *EtcdManager, heartbeatInterval time.Duration, brokerDeathChan, brokerLiveChan chan *common.UUID,
+func NewBrokerManager(etcdMgr EtcdManager, heartbeatInterval time.Duration, brokerDeathChan, brokerLiveChan chan *common.UUID,
 	messageBuffer chan *MessageFromBroker, brokerReassignChan chan *BrokerReassignment, clock common.Clock) *BrokerManagerImpl {
 	bm := new(BrokerManagerImpl)
 	bm.etcdManager = etcdMgr
@@ -73,7 +71,7 @@ func NewBrokerManager(etcdMgr *EtcdManager, heartbeatInterval time.Duration, bro
 //   so simply update with the new connection and restart
 // Otherwise, create a new Broker, put it into the map, and start it
 // if commConn is nil, create the Broker and everything, but *don't start it*
-func (bm *BrokerManagerImpl) ConnectBroker(brokerInfo *common.BrokerInfo, commConn *CommConn) (err error) {
+func (bm *BrokerManagerImpl) ConnectBroker(brokerInfo *common.BrokerInfo, commConn CommConn) (err error) {
 	bm.mapLock.RLock()
 	brokerConn, ok := bm.brokerMap[brokerInfo.BrokerID]
 	bm.mapLock.RUnlock()
@@ -169,14 +167,18 @@ func (bm *BrokerManagerImpl) GetLiveBroker() *Broker {
 }
 
 // Terminate the Broker and remove from our map
-func (bm *BrokerManagerImpl) TerminateBroker(broker *Broker) {
-	log.WithField("brokerID", broker.BrokerID).Info("BrokerManagerImpl terminating broker")
+func (bm *BrokerManagerImpl) TerminateBroker(brokerID common.UUID) {
 	bm.mapLock.Lock()
-	delete(bm.brokerMap, broker.BrokerID)
-	delete(bm.brokerAddrMap, broker.BrokerAddr)
-	bm.etcdManager.DeleteEntity(broker.ToSerializable())
-	bm.mapLock.Unlock()
-	broker.Terminate()
+	defer bm.mapLock.Unlock()
+	if broker, found := bm.brokerMap[brokerID]; !found {
+		log.WithField("brokerID", brokerID).Warn("Attempted to terminate nonexistent broker")
+	} else {
+		log.WithField("brokerID", brokerID).Info("BrokerManagerImpl terminating broker")
+		delete(bm.brokerMap, brokerID)
+		delete(bm.brokerAddrMap, broker.BrokerAddr)
+		bm.etcdManager.DeleteEntity(broker.ToSerializable())
+		broker.Terminate()
+	}
 }
 
 // Asynchronously send a message to the given broker
@@ -261,7 +263,7 @@ func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageH
 				"connBrokerID": brokerID, "newBrokerID": msg.BrokerID, "newBrokerAddr": msg.BrokerAddr,
 			}).Warn("Received a BrokerConnectMessage over an existing broker connection")
 		case *common.BrokerTerminateMessage:
-			bm.TerminateBroker(brokerMessage.broker)
+			bm.TerminateBroker(brokerMessage.broker.BrokerID)
 			brokerMessage.broker.Send(&common.AcknowledgeMessage{MessageID: msg.MessageID})
 		default:
 			bm.MessageBuffer <- brokerMessage
@@ -290,14 +292,14 @@ func (bm *BrokerManagerImpl) monitorDeathChan() {
 
 func (bm *BrokerManagerImpl) rebuildBrokerState(entity EtcdSerializable) {
 	serBroker := entity.(*SerializableBroker)
-	bm.ConnectBroker(serBroker.BrokerInfo, nil)
+	bm.ConnectBroker(&serBroker.BrokerInfo, nil)
 }
 
-func (bm *BrokerManagerImpl) RebuildFromEtcd() (int64, error) {
-	watchStartRev, err := bm.etcdManager.IterateOverAllEntities(BrokerEntity, bm.rebuildBrokerState)
+func (bm *BrokerManagerImpl) RebuildFromEtcd() (watchStartRev int64, err error) {
+	watchStartRev, err = bm.etcdManager.IterateOverAllEntities(BrokerEntity, bm.rebuildBrokerState)
 	if err != nil {
 		log.WithField("error", err).Fatal("Error while iterating over Brokers when rebuilding")
 		return
 	}
-	return watchStartRev
+	return
 }

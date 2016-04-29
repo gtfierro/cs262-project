@@ -18,15 +18,31 @@ type EtcdConnection struct {
 	watcher etcdc.Watcher
 }
 
-type EtcdManager struct {
+func (ec *EtcdConnection) GetCtx() context.Context {
+	ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+	return ctx
+}
+
+type EtcdManager interface {
+	UpdateEntity(entity EtcdSerializable) error
+	DeleteEntity(entity EtcdSerializable) error
+	GetHighestKeyAtRev(prefix string, rev int64) (string, error)
+	WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error
+	WatchLog(startKey string)
+	CancelWatch()
+	IterateOverAllEntities(entityType string, processor func(EtcdSerializable)) (int64, error)
+	RegisterLogHandler(idOrGeneral string, handler LogHandler)
+	UnregisterLogHandler(idOrGeneral string)
+}
+
+type EtcdManagerImpl struct {
 	conn              *EtcdConnection
 	leaderService     *LeaderService
-	context           context.Context
 	logHandlers       map[string]LogHandler
 	cancelWatchChan   chan bool
 	handlerLock       sync.RWMutex
 	handlerCond       *sync.Cond
-	maxKeysPerRequest int
+	maxKeysPerRequest int64
 }
 
 type LogHandler func(common.Sendable, bool)
@@ -54,12 +70,11 @@ func NewEtcdConnection(endpoints []string) *EtcdConnection {
 	return ec
 }
 
-func NewEtcdManager(etcdConn *EtcdConnection, leaderService *LeaderService, timeout time.Duration, maxKeysPerRequest int) *EtcdManager {
-	em := new(EtcdManager)
+func NewEtcdManager(etcdConn *EtcdConnection, leaderService *LeaderService, timeout time.Duration, maxKeysPerRequest int64) EtcdManager {
+	em := new(EtcdManagerImpl)
 	em.maxKeysPerRequest = maxKeysPerRequest
 	em.conn = etcdConn
 	em.leaderService = leaderService
-	em.context, _ = context.WithTimeout(context.Background(), timeout) // Do we need the cancel func?
 
 	em.logHandlers = make(map[string]LogHandler)
 	em.handlerCond = sync.NewCond(&em.handlerLock)
@@ -67,7 +82,7 @@ func NewEtcdManager(etcdConn *EtcdConnection, leaderService *LeaderService, time
 	return em
 }
 
-func (em *EtcdManager) UpdateEntity(entity EtcdSerializable) error {
+func (em *EtcdManagerImpl) UpdateEntity(entity EtcdSerializable) error {
 	if !em.leaderService.IsLeader() {
 		return nil // No updates if you're not the leader
 	}
@@ -79,7 +94,7 @@ func (em *EtcdManager) UpdateEntity(entity EtcdSerializable) error {
 		}).Error("Error while serializing entity etcd")
 		return err
 	}
-	_, err = em.conn.kv.Put(em.context, prefix+"/"+string(id), string(bytePacked))
+	_, err = em.conn.kv.Put(em.conn.GetCtx(), prefix+"/"+string(id), string(bytePacked))
 	if err != nil {
 		log.WithFields(log.Fields{
 			"UUID": id, "error": err, "type": prefix,
@@ -88,12 +103,12 @@ func (em *EtcdManager) UpdateEntity(entity EtcdSerializable) error {
 	return err
 }
 
-func (em *EtcdManager) DeleteEntity(entity EtcdSerializable) error {
+func (em *EtcdManagerImpl) DeleteEntity(entity EtcdSerializable) error {
 	if !em.leaderService.IsLeader() {
 		return nil // No updates if you're not the leader
 	}
 	id, prefix := entity.GetIDType()
-	_, err := em.conn.kv.Delete(em.context, prefix+"/"+string(id))
+	_, err := em.conn.kv.Delete(em.conn.GetCtx(), prefix+"/"+string(id))
 	if err != nil {
 		log.WithFields(log.Fields{
 			"UUID": id, "error": err, "type": prefix,
@@ -102,8 +117,9 @@ func (em *EtcdManager) DeleteEntity(entity EtcdSerializable) error {
 	return err
 }
 
-func (em *EtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, error) {
-	resp, err := em.conn.kv.Get(em.context, prefix, etcdc.WithRev(rev), etcdc.WithFromKey(), etcdc.WithLastKey())
+func (em *EtcdManagerImpl) GetHighestKeyAtRev(prefix string, rev int64) (string, error) {
+	opts := append(append(etcdc.WithLastKey(), etcdc.WithRev(rev)), etcdc.WithFromKey())
+	resp, err := em.conn.kv.Get(em.conn.GetCtx(), prefix, opts...)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "revision": rev, "prefix": prefix,
@@ -113,19 +129,19 @@ func (em *EtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, err
 	if len(resp.Kvs) == 0 {
 		return "", nil
 	}
-	return resp.Kvs[0].Key, nil
+	return string(resp.Kvs[0].Key), nil
 }
 
-func (em *EtcdManager) WatchFromKey(prefix string, startKey string) chan etcdc.WatchResponse {
-	return em.conn.watcher.Watch(em.context, prefix+"/"+startKey, etcdc.WithFromKey())
+func (em *EtcdManagerImpl) WatchFromKey(prefix string, startKey string) etcdc.WatchChan {
+	return em.conn.watcher.Watch(em.conn.GetCtx(), prefix+"/"+startKey, etcdc.WithFromKey())
 }
 
-func (em *EtcdManager) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
+func (em *EtcdManagerImpl) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
 	var suffix string
 	bytePacked, err := msg.Marshal()
 	if err != nil {
 		log.WithFields(log.Fields{
-			"error": err, "message": *msg,
+			"error": err, "message": msg,
 		}).Error("Error while marshalling message to write to log")
 	}
 	if isSend {
@@ -136,25 +152,16 @@ func (em *EtcdManager) WriteToLog(idOrGeneral string, isSend bool, msg common.Se
 	err = em.newSequentialKV(LogPrefix, suffix, string(bytePacked))
 	if err != nil {
 		log.WithFields(log.Fields{
-			"error": err, "suffix": suffix, "message": *msg,
+			"error": err, "suffix": suffix, "message": msg,
 		}).Error("Error while storing into log")
 	}
 	return err
 }
 
-// TODO need something like this to know where to resume
-//func (rcc *ReplicaCommConn) nudgeHighestRev(rev int64) {
-//	rcc.revLock.Lock()
-//	defer rcc.revLock.Unlock()
-//	if rev > rcc.highestRev {
-//		rcc.highestRev = rev
-//	}
-//}
-
 // Does not return until cancellation - feeds messages into registered handlers
-func (em *EtcdManager) WatchLog(startKey string) {
+func (em *EtcdManagerImpl) WatchLog(startKey string) {
 	// TODO should have logic here that if the watchChan closes, we reopen it
-	// TODO also need to GC the log here:
+	// TODO also need to GC the log here: (also compaction!)
 	//   every so often when reading, write to some node within the prefix
 	//   what key you've read up to. also read the other replica's last read key.
 	//  then you can delete everything up to the lower of the two
@@ -189,7 +196,7 @@ func (em *EtcdManager) WatchLog(startKey string) {
 				idOrGeneral := fields[len(fields)-2]
 				isSent := fields[len(fields)-1] == "sent"
 				em.handlerLock.RLock()
-				for handler, found = em.logHandlers[idOrGeneral]; ; !found {
+				for handler, found = em.logHandlers[idOrGeneral]; !found; {
 					// Wait for proper handler to be available in case e.g. it hasn't registered yet
 					em.handlerCond.Wait()
 				}
@@ -205,18 +212,18 @@ func (em *EtcdManager) WatchLog(startKey string) {
 	}
 }
 
-func (em *EtcdManager) CancelWatch() {
+func (em *EtcdManagerImpl) CancelWatch() {
 	em.cancelWatchChan <- true
 }
 
-func (em *EtcdManager) RegisterLogHandler(idOrGeneral string, handler LogHandler) {
+func (em *EtcdManagerImpl) RegisterLogHandler(idOrGeneral string, handler LogHandler) {
 	em.handlerLock.Lock()
 	em.logHandlers[idOrGeneral] = handler
 	em.handlerCond.Broadcast()
 	em.handlerLock.Unlock()
 }
 
-func (em *EtcdManager) UnregisterLogHandler(idOrGeneral string) {
+func (em *EtcdManagerImpl) UnregisterLogHandler(idOrGeneral string) {
 	em.handlerLock.Lock()
 	delete(em.logHandlers, idOrGeneral)
 	em.handlerLock.Unlock()
@@ -227,11 +234,10 @@ func (em *EtcdManager) UnregisterLogHandler(idOrGeneral string) {
 // entries added after that point, which should be processed externally. This channel should
 // be closed when processing is complete . Also returns the revision number at which everything
 // was processed; the watchChannel watches for revisions after this.
-func (em *EtcdManager) IterateOverAllEntities(entityType string,
-	processor func(EtcdSerializable)) (int64, error) {
+func (em *EtcdManagerImpl) IterateOverAllEntities(entityType string, processor func(EtcdSerializable)) (int64, error) {
 	var (
 		entity EtcdSerializable
-		resp   etcdc.GetResponse
+		resp   *etcdc.GetResponse
 		err    error
 	)
 
@@ -239,15 +245,15 @@ func (em *EtcdManager) IterateOverAllEntities(entityType string,
 	var startingRevision int64 = -1
 	for {
 		if startingRevision < 0 {
-			resp, err = em.conn.kv.Get(em.context, lastKey,
+			resp, err = em.conn.kv.Get(em.conn.GetCtx(), lastKey,
 				etcdc.WithLimit(em.maxKeysPerRequest), etcdc.WithFromKey(), etcdc.WithSerializable())
 			startingRevision = resp.Header.Revision
 		} else {
-			resp, err = em.conn.kv.Get(em.context, lastKey, etcdc.WithRev(startingRevision),
+			resp, err = em.conn.kv.Get(em.conn.GetCtx(), lastKey, etcdc.WithRev(startingRevision),
 				etcdc.WithLimit(em.maxKeysPerRequest), etcdc.WithFromKey(), etcdc.WithSerializable())
 		}
 		if err != nil {
-			return nil, -1, err
+			return -1, err
 		}
 		for _, kv := range resp.Kvs {
 			switch entityType {
@@ -282,10 +288,10 @@ func (em *EtcdManager) IterateOverAllEntities(entityType string,
 // modified from https://github.com/coreos/etcd/blob/master/contrib/recipes/key.go
 // to include a suffix as well
 // NOTE: suffix MUST contain a slash e.g. "general/sent"
-func (em *EtcdManager) newSequentialKV(prefix, suffix, val string) error {
-	resp, err := em.conn.kv.Get(em.context, prefix, etcdc.WithLastKey()...)
+func (em *EtcdManagerImpl) newSequentialKV(prefix, suffix, val string) error {
+	resp, err := em.conn.kv.Get(em.conn.GetCtx(), prefix, etcdc.WithLastKey()...)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// add 1 to last key, if any
@@ -294,7 +300,7 @@ func (em *EtcdManager) newSequentialKV(prefix, suffix, val string) error {
 		fields := strings.Split(string(resp.Kvs[0].Key), "/")
 		_, serr := fmt.Sscanf(fields[len(fields)-3], "%d", &newSeqNum)
 		if serr != nil {
-			return nil, serr
+			return serr
 		}
 		newSeqNum++
 	}
@@ -312,7 +318,7 @@ func (em *EtcdManager) newSequentialKV(prefix, suffix, val string) error {
 	reqPrefix := etcdc.OpPut(baseKey, "")
 	reqNewKey := etcdc.OpPut(newKey, val)
 
-	txn := em.conn.kv.Txn(em.context)
+	txn := em.conn.kv.Txn(em.conn.GetCtx())
 	txnresp, err := txn.If(cmp).Then(reqPrefix, reqNewKey).Commit()
 	if err != nil {
 		return err

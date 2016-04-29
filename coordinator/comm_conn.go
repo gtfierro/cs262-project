@@ -20,13 +20,13 @@ type CommConn interface {
 
 // Communication Connection
 type ReplicaCommConn struct {
-	etcdManager       *EtcdManager
+	etcdManager       EtcdManager
 	leaderService     *LeaderService
 	heartbeatInterval time.Duration
 	idOrGeneral       string
 	revLock           sync.Mutex
 	watchChan         chan *etcdc.WatchResponse
-	messageBuffer     chan *etcdc.Event
+	messageBuffer     chan common.Sendable
 	heartbeatChan     chan bool
 	leaderChan        chan bool
 	closeChan         chan bool
@@ -34,7 +34,7 @@ type ReplicaCommConn struct {
 
 // Communication Connection
 type LeaderCommConn struct {
-	etcdManager   *EtcdManager
+	etcdManager   EtcdManager
 	leaderService *LeaderService
 	idOrGeneral   string
 	tcpConn       *net.TCPConn
@@ -48,7 +48,7 @@ type SingleEventCommConn struct {
 	event      common.Sendable
 }
 
-func NewReplicaCommConn(etcdMgr *EtcdManager, leaderService *LeaderService,
+func NewReplicaCommConn(etcdMgr EtcdManager, leaderService *LeaderService,
 	idOrGeneral string, heartbeatInterval time.Duration) *ReplicaCommConn {
 	rcc := new(ReplicaCommConn)
 	rcc.etcdManager = etcdMgr
@@ -125,11 +125,11 @@ func (rcc *ReplicaCommConn) Close() {
 	rcc.etcdManager.UnregisterLogHandler(rcc.idOrGeneral)
 }
 
-func (rcc *ReplicaCommConn) GetBrokerConn(brokerID common.UUID) *ReplicaCommConn {
-	return NewReplicaCommConn(rcc.etcdManager, rcc.leaderService, brokerID, rcc.heartbeatInterval)
+func (rcc *ReplicaCommConn) GetBrokerConn(brokerID common.UUID) CommConn {
+	return NewReplicaCommConn(rcc.etcdManager, rcc.leaderService, string(brokerID), rcc.heartbeatInterval)
 }
 
-func NewLeaderCommConn(etcdMgr *EtcdManager, leaderService *LeaderService, idOrGeneral string, tcpConn *net.TCPConn) *LeaderCommConn {
+func NewLeaderCommConn(etcdMgr EtcdManager, leaderService *LeaderService, idOrGeneral string, tcpConn *net.TCPConn) *LeaderCommConn {
 	lcc := new(LeaderCommConn)
 	lcc.etcdManager = etcdMgr
 	lcc.leaderService = leaderService
@@ -137,6 +137,13 @@ func NewLeaderCommConn(etcdMgr *EtcdManager, leaderService *LeaderService, idOrG
 	lcc.tcpConn = tcpConn
 	lcc.reader = msgp.NewReader(tcpConn)
 	lcc.writer = msgp.NewWriter(tcpConn)
+
+	nonleaderChan := leaderService.WaitForNonleadership()
+	go func() {
+		<-nonleaderChan
+		lcc.Close() // Close connection if we're not the leader
+	}()
+
 	return lcc
 }
 
@@ -182,8 +189,8 @@ func (lcc *LeaderCommConn) Close() {
 	lcc.tcpConn.Close()
 }
 
-func (lcc *LeaderCommConn) GetBrokerConn(brokerID common.UUID) *LeaderCommConn {
-	return NewLeaderCommConn(lcc.etcdManager, lcc.leaderService, brokerID, lcc.tcpConn)
+func (lcc *LeaderCommConn) GetBrokerConn(brokerID common.UUID) CommConn {
+	return NewLeaderCommConn(lcc.etcdManager, lcc.leaderService, string(brokerID), lcc.tcpConn)
 }
 
 func NewSingleEventCommConn(parent *ReplicaCommConn, event common.Sendable) *SingleEventCommConn {
@@ -210,6 +217,6 @@ func (secc *SingleEventCommConn) Close() {
 	// No-op
 }
 
-func (secc *SingleEventCommConn) GetBrokerConn(brokerID common.UUID) *ReplicaCommConn {
+func (secc *SingleEventCommConn) GetBrokerConn(brokerID common.UUID) CommConn {
 	return secc.parentComm.GetBrokerConn(brokerID)
 }

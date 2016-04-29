@@ -17,7 +17,7 @@ type Server struct {
 	brokerManager BrokerManager
 	leaderService *LeaderService
 	etcdConn      *EtcdConnection
-	etcdManager   *EtcdManager
+	etcdManager   EtcdManager
 
 	heartbeatInterval time.Duration
 
@@ -68,8 +68,8 @@ func NewServer(config *common.Config) *Server {
 
 	// TODO move to real config
 	s.etcdConn = NewEtcdConnection([]string{"127.0.0.1:2377"})
-	s.leaderService = NewLeaderService(s.etcdConn)
-	s.etcdManager = NewEtcdManager(s.etcdConn, s.etcdConn, 2*time.Second, 1000)
+	s.leaderService = NewLeaderService(s.etcdConn, address, 2*time.Second)
+	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, 2*time.Second, 1000)
 	s.brokerManager = NewBrokerManager(s.etcdManager, s.heartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
 	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.etcdManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
@@ -80,22 +80,39 @@ func NewServer(config *common.Config) *Server {
 	return s
 }
 
+// Doesn't return
 func (s *Server) handleLeadership() {
-	s.leaderService.AttemptToBecomeInitialLeader()
-	for {
-		if s.leaderService.IsLeader() {
-			// TODO continually update etcd lease to demonstrate liveness
-		} else {
-			// TODO continually watch etcd for the possibility that the current leader is down
-		}
+	leader, err := s.leaderService.AttemptToBecomeLeader()
+	if err != nil {
+		log.WithField("error", err).Error("Error while attempting to become the initial leader")
+	} else {
+		log.WithField("leaderStatus", leader).Info("Attempted to become initial leader")
 	}
+	go s.leaderService.WatchForLeadershipChange()
+	s.leaderService.MaintainLeaderLease()
 }
 
-// Won't return until etcdManager's WatchCancel is called
+// Won't return
 func (s *Server) monitorLog() {
-	// TODO this will be different in the rebuilding case...
-	watchStartRev := s.leaderService.GetLeadershipChangeRevision()
-	s.etcdManager.WatchLog(watchStartRev)
+	for {
+		// If we're a leader, just wait... nothing to be done here
+		<-s.leaderService.WaitForNonleadership()
+
+		go func() {
+			<-s.leaderService.WaitForLeadership()
+			s.etcdManager.CancelWatch()
+		}()
+
+		// TODO this will be different in the rebuilding case...
+		watchStartRev := s.leaderService.GetLeadershipChangeRevision()
+		watchStartKey, err := s.etcdManager.GetHighestKeyAtRev(LogPrefix, watchStartRev)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err, "watchStartRev": watchStartRev,
+			}).Error("Error while attempting to get highest key at revision")
+		}
+		s.etcdManager.WatchLog(watchStartKey)
+	}
 }
 
 func (s *Server) monitorGeneralConnections() {
@@ -205,7 +222,7 @@ func (s *Server) listenAndDispatch() {
 		if !s.leaderService.IsLeader() {
 			conn.Close() // Reject connections when not the leader
 		} else {
-			commConn := NewLeaderCommConn(s.etcdManager, s.leaderService, GeneralLog, conn)
+			commConn := NewLeaderCommConn(s.etcdManager, s.leaderService, GeneralSuffix, conn)
 			go s.dispatch(commConn, fmt.Sprintf("%v", conn.RemoteAddr()))
 		}
 	}

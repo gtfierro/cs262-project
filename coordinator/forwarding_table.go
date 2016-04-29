@@ -3,7 +3,6 @@ package main
 import (
 	"container/list"
 	log "github.com/Sirupsen/logrus"
-	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gtfierro/cs262-project/common"
 	"sync"
 )
@@ -120,56 +119,15 @@ func NewForwardingTable(metadata *common.MetadataStore, brokerMgr BrokerManager,
 
 func (ft *ForwardingTable) RebuildFromEtcd() (watchStartRev int64, err error) {
 	watchStartRev = -1
-	clientChan, clientRev, err := ft.etcdManager.IterateOverAllEntities(ClientEntity, ft.rebuildClientState)
+	clientRev, err := ft.etcdManager.IterateOverAllEntities(ClientEntity, ft.rebuildClientState)
 	if err != nil {
 		log.WithField("error", err).Fatal("Error while iterating over clients when rebuilding")
 		return
 	}
-	pubChan, pubRev, err := ft.etcdManager.IterateOverAllEntities(PublisherEntity, ft.rebuildPublisherState)
+	pubRev, err := ft.etcdManager.IterateOverAllEntities(PublisherEntity, ft.rebuildPublisherState)
 	if err != nil {
 		log.WithField("error", err).Fatal("Error while iterating over publishers when rebuilding")
 		return
-	}
-Loop:
-	for {
-		select {
-		case watchResp := <-clientChan:
-			for _, event := range watchResp.Events {
-				if event.Type == mvccpb.PUT {
-					client := new(*Client)
-					client.UnmarshalMsg(event.Kv.Value)
-					if event.IsCreate() {
-						ft.rebuildClientState(client)
-					} else {
-						// TODO ismodify
-					}
-				} else {
-					//deletedClientID := common.UUID(event.Kv.Key) // TODO
-				}
-			}
-			if watchResp.Header.Revision > clientRev {
-				clientRev = watchResp.Header.Revision
-			}
-		case watchResp := <-pubChan:
-			for _, event := range watchResp.Events {
-				if event.Type == mvccpb.PUT {
-					pub := new(*Publisher)
-					pub.UnmarshalMsg(event.Kv.Value)
-					if event.IsCreate() {
-						ft.rebuildPublisherState(pub)
-					} else {
-						// TODO ismodify
-					}
-				} else {
-					//deletedClientID := common.UUID(event.Kv.Key) // TODO
-				}
-			}
-			if watchResp.Header.Revision > pubRev {
-				pubRev = watchResp.Header.Revision
-			}
-		default: // once there's no more events available
-			break Loop
-		}
 	}
 	if pubRev < clientRev {
 		watchStartRev = pubRev

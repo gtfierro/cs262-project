@@ -16,6 +16,7 @@ type Server struct {
 	fwdTable      *ForwardingTable
 	brokerManager BrokerManager
 	leaderService *LeaderService
+	etcdConn      *EtcdConnection
 	etcdManager   *EtcdManager
 
 	heartbeatInterval time.Duration
@@ -66,8 +67,9 @@ func NewServer(config *common.Config) *Server {
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
 
 	// TODO move to real config
-	s.etcdManager = NewEtcdManager([]string{"127.0.0.1:2377"}, 2*time.Second, 1000)
-	s.leaderService = NewLeaderService(s.etcdManager)
+	s.etcdConn = NewEtcdConnection([]string{"127.0.0.1:2377"})
+	s.leaderService = NewLeaderService(s.etcdConn)
+	s.etcdManager = NewEtcdManager(s.etcdConn, s.etcdConn, 2*time.Second, 1000)
 	s.brokerManager = NewBrokerManager(s.etcdManager, s.heartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
 	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.etcdManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
@@ -89,13 +91,19 @@ func (s *Server) handleLeadership() {
 	}
 }
 
-func (s *Server) monitorGeneralLog() {
+// Won't return until etcdManager's WatchCancel is called
+func (s *Server) monitorLog() {
+	// TODO this will be different in the rebuilding case...
+	watchStartRev := s.leaderService.GetLeadershipChangeRevision()
+	s.etcdManager.WatchLog(watchStartRev)
+}
+
+func (s *Server) monitorGeneralConnections() {
 	for {
 		// If we're a leader, just wait... nothing to be done here
 		<-s.leaderService.WaitForNonleadership()
 
-		watchStartRev := s.leaderService.GetLeadershipChangeRevision()
-		commConn := NewReplicaCommConn(s.etcdManager, s.leaderService, GeneralLog, watchStartRev, s.heartbeatInterval)
+		commConn := NewReplicaCommConn(s.etcdManager, s.leaderService, GeneralSuffix, s.heartbeatInterval)
 		go func() {
 			<-s.leaderService.WaitForLeadership()
 			commConn.Close()
@@ -104,7 +112,7 @@ func (s *Server) monitorGeneralLog() {
 		for {
 			msg, err := commConn.ReceiveMessage()
 			if err == nil {
-				go s.dispatch(NewSingleEventCommConn(commConn, msg), GeneralLog)
+				go s.dispatch(NewSingleEventCommConn(commConn, msg), LogPrefix+"/"+GeneralSuffix)
 			} else if err == io.EOF {
 				break // continue outer loop since we're no longer leader
 			}

@@ -11,12 +11,10 @@ const BrokerEntity = "broker"
 const ClientEntity = "client"
 const PublisherEntity = "publisher"
 
-const BrokerLog = "log/broker/"
-const GeneralLog = "log/general/"
-
-func GetBrokerLogPrefix(brokerID common.UUID) string {
-	return fmt.Sprintf("%v%v/", BrokerLog, brokerID)
-}
+const LogPrefix = "log"
+const GeneralSuffix = "general"
+const RcvdSuffix = "/rcvd"
+const SentSuffix = "/sent"
 
 type SerializableBroker struct {
 	common.BrokerInfo

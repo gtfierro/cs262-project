@@ -58,6 +58,7 @@ func main() {
 	server := NewServer(config)
 	go server.handleLeadership()
 	go server.handleBrokerMessages()
-	go server.monitorGeneralLog()
+	go server.monitorLog()
+	go server.monitorGeneralConnections()
 	server.listenAndDispatch()
 }

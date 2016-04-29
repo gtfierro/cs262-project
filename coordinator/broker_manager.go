@@ -294,40 +294,10 @@ func (bm *BrokerManagerImpl) rebuildBrokerState(entity EtcdSerializable) {
 }
 
 func (bm *BrokerManagerImpl) RebuildFromEtcd() (int64, error) {
-	watchChan, watchStartRev, err := bm.etcdManager.IterateOverAllEntities(BrokerEntity, bm.rebuildBrokerState())
+	watchStartRev, err := bm.etcdManager.IterateOverAllEntities(BrokerEntity, bm.rebuildBrokerState)
 	if err != nil {
 		log.WithField("error", err).Fatal("Error while iterating over Brokers when rebuilding")
 		return
-	}
-Loop:
-	for {
-		select {
-		case watchResp := <-watchChan:
-			for _, event := range watchResp.Events {
-				if event.Type == mvccpb.PUT {
-					serBroker := new(*SerializableBroker)
-					serBroker.UnmarshalMsg(event.Kv.Value)
-					if event.IsCreate() {
-						bm.rebuildBrokerState(serBroker)
-					} else {
-						// TODO ismodify
-					}
-				} else {
-					deletedBrokerID := common.UUID(event.Kv.Key)
-					bm.mapLock.RLock()
-					deletedBroker, ok := bm.brokerMap[deletedBrokerID]
-					bm.mapLock.RUnlock()
-					if ok {
-						bm.TerminateBroker(deletedBroker)
-					}
-				}
-			}
-			if watchResp.Header.Revision > watchStartRev {
-				watchStartRev = watchResp.Header.Revision
-			}
-		default: // once there's no more events available
-			break Loop
-		}
 	}
 	return watchStartRev
 }

@@ -3,7 +3,6 @@ package main
 import (
 	log "github.com/Sirupsen/logrus"
 	etcdc "github.com/coreos/etcd/clientv3"
-	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/tinylib/msgp/msgp"
 	"io"
@@ -24,8 +23,7 @@ type ReplicaCommConn struct {
 	etcdManager       *EtcdManager
 	leaderService     *LeaderService
 	heartbeatInterval time.Duration
-	logPrefix         string
-	highestRev        int64
+	idOrGeneral       string
 	revLock           sync.Mutex
 	watchChan         chan *etcdc.WatchResponse
 	messageBuffer     chan *etcdc.Event
@@ -38,7 +36,7 @@ type ReplicaCommConn struct {
 type LeaderCommConn struct {
 	etcdManager   *EtcdManager
 	leaderService *LeaderService
-	logPrefix     string
+	idOrGeneral   string
 	tcpConn       *net.TCPConn
 	reader        *msgp.Reader
 	writer        *msgp.Writer
@@ -51,24 +49,32 @@ type SingleEventCommConn struct {
 }
 
 func NewReplicaCommConn(etcdMgr *EtcdManager, leaderService *LeaderService,
-	logPrefix string, startingRev int64, heartbeatInterval time.Duration) *ReplicaCommConn {
+	idOrGeneral string, heartbeatInterval time.Duration) *ReplicaCommConn {
 	rcc := new(ReplicaCommConn)
 	rcc.etcdManager = etcdMgr
 	rcc.leaderService = leaderService
-	rcc.logPrefix = logPrefix
-	rcc.highestRev = startingRev
+	rcc.idOrGeneral = idOrGeneral
 	rcc.heartbeatInterval = heartbeatInterval
-	rcc.messageBuffer = make(chan *etcdc.Event, 1000)
+	rcc.messageBuffer = make(chan common.Sendable, 20)
 	rcc.heartbeatChan = make(chan bool)
 	rcc.leaderChan = leaderService.WaitForLeadership()
 
-	watchStartKey, err := rcc.etcdManager.GetHighestKeyAtRev(logPrefix+"rcvd/", startingRev)
-	if err != nil {
-		return
+	etcdMgr.RegisterLogHandler(idOrGeneral, rcc.logHandler)
+
+	// Send heartbeats to brokers only; ignore for general
+	if rcc.idOrGeneral != GeneralSuffix {
+		go rcc.sendHeartbeats()
 	}
-	rcc.watchChan = rcc.etcdManager.WatchFromKeyAtRevision(logPrefix+"rcvd/", watchStartKey)
 
 	return rcc
+}
+
+func (rcc *ReplicaCommConn) logHandler(msg common.Sendable, isSend bool) {
+	if isSend {
+		// TODO deal with sent messages
+	} else {
+		rcc.messageBuffer <- msg
+	}
 }
 
 // Simulate heartbeats from the broker
@@ -80,56 +86,22 @@ func (rcc *ReplicaCommConn) sendHeartbeats() {
 		case <-rcc.leaderChan:
 			return
 		case <-time.After(rcc.heartbeatInterval):
-			if rcc.logPrefix != GeneralLog {
-				// Send heartbeats to brokers only; ignore for general
-				rcc.heartbeatChan <- true
-			}
+			rcc.heartbeatChan <- true
 		}
 	}
 }
 
-func (rcc *ReplicaCommConn) nudgeHighestRev(rev int64) {
-	rcc.revLock.Lock()
-	defer rcc.revLock.Unlock()
-	if rev > rcc.highestRev {
-		rcc.highestRev = rev
-	}
-}
-
 func (rcc *ReplicaCommConn) ReceiveMessage() (msg common.Sendable, err error) {
-	// TODO should have logic here that if the watchChan closes, we reopen it
-	// TODO also need to GC the log here:
-	//   every so often when reading, write to some node within the prefix
-	//   what key you've read up to. also read the other replica's last read key.
-	//  then you can delete everything up to the lower of the two
 	for {
 		select {
+		case msg := <-rcc.messageBuffer:
+			return msg, nil
 		case <-rcc.closeChan:
 			return nil, io.EOF
 		case <-rcc.leaderChan:
 			return nil, io.EOF
 		case <-rcc.heartbeatChan:
 			return &common.HeartbeatMessage{}, nil
-		case event := <-rcc.messageBuffer:
-			if event.Type != mvccpb.PUT || !event.IsCreate() {
-				log.WithFields(log.Fields{
-					"eventType": event.Type, "key": event.Kv.Key,
-				}).Warn("Non put+create event found in the general receive log!")
-				continue
-			}
-			msg, err := common.MessageFromBytes(event.Kv.Value)
-			if err != nil {
-				log.WithFields(log.Fields{
-					"error": err, "key": event.Kv.Key,
-				}).Error("Error while unmarshalling bytes from general rcvd log at the given key")
-				continue
-			}
-			return msg, nil
-		case watchResp := <-rcc.watchChan:
-			rcc.nudgeHighestRev(watchResp.Header.Revision)
-			for _, event := range watchResp.Events {
-				rcc.messageBuffer <- event
-			}
 		}
 	}
 }
@@ -137,33 +109,31 @@ func (rcc *ReplicaCommConn) ReceiveMessage() (msg common.Sendable, err error) {
 func (rcc *ReplicaCommConn) Send(msg common.Sendable) error {
 	select {
 	case <-rcc.closeChan:
-		return nil, io.EOF
+		return io.EOF
 	case <-rcc.leaderChan:
-		return nil, io.EOF
+		return io.EOF
 	}
 	// not leader; can safely ignore this message except for ACKing if necessary
 	if withID, ok := msg.(common.SendableWithID); ok {
 		rcc.messageBuffer <- &common.AcknowledgeMessage{MessageID: withID.GetID()}
 	}
+	return nil
 }
 
 func (rcc *ReplicaCommConn) Close() {
 	close(rcc.closeChan)
+	rcc.etcdManager.UnregisterLogHandler(rcc.idOrGeneral)
 }
 
 func (rcc *ReplicaCommConn) GetBrokerConn(brokerID common.UUID) *ReplicaCommConn {
-	rcc.revLock.Lock()
-	rev := rcc.highestRev
-	rcc.revLock.Unlock()
-	return NewReplicaCommConn(rcc.etcdManager, rcc.leaderService, GetBrokerLogPrefix(brokerID),
-		rev, rcc.heartbeatInterval)
+	return NewReplicaCommConn(rcc.etcdManager, rcc.leaderService, brokerID, rcc.heartbeatInterval)
 }
 
-func NewLeaderCommConn(etcdMgr *EtcdManager, leaderService *LeaderService, logPrefix string, tcpConn *net.TCPConn) *LeaderCommConn {
+func NewLeaderCommConn(etcdMgr *EtcdManager, leaderService *LeaderService, idOrGeneral string, tcpConn *net.TCPConn) *LeaderCommConn {
 	lcc := new(LeaderCommConn)
 	lcc.etcdManager = etcdMgr
 	lcc.leaderService = leaderService
-	lcc.logPrefix = logPrefix
+	lcc.idOrGeneral = idOrGeneral
 	lcc.tcpConn = tcpConn
 	lcc.reader = msgp.NewReader(tcpConn)
 	lcc.writer = msgp.NewWriter(tcpConn)
@@ -178,11 +148,11 @@ func (lcc *LeaderCommConn) ReceiveMessage() (msg common.Sendable, err error) {
 	}
 	if ack, ok := msg.(*common.AcknowledgeMessage); ok {
 		// We store ACKs in the send log so it's easier to see which messages were acked
-		err = lcc.etcdManager.WriteToLog(lcc.logPrefix+"sent/", ack)
+		err = lcc.etcdManager.WriteToLog(lcc.idOrGeneral, true, ack)
 	} else if _, ok := msg.(*common.HeartbeatMessage); ok {
 		// Do nothing - we don't want to log Heartbeats
 	} else {
-		err = lcc.etcdManager.WriteToLog(lcc.logPrefix+"rcvd/", msg)
+		err = lcc.etcdManager.WriteToLog(lcc.idOrGeneral, false, msg)
 	}
 	return
 }
@@ -204,7 +174,7 @@ func (lcc *LeaderCommConn) Send(msg common.Sendable) error {
 	} else if _, ok := msg.(*common.BrokerAssignmentMessage); ok {
 		// No need to log these; if the client/pub doesn't receive it, it will ask again
 	}
-	err = lcc.etcdManager.WriteToLog(lcc.logPrefix+"sent/", msg)
+	err = lcc.etcdManager.WriteToLog(lcc.idOrGeneral, true, msg)
 	return err
 }
 
@@ -213,8 +183,7 @@ func (lcc *LeaderCommConn) Close() {
 }
 
 func (lcc *LeaderCommConn) GetBrokerConn(brokerID common.UUID) *LeaderCommConn {
-	return NewLeaderCommConn(lcc.etcdManager, lcc.leaderService, GetBrokerLogPrefix(brokerID),
-		lcc.tcpConn)
+	return NewLeaderCommConn(lcc.etcdManager, lcc.leaderService, brokerID, lcc.tcpConn)
 }
 
 func NewSingleEventCommConn(parent *ReplicaCommConn, event common.Sendable) *SingleEventCommConn {

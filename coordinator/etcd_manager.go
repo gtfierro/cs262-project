@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	etcdc "github.com/coreos/etcd/clientv3"
-	"github.com/coreos/etcd/contrib/recipes"
+	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gtfierro/cs262-project/common"
 	"golang.org/x/net/context"
+	"strings"
+	"sync"
 	"time"
 )
 
@@ -19,8 +22,14 @@ type EtcdManager struct {
 	conn              *EtcdConnection
 	leaderService     *LeaderService
 	context           context.Context
+	logHandlers       map[string]LogHandler
+	cancelWatchChan   chan bool
+	handlerLock       sync.RWMutex
+	handlerCond       *sync.Cond
 	maxKeysPerRequest int
 }
+
+type LogHandler func(common.Sendable, bool)
 
 type EtcdSerializable interface {
 	UnmarshalMsg([]byte) ([]byte, error)
@@ -52,6 +61,9 @@ func NewEtcdManager(etcdConn *EtcdConnection, leaderService *LeaderService, time
 	em.leaderService = leaderService
 	em.context, _ = context.WithTimeout(context.Background(), timeout) // Do we need the cancel func?
 
+	em.logHandlers = make(map[string]LogHandler)
+	em.handlerCond = sync.NewCond(&em.handlerLock)
+	em.cancelWatchChan = make(chan bool, 1)
 	return em
 }
 
@@ -104,24 +116,110 @@ func (em *EtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, err
 	return resp.Kvs[0].Key, nil
 }
 
-func (em *EtcdManager) WatchFromKeyAtRevision(prefix string, startKey string) chan etcdc.WatchResponse {
-	return em.conn.watcher.Watch(em.context, prefix+startKey, etcdc.WithFromKey())
+func (em *EtcdManager) WatchFromKey(prefix string, startKey string) chan etcdc.WatchResponse {
+	return em.conn.watcher.Watch(em.context, prefix+"/"+startKey, etcdc.WithFromKey())
 }
 
-func (em *EtcdManager) WriteToLog(prefix string, msg common.Sendable) error {
+func (em *EtcdManager) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
+	var suffix string
 	bytePacked, err := msg.Marshal()
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "message": *msg,
 		}).Error("Error while marshalling message to write to log")
 	}
-	resp, err := recipe.NewSequentialKV(em.conn.kv, prefix, string(bytePacked))
+	if isSend {
+		suffix = idOrGeneral + SentSuffix
+	} else {
+		suffix = idOrGeneral + RcvdSuffix
+	}
+	err = em.newSequentialKV(LogPrefix, suffix, string(bytePacked))
 	if err != nil {
 		log.WithFields(log.Fields{
-			"error": err, "prefix": prefix, "message": *msg, "key": resp.Key(),
+			"error": err, "suffix": suffix, "message": *msg,
 		}).Error("Error while storing into log")
 	}
 	return err
+}
+
+// TODO need something like this to know where to resume
+//func (rcc *ReplicaCommConn) nudgeHighestRev(rev int64) {
+//	rcc.revLock.Lock()
+//	defer rcc.revLock.Unlock()
+//	if rev > rcc.highestRev {
+//		rcc.highestRev = rev
+//	}
+//}
+
+// Does not return until cancellation - feeds messages into registered handlers
+func (em *EtcdManager) WatchLog(startKey string) {
+	// TODO should have logic here that if the watchChan closes, we reopen it
+	// TODO also need to GC the log here:
+	//   every so often when reading, write to some node within the prefix
+	//   what key you've read up to. also read the other replica's last read key.
+	//  then you can delete everything up to the lower of the two
+
+	//watchStartKey, err := rcc.etcdManager.GetHighestKeyAtRev(idOrGeneral +"rcvd/", startingRev)
+	//if err != nil {
+	//	return
+	//}
+	var (
+		handler func(common.Sendable, bool)
+		found   bool
+	)
+	watchChan := em.WatchFromKey(LogPrefix, startKey)
+	for {
+		select {
+		case watchResp := <-watchChan:
+			for _, event := range watchResp.Events {
+				if event.Type != mvccpb.PUT || !event.IsCreate() {
+					log.WithFields(log.Fields{
+						"eventType": event.Type, "key": event.Kv.Key,
+					}).Warn("Non put+create event found in the general receive log!")
+					continue
+				}
+				msg, err := common.MessageFromBytes(event.Kv.Value)
+				if err != nil {
+					log.WithFields(log.Fields{
+						"error": err, "key": event.Kv.Key,
+					}).Error("Error while unmarshalling bytes from general rcvd log at the given key")
+					continue
+				}
+				fields := strings.Split(string(event.Kv.Key), "/")
+				idOrGeneral := fields[len(fields)-2]
+				isSent := fields[len(fields)-1] == "sent"
+				em.handlerLock.RLock()
+				for handler, found = em.logHandlers[idOrGeneral]; ; !found {
+					// Wait for proper handler to be available in case e.g. it hasn't registered yet
+					em.handlerCond.Wait()
+				}
+				em.handlerLock.RUnlock()
+				handler(msg, isSent)
+			}
+		case <-em.cancelWatchChan:
+			em.handlerLock.Lock()
+			em.logHandlers = make(map[string]LogHandler)
+			em.handlerLock.Unlock()
+			return
+		}
+	}
+}
+
+func (em *EtcdManager) CancelWatch() {
+	em.cancelWatchChan <- true
+}
+
+func (em *EtcdManager) RegisterLogHandler(idOrGeneral string, handler LogHandler) {
+	em.handlerLock.Lock()
+	em.logHandlers[idOrGeneral] = handler
+	em.handlerCond.Broadcast()
+	em.handlerLock.Unlock()
+}
+
+func (em *EtcdManager) UnregisterLogHandler(idOrGeneral string) {
+	em.handlerLock.Lock()
+	delete(em.logHandlers, idOrGeneral)
+	em.handlerLock.Unlock()
 }
 
 // Iterates over all of the entries that are currently in the system as of the time of
@@ -130,7 +228,7 @@ func (em *EtcdManager) WriteToLog(prefix string, msg common.Sendable) error {
 // be closed when processing is complete . Also returns the revision number at which everything
 // was processed; the watchChannel watches for revisions after this.
 func (em *EtcdManager) IterateOverAllEntities(entityType string,
-	processor func(EtcdSerializable)) (chan *etcdc.WatchResponse, int64, error) {
+	processor func(EtcdSerializable)) (int64, error) {
 	var (
 		entity EtcdSerializable
 		resp   etcdc.GetResponse
@@ -176,6 +274,51 @@ func (em *EtcdManager) IterateOverAllEntities(entityType string,
 		}
 	}
 
-	watchChan := em.conn.watcher.Watch(em.context, entityType+"/", etcdc.WithPrefix(), etcdc.WithRev(startingRevision))
-	return watchChan, startingRevision, nil
+	return startingRevision, nil
+}
+
+// newSequentialKV allocates a new sequential key <prefix>/nnnnn/suffix with a given
+// value. Note: a bookkeeping node __<prefix> is also allocated.
+// modified from https://github.com/coreos/etcd/blob/master/contrib/recipes/key.go
+// to include a suffix as well
+// NOTE: suffix MUST contain a slash e.g. "general/sent"
+func (em *EtcdManager) newSequentialKV(prefix, suffix, val string) error {
+	resp, err := em.conn.kv.Get(em.context, prefix, etcdc.WithLastKey()...)
+	if err != nil {
+		return nil, err
+	}
+
+	// add 1 to last key, if any
+	newSeqNum := 0
+	if len(resp.Kvs) != 0 {
+		fields := strings.Split(string(resp.Kvs[0].Key), "/")
+		_, serr := fmt.Sscanf(fields[len(fields)-3], "%d", &newSeqNum)
+		if serr != nil {
+			return nil, serr
+		}
+		newSeqNum++
+	}
+	newKey := fmt.Sprintf("%s/%016d/%s", prefix, newSeqNum, suffix)
+
+	// base prefix key must be current (i.e., <=) with the server update;
+	// the base key is important to avoid the following:
+	// N1: LastKey() == 1, start txn.
+	// N2: New Key 2, New Key 3, Delete Key 2
+	// N1: txn succeeds allocating key 2 when it shouldn't
+	baseKey := "__" + prefix
+
+	// current revision might contain modification so +1
+	cmp := etcdc.Compare(etcdc.ModRevision(baseKey), "<", resp.Header.Revision+1)
+	reqPrefix := etcdc.OpPut(baseKey, "")
+	reqNewKey := etcdc.OpPut(newKey, val)
+
+	txn := em.conn.kv.Txn(em.context)
+	txnresp, err := txn.If(cmp).Then(reqPrefix, reqNewKey).Commit()
+	if err != nil {
+		return err
+	}
+	if !txnresp.Succeeded {
+		return em.newSequentialKV(prefix, suffix, val) // retry
+	}
+	return nil
 }

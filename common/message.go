@@ -26,6 +26,7 @@ func GetMessageType(msg Sendable) string {
 
 type Sendable interface {
 	Encode(enc *msgp.Writer) error
+	Marshal() (o []byte, err error)
 }
 
 type Message interface {
@@ -34,6 +35,7 @@ type Message interface {
 
 type SendableWithID interface {
 	Encode(enc *msgp.Writer) error
+	Marshal() (o []byte, err error)
 	GetID() MessageIDType
 	SetID(MessageIDType)
 }

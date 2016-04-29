@@ -39,7 +39,7 @@ func TestSendAndReceive(t *testing.T) {
 		time.Sleep(50 * time.Millisecond) // Brief pause to let TCP close
 	}()
 
-	bc.StartAsynchronously(conn)
+	bc.StartAsynchronously(NewPassthroughCommConn(conn))
 	smsg1 := common.BrokerAssignmentMessage{common.BrokerInfo{common.UUID("5"), ""}}
 	rmsg1 := common.BrokerTerminateMessage{}
 	smsg2 := common.ForwardRequestMessage{common.MessageIDStruct{MessageID: 1}, nil, common.BrokerInfo{}, ""}
@@ -83,7 +83,7 @@ func TestEnsureDelivery(t *testing.T) {
 		time.Sleep(50 * time.Millisecond) // Brief pause to let TCP close
 	}()
 
-	bc.StartAsynchronously(conn)
+	bc.StartAsynchronously(NewPassthroughCommConn(conn))
 
 	smsg := common.ForwardRequestMessage{common.MessageIDStruct{MessageID: 42}, nil, common.BrokerInfo{}, ""}
 	ackmsg := common.AcknowledgeMessage{MessageID: 42}

@@ -4,8 +4,9 @@ import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
-	"github.com/tinylib/msgp/msgp"
+	"io"
 	"net"
+	"time"
 )
 
 type Server struct {
@@ -14,6 +15,11 @@ type Server struct {
 	metadata      *common.MetadataStore
 	fwdTable      *ForwardingTable
 	brokerManager BrokerManager
+	leaderService *LeaderService
+	etcdConn      *EtcdConnection
+	etcdManager   EtcdManager
+
+	heartbeatInterval time.Duration
 
 	messageBuffer      chan *MessageFromBroker
 	brokerDeathChan    chan *common.UUID
@@ -52,15 +58,21 @@ func NewServer(config *common.Config) *Server {
 		}).Fatal("Could not listen on the provided address")
 	}
 
+	s.heartbeatInterval = time.Duration(config.Coordinator.HeartbeatInterval) * time.Second
+
 	s.metadata = common.NewMetadataStore(config)
 	s.brokerDeathChan = make(chan *common.UUID, 10)
 	s.brokerLiveChan = make(chan *common.UUID, 10)
 	s.brokerReassignChan = make(chan *BrokerReassignment, 500)
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
 
-	s.brokerManager = NewBrokerManager(config.Coordinator.HeartbeatInterval, s.brokerDeathChan,
+	// TODO move to real config
+	s.etcdConn = NewEtcdConnection([]string{"127.0.0.1:2377"})
+	s.leaderService = NewLeaderService(s.etcdConn, address, 2*time.Second)
+	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, 2*time.Second, 1000)
+	s.brokerManager = NewBrokerManager(s.etcdManager, s.heartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
-	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
+	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.etcdManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
 	go s.fwdTable.monitorInboundChannels()
 	s.stop = make(chan bool)
 	s.stopped = false
@@ -68,14 +80,71 @@ func NewServer(config *common.Config) *Server {
 	return s
 }
 
+// Doesn't return
+func (s *Server) handleLeadership() {
+	leader, err := s.leaderService.AttemptToBecomeLeader()
+	if err != nil {
+		log.WithField("error", err).Error("Error while attempting to become the initial leader")
+	} else {
+		log.WithField("leaderStatus", leader).Info("Attempted to become initial leader")
+	}
+	go s.leaderService.WatchForLeadershipChange()
+	s.leaderService.MaintainLeaderLease()
+}
+
+// Won't return
+func (s *Server) monitorLog() {
+	for {
+		// If we're a leader, just wait... nothing to be done here
+		<-s.leaderService.WaitForNonleadership()
+
+		go func() {
+			<-s.leaderService.WaitForLeadership()
+			s.etcdManager.CancelWatch()
+		}()
+
+		// TODO this will be different in the rebuilding case...
+		watchStartRev := s.leaderService.GetLeadershipChangeRevision()
+		watchStartKey, err := s.etcdManager.GetHighestKeyAtRev(LogPrefix, watchStartRev)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err, "watchStartRev": watchStartRev,
+			}).Error("Error while attempting to get highest key at revision")
+		}
+		s.etcdManager.WatchLog(watchStartKey)
+	}
+}
+
+func (s *Server) monitorGeneralConnections() {
+	for {
+		// If we're a leader, just wait... nothing to be done here
+		<-s.leaderService.WaitForNonleadership()
+
+		commConn := NewReplicaCommConn(s.etcdManager, s.leaderService, GeneralSuffix, s.heartbeatInterval)
+		go func() {
+			<-s.leaderService.WaitForLeadership()
+			commConn.Close()
+		}()
+		// Now we're definitely not a leader, set up a watch for the leader's events
+		for {
+			msg, err := commConn.ReceiveMessage()
+			if err == nil {
+				go s.dispatch(NewSingleEventCommConn(commConn, msg), LogPrefix+"/"+GeneralSuffix)
+			} else if err == io.EOF {
+				break // continue outer loop since we're no longer leader
+			}
+		}
+	}
+}
+
 func (s *Server) handleMessage(brokerMessage *MessageFromBroker) {
 	brokerID := brokerMessage.broker.BrokerID
 	switch msg := brokerMessage.message.(type) {
 	case *common.BrokerPublishMessage:
-		s.fwdTable.HandlePublish(msg, brokerID)
+		s.fwdTable.HandlePublish(msg.UUID, msg.Metadata, brokerID, nil)
 		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.BrokerQueryMessage:
-		s.fwdTable.HandleSubscription(msg.Query, msg.UUID, brokerID)
+		s.fwdTable.HandleSubscription(msg.Query, msg.UUID, brokerID, nil)
 		brokerMessage.broker.Send(&common.AcknowledgeMessage{msg.MessageID})
 	case *common.PublisherTerminationMessage:
 		s.fwdTable.HandlePublisherTermination(msg.PublisherID, brokerID)
@@ -90,30 +159,28 @@ func (s *Server) handleMessage(brokerMessage *MessageFromBroker) {
 	}
 }
 
-func (s *Server) dispatch(conn *net.TCPConn) {
-	reader := msgp.NewReader(conn)
-	writer := msgp.NewWriter(conn)
-	msg, err := common.MessageFromDecoderMsgp(reader)
+func (s *Server) dispatch(commConn CommConn, address string) {
+	msg, err := commConn.ReceiveMessage()
 	if err != nil {
 		log.WithFields(log.Fields{
-			"error": err, "tcpAddr": conn.RemoteAddr(),
+			"error": err, "tcpAddr": address,
 		}).Error("Error decoding message from connection")
-		conn.Close()
+		commConn.Close()
 		return
 	}
 	switch m := msg.(type) {
 	case *common.BrokerConnectMessage:
-		err = s.brokerManager.ConnectBroker(&m.BrokerInfo, conn)
+		err = s.brokerManager.ConnectBroker(&m.BrokerInfo, commConn.GetBrokerConn(m.BrokerID))
 		if err != nil {
 			log.WithFields(log.Fields{
-				"error": err, "brokerInfo": m.BrokerInfo, "tcpAddr": conn.RemoteAddr(),
+				"error": err, "brokerInfo": m.BrokerInfo, "tcpAddr": address,
 			}).Error("Error while connecting to broker")
 		}
 		ack := &common.AcknowledgeMessage{MessageID: m.MessageID}
-		ack.Encode(writer)
+		commConn.Send(ack)
 	case *common.BrokerRequestMessage:
 		if resp, err := s.brokerManager.HandlePubClientRemapping(m); err == nil {
-			resp.Encode(writer)
+			commConn.Send(resp)
 		} else {
 			log.WithFields(log.Fields{
 				"requestMessage": msg, "error": err,
@@ -121,17 +188,15 @@ func (s *Server) dispatch(conn *net.TCPConn) {
 		}
 	default:
 		log.WithFields(log.Fields{
-			"tcpAddr": conn.RemoteAddr(), "message": msg, "messageType": common.GetMessageType(msg),
+			"tcpAddr": address, "message": msg, "messageType": common.GetMessageType(msg),
 		}).Warn("Received unexpected message type over a new connection")
 	}
 }
 
-func (s *Server) startBrokerMessageHandler() {
-	go func() {
-		for {
-			go s.handleMessage(<-s.messageBuffer)
-		}
-	}()
+func (s *Server) handleBrokerMessages() {
+	for {
+		go s.handleMessage(<-s.messageBuffer)
+	}
 }
 
 func (s *Server) listenAndDispatch() {
@@ -154,6 +219,11 @@ func (s *Server) listenAndDispatch() {
 				"error": err.Error(),
 			}).Error("Error accepting connection")
 		}
-		go s.dispatch(conn)
+		if !s.leaderService.IsLeader() {
+			conn.Close() // Reject connections when not the leader
+		} else {
+			commConn := NewLeaderCommConn(s.etcdManager, s.leaderService, GeneralSuffix, conn)
+			go s.dispatch(commConn, fmt.Sprintf("%v", conn.RemoteAddr()))
+		}
 	}
 }

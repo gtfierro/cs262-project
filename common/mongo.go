@@ -62,21 +62,17 @@ func NewMetadataStore(c *Config) *MetadataStore {
 	return m
 }
 
-func (ms *MetadataStore) Save(msg *PublishMessage) error {
-	if msg == nil {
-		return errors.New("Message is null")
+func (ms *MetadataStore) Save(publisherID *UUID, metadata map[string]interface{}) error {
+	if publisherID == nil {
+		return errors.New("PublisherID is null")
 	}
 
-	if len(msg.Metadata) == 0 { // nothing to save
-		uuid := msg.UUID
-		val := msg.Value
-		log.WithFields(log.Fields{
-			"UUID": uuid, "value": val,
-		}).Debug("No message metadata to save")
+	if len(metadata) == 0 { // nothing to save
+		log.WithField("UUID", *publisherID).Debug("No message metadata to save")
 		return nil
 	}
 
-	_, err := ms.metadata.Upsert(bson.M{"uuid": msg.UUID}, bson.M{"$set": bson.M(msg.Metadata)})
+	_, err := ms.metadata.Upsert(bson.M{"uuid": *publisherID}, bson.M{"$set": bson.M(metadata)})
 	return err
 }
 

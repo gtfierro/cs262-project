@@ -15,21 +15,24 @@ type CommConn interface {
 	Send(msg common.Sendable) error
 	ReceiveMessage() (msg common.Sendable, err error)
 	GetBrokerConn(brokerID common.UUID) CommConn
+	GetPendingMessages() map[common.MessageIDType]common.SendableWithID
 	Close()
 }
 
 // Communication Connection
 type ReplicaCommConn struct {
-	etcdManager       EtcdManager
-	leaderService     *LeaderService
-	heartbeatInterval time.Duration
-	idOrGeneral       string
-	revLock           sync.Mutex
-	watchChan         chan *etcdc.WatchResponse
-	messageBuffer     chan common.Sendable
-	heartbeatChan     chan bool
-	leaderChan        chan bool
-	closeChan         chan bool
+	etcdManager          EtcdManager
+	leaderService        *LeaderService
+	heartbeatInterval    time.Duration
+	idOrGeneral          string
+	revLock              sync.Mutex
+	watchChan            chan *etcdc.WatchResponse
+	messageBuffer        chan common.Sendable
+	pendingMessageBuffer map[common.MessageIDType]common.SendableWithID
+	heartbeatChan        chan bool
+	leaderStatusChanged  bool
+	leaderStatusLock     sync.RWMutex
+	closeChan            chan bool
 }
 
 // Communication Connection
@@ -56,8 +59,15 @@ func NewReplicaCommConn(etcdMgr EtcdManager, leaderService *LeaderService,
 	rcc.idOrGeneral = idOrGeneral
 	rcc.heartbeatInterval = heartbeatInterval
 	rcc.messageBuffer = make(chan common.Sendable, 20)
+	rcc.pendingMessageBuffer = make(map[common.MessageIDType]common.SendableWithID)
 	rcc.heartbeatChan = make(chan bool)
-	rcc.leaderChan = leaderService.WaitForLeadership()
+
+	go func() {
+		<-leaderService.WaitForLeadership()
+		rcc.leaderStatusLock.Lock()
+		rcc.leaderStatusChanged = true
+		rcc.leaderStatusLock.Unlock()
+	}()
 
 	etcdMgr.RegisterLogHandler(idOrGeneral, rcc.logHandler)
 
@@ -69,9 +79,28 @@ func NewReplicaCommConn(etcdMgr EtcdManager, leaderService *LeaderService,
 	return rcc
 }
 
+func (rcc *ReplicaCommConn) GetPendingMessages() map[common.MessageIDType]common.SendableWithID {
+	msgs := rcc.pendingMessageBuffer
+	rcc.pendingMessageBuffer = make(map[common.MessageIDType]common.SendableWithID)
+	return msgs
+}
+
 func (rcc *ReplicaCommConn) logHandler(msg common.Sendable, isSend bool) {
 	if isSend {
-		// TODO deal with sent messages
+		switch m := msg.(type) {
+		case *common.LeaderChangeMessage:
+			rcc.leaderStatusLock.RLock()
+			if rcc.leaderStatusChanged {
+				close(rcc.closeChan)
+			}
+			rcc.leaderStatusLock.RUnlock()
+		case *common.AcknowledgeMessage:
+			delete(rcc.pendingMessageBuffer, m.MessageID)
+		case common.SendableWithID:
+			rcc.pendingMessageBuffer[m.GetID()] = m
+		default:
+			// ignore
+		}
 	} else {
 		rcc.messageBuffer <- msg
 	}
@@ -82,8 +111,6 @@ func (rcc *ReplicaCommConn) sendHeartbeats() {
 	for {
 		select {
 		case <-rcc.closeChan:
-			return
-		case <-rcc.leaderChan:
 			return
 		case <-time.After(rcc.heartbeatInterval):
 			rcc.heartbeatChan <- true
@@ -98,8 +125,6 @@ func (rcc *ReplicaCommConn) ReceiveMessage() (msg common.Sendable, err error) {
 			return msg, nil
 		case <-rcc.closeChan:
 			return nil, io.EOF
-		case <-rcc.leaderChan:
-			return nil, io.EOF
 		case <-rcc.heartbeatChan:
 			return &common.HeartbeatMessage{}, nil
 		}
@@ -110,8 +135,7 @@ func (rcc *ReplicaCommConn) Send(msg common.Sendable) error {
 	select {
 	case <-rcc.closeChan:
 		return io.EOF
-	case <-rcc.leaderChan:
-		return io.EOF
+	default:
 	}
 	// not leader; can safely ignore this message except for ACKing if necessary
 	if withID, ok := msg.(common.SendableWithID); ok {
@@ -145,6 +169,10 @@ func NewLeaderCommConn(etcdMgr EtcdManager, leaderService *LeaderService, idOrGe
 	}()
 
 	return lcc
+}
+
+func (lcc *LeaderCommConn) GetPendingMessages() map[common.MessageIDType]common.SendableWithID {
+	return make(map[common.MessageIDType]common.SendableWithID)
 }
 
 func (lcc *LeaderCommConn) ReceiveMessage() (msg common.Sendable, err error) {
@@ -219,4 +247,8 @@ func (secc *SingleEventCommConn) Close() {
 
 func (secc *SingleEventCommConn) GetBrokerConn(brokerID common.UUID) CommConn {
 	return secc.parentComm.GetBrokerConn(brokerID)
+}
+
+func (secc *SingleEventCommConn) GetPendingMessages() map[common.MessageIDType]common.SendableWithID {
+	return make(map[common.MessageIDType]common.SendableWithID)
 }

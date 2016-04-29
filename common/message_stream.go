@@ -160,6 +160,11 @@ func (m *AcknowledgeMessage) Encode(enc *msgp.Writer) error {
 	return m.EncodeMsg(enc)
 }
 
+func (m *LeaderChangeMessage) Encode(enc *msgp.Writer) error {
+	err := enc.WriteUint8(uint8(LEADERCHANGEMSG))
+	return err
+}
+
 func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
 	msgtype_tmp, err := dec.ReadByte()
 	if err != nil {
@@ -244,6 +249,9 @@ func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
 	case ACKMSG:
 		msg := new(AcknowledgeMessage)
 		msg.DecodeMsg(dec)
+		return msg, err
+	case LEADERCHANGEMSG:
+		msg := new(LeaderChangeMessage)
 		return msg, err
 	default:
 		return nil, errors.New(fmt.Sprintf("MessageType unknown: %v", msgtype))
@@ -350,6 +358,11 @@ func (m *AcknowledgeMessage) Marshal() ([]byte, error) {
 	return m.MarshalMsg(bytes)
 }
 
+func (m *LeaderChangeMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(LEADERCHANGEMSG)}
+	return bytes, nil
+}
+
 func MessageFromBytes(bytes []byte) (Sendable, error) {
 	var err error
 	switch MessageType(bytes[0]) {
@@ -431,6 +444,9 @@ func MessageFromBytes(bytes []byte) (Sendable, error) {
 		msg := new(AcknowledgeMessage)
 		_, err = msg.UnmarshalMsg(bytes[1:])
 		return msg, err
+	case LEADERCHANGEMSG:
+		msg := new(LeaderChangeMessage)
+		return msg, nil
 	default:
 		return nil, errors.New(fmt.Sprintf("MessageType unknown: %v", bytes[0]))
 	}

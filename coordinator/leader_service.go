@@ -35,11 +35,13 @@ func NewLeaderService(etcdConn *EtcdConnection, coordAddr string, timeout time.D
 
 // Doesn't return. Watches for a lack of a leader and if so
 // attempts to become the new leader
-// TODO should restart the watch if it dies
 func (cs *LeaderService) WatchForLeadershipChange() {
 	watchChan := cs.etcdConn.watcher.Watch(cs.etcdConn.GetCtx(), LeaderKey)
 	for {
 		watchResp := <-watchChan
+		if watchResp.Canceled {
+			watchChan = cs.etcdConn.watcher.Watch(cs.etcdConn.GetCtx(), LeaderKey)
+		}
 		for _, event := range watchResp.Events {
 			if event.Type == mvccpb.DELETE { // Currently no leader!
 				cs.AttemptToBecomeLeader()

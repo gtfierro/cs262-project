@@ -80,6 +80,9 @@ func (pcc *PassthroughCommConn) GetBrokerConn(brokerID common.UUID) CommConn {
 func (pcc *PassthroughCommConn) Close() {
 	pcc.conn.Close()
 }
+func (pcc *PassthroughCommConn) GetPendingMessages() map[common.MessageIDType]common.SendableWithID {
+	return make(map[common.MessageIDType]common.SendableWithID)
+}
 
 type DummyEtcdManager struct {
 }
@@ -96,8 +99,10 @@ func (dem *DummyEtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (strin
 func (dem *DummyEtcdManager) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
 	return nil
 }
-func (dem *DummyEtcdManager) WatchLog(startKey string) {}
-func (dem *DummyEtcdManager) CancelWatch()             {}
+func (dem *DummyEtcdManager) WatchLog(startKey string) string {
+	return ""
+}
+func (dem *DummyEtcdManager) CancelWatch() {}
 func (dem *DummyEtcdManager) IterateOverAllEntities(entityType string, processor func(EtcdSerializable)) (int64, error) {
 	return -1, nil
 }

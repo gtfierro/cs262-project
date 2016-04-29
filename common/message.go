@@ -88,6 +88,8 @@ const (
 	PUBTERMMSG
 	BROKERTERMMSG
 	ACKMSG
+
+	LEADERCHANGEMSG
 )
 
 type ProducerState uint
@@ -391,3 +393,11 @@ type AcknowledgeMessage struct {
 func (m *AcknowledgeMessage) GetID() MessageIDType {
 	return m.MessageID
 }
+
+///////////////////////////////////////
+/***** Leadership Change Message *****/
+///////////////////////////////////////
+
+// Used for the log only to mark that a leadership change occurred
+// at that point in the log
+type LeaderChangeMessage struct{}

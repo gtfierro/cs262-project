@@ -6,6 +6,7 @@ import (
 	"github.com/gtfierro/cs262-project/common"
 	"io"
 	"net"
+	"strings"
 	"time"
 )
 
@@ -66,8 +67,7 @@ func NewServer(config *common.Config) *Server {
 	s.brokerReassignChan = make(chan *BrokerReassignment, 500)
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
 
-	// TODO move to real config
-	s.etcdConn = NewEtcdConnection([]string{"127.0.0.1:2377"})
+	s.etcdConn = NewEtcdConnection(strings.Split(config.Coordinator.EtcdAddresses, ","))
 	s.leaderService = NewLeaderService(s.etcdConn, address, 2*time.Second)
 	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, 2*time.Second, 1000)
 	s.brokerManager = NewBrokerManager(s.etcdManager, s.heartbeatInterval, s.brokerDeathChan,
@@ -94,24 +94,20 @@ func (s *Server) handleLeadership() {
 
 // Won't return
 func (s *Server) monitorLog() {
+	endKey := LogPrefix
 	for {
 		// If we're a leader, just wait... nothing to be done here
 		<-s.leaderService.WaitForNonleadership()
 
-		go func() {
-			<-s.leaderService.WaitForLeadership()
-			s.etcdManager.CancelWatch()
-		}()
-
 		// TODO this will be different in the rebuilding case...
-		watchStartRev := s.leaderService.GetLeadershipChangeRevision()
-		watchStartKey, err := s.etcdManager.GetHighestKeyAtRev(LogPrefix, watchStartRev)
-		if err != nil {
-			log.WithFields(log.Fields{
-				"error": err, "watchStartRev": watchStartRev,
-			}).Error("Error while attempting to get highest key at revision")
-		}
-		s.etcdManager.WatchLog(watchStartKey)
+		//watchStartRev := s.leaderService.GetLeadershipChangeRevision()
+		//watchStartKey, err := s.etcdManager.GetHighestKeyAtRev(LogPrefix, watchStartRev)
+		//if err != nil {
+		//	log.WithFields(log.Fields{
+		//		"error": err, "watchStartRev": watchStartRev,
+		//	}).Error("Error while attempting to get highest key at revision")
+		//}
+		endKey = s.etcdManager.WatchLog(endKey)
 	}
 }
 

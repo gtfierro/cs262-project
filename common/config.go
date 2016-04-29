@@ -39,7 +39,8 @@ type ServerConfig struct {
 type CoordinatorConfig struct {
 	Port              int
 	Global            bool
-	HeartbeatInterval int // seconds
+	HeartbeatInterval int    // seconds
+	EtcdAddresses     string // comma-separated list
 }
 
 // MongoDB configuration

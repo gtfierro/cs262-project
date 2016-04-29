@@ -33,7 +33,7 @@ func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
 	bc := new(Broker)
 	bc.BrokerInfo = *broker
 	bc.terminating = make(chan bool)
-	bc.messageSendBuffer = make(chan common.Sendable, 20) // TODO buffer size?
+	bc.messageSendBuffer = make(chan common.Sendable, 200) // TODO buffer size?
 	bc.requestHeartbeatBuffer = make(chan chan bool, 20)
 	bc.heartbeatBuffer = make(chan bool, 5)
 	bc.outstandingMessages = make(map[common.MessageIDType]common.SendableWithID)
@@ -262,6 +262,9 @@ func (bc *Broker) sendLoop(commConn CommConn, done chan bool, wg *sync.WaitGroup
 			}
 		case <-done:
 			log.WithField("brokerID", bc.BrokerID).Warn("Exiting the send loop to broker (death)")
+			for _, pendingMsg := range commConn.GetPendingMessages() {
+				bc.messageSendBuffer <- pendingMsg // Store for later
+			}
 			return
 		case <-bc.terminating:
 			log.WithField("brokerID", bc.BrokerID).Info("Exiting the send loop to broker (termination)")

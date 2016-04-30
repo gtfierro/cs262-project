@@ -166,7 +166,7 @@ func (c *Coordinator) send(m common.Sendable) {
 	if err := m.Encode(c.encoder); err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "coordinator": c.address, "message": m,
-		}).Error("Could not send message to coordinator")
+		}).Error("Could not encode message to coordinator")
 		return
 	}
 	if err := c.encoder.Flush(); err != nil {

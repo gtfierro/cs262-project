@@ -176,7 +176,7 @@ func (bm *BrokerManagerImpl) TerminateBroker(brokerID common.UUID) {
 	} else {
 		log.WithField("brokerID", brokerID).Info("BrokerManagerImpl terminating broker")
 		delete(bm.brokerMap, brokerID)
-		delete(bm.brokerAddrMap, broker.BrokerAddr)
+		delete(bm.brokerAddrMap, broker.ClientBrokerAddr)
 		bm.etcdManager.DeleteEntity(broker.ToSerializable())
 		broker.Terminate()
 	}

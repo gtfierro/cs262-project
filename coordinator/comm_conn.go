@@ -145,7 +145,9 @@ func (rcc *ReplicaCommConn) Send(msg common.Sendable) error {
 }
 
 func (rcc *ReplicaCommConn) Close() {
-	close(rcc.closeChan)
+	if rcc.closeChan != nil {
+		close(rcc.closeChan)
+	}
 	rcc.etcdManager.UnregisterLogHandler(rcc.idOrGeneral)
 }
 

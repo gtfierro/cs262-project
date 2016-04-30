@@ -219,8 +219,11 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 			if client.CurrentBrokerID == UNASSIGNED {
 				client.CurrentBrokerID = client.HomeBrokerID
 				//TODO: nil pointer here
+				if client.query == nil {
+					log.Warn("CLIENT HAS EMPTY QUERY")
+				}
 				fq := ft.getOrEvaluateQuery(client.query.QueryString)
-				ft.activateClient(client, fq, client.CurrentBrokerID)
+				ft.activateClient(client, fq, &client.CurrentBrokerID)
 			} else {
 				ft.CancelSubscriberForwarding(client) // cancel old routes
 				if ids, found := brokerClientMap[client.CurrentBrokerID]; found {

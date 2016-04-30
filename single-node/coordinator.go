@@ -12,13 +12,14 @@ import (
 )
 
 type Coordinator struct {
-	address      *net.TCPAddr
-	conn         *net.TCPConn
-	localaddress string
-	sendL        sync.Mutex
-	broker       *RemoteBroker
-	brokerID     common.UUID
-	encoder      *msgp.Writer
+	address            *net.TCPAddr
+	conn               *net.TCPConn
+	clientside_address string
+	coordside_address  string
+	sendL              sync.Mutex
+	broker             *RemoteBroker
+	brokerID           common.UUID
+	encoder            *msgp.Writer
 
 	// the number of seconds to wait before retrying to
 	// contact coordinator server
@@ -35,12 +36,12 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 	var err error
 
 	c := &Coordinator{broker: s.broker.(*RemoteBroker),
-		retryTime:    1,
-		retryTimeMax: 60,
-		requests:     newOutstandingManager(),
-		queue:        newSendableQueue(100),
-		localaddress: fmt.Sprintf("%s:%d", config.Host, config.Port),
-		brokerID:     config.BrokerID,
+		retryTime:          1,
+		retryTimeMax:       60,
+		requests:           newOutstandingManager(),
+		queue:              newSendableQueue(100),
+		clientside_address: fmt.Sprintf("%s:%d", config.Host, config.Port),
+		brokerID:           config.BrokerID,
 	}
 
 	coordinatorAddress := fmt.Sprintf("%s:%d", config.CoordinatorHost, config.CoordinatorPort)
@@ -84,13 +85,16 @@ func (c *Coordinator) rebuildConnection() {
 	// if we were successful, reset the wait timer
 	c.retryTime = 1
 	c.encoder = msgp.NewWriter(c.conn)
+	// save the address we're using to connect
+	c.coordside_address = c.conn.LocalAddr().String()
 
 	// when we come online, send the BrokerConnectMessage to inform the coordinator
 	// server where it should send clients
 	// TODO should do something else for the BrokerID since we want it to persist after restarts
 	bcm := &common.BrokerConnectMessage{BrokerInfo: common.BrokerInfo{
-		BrokerID:   c.brokerID,
-		BrokerAddr: c.localaddress,
+		BrokerID:         c.brokerID,
+		ClientBrokerAddr: c.clientside_address,
+		CoordBrokerAddr:  c.coordside_address,
 	}, MessageIDStruct: common.GetMessageIDStruct()}
 	bcm.Encode(c.encoder)
 	// do the actual sending

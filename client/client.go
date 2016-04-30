@@ -162,7 +162,7 @@ func (c *Client) connectCoordinator() {
 // This function should contact the coordinator to get the new broker
 func (c *Client) configureNewBroker(m *common.BrokerAssignmentMessage) {
 	var err error
-	c.BrokerAddress, err = net.ResolveTCPAddr("tcp", m.BrokerAddr)
+	c.BrokerAddress, err = net.ResolveTCPAddr("tcp", m.ClientBrokerAddr)
 	if err != nil {
 		log.Critical(errors.Wrap(err, "Could not resolve local broker address"))
 	}

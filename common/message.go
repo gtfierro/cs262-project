@@ -13,8 +13,9 @@ import (
 type UUID string
 
 type BrokerInfo struct {
-	BrokerID   UUID
-	BrokerAddr string // "ip:port" to be contacted at
+	BrokerID         UUID
+	ClientBrokerAddr string // "ip:port" to be contacted at
+	CoordBrokerAddr  string // "ip:port" to be contacted at
 }
 
 func GetMessageType(msg Sendable) string {

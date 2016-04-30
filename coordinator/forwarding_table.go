@@ -505,6 +505,10 @@ func (ft *ForwardingTable) CancelPublisherForwarding(publisherID common.UUID) {
 	if queries, found := ft.pubQueryMap[publisherID]; found {
 		delete(ft.pubQueryMap, publisherID)
 		for _, query := range queries.queries {
+			if query == nil {
+				log.Warn("QUERY WAS NULL")
+				continue
+			}
 			if publishers, found := ft.queryPubMap[query]; found {
 				delete(publishers, &publisherID)
 			}

@@ -197,8 +197,13 @@ func (lcc *LeaderCommConn) ReceiveMessage() (msg common.Sendable, err error) {
 func (lcc *LeaderCommConn) Send(msg common.Sendable) error {
 	// TODO sender needs to GC its send log at some point
 	// should have some sort of interaction with the ACKs
-	err := msg.Encode(lcc.writer)
-	if err != nil {
+	if err := msg.Encode(lcc.writer); err != nil {
+		log.WithFields(log.Fields{
+			"error": err, "message": msg,
+		}).Error("Error sending message!")
+		return err
+	}
+	if err := lcc.writer.Flush(); err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "message": msg,
 		}).Error("Error sending message!")
@@ -211,7 +216,7 @@ func (lcc *LeaderCommConn) Send(msg common.Sendable) error {
 	} else if _, ok := msg.(*common.BrokerAssignmentMessage); ok {
 		// No need to log these; if the client/pub doesn't receive it, it will ask again
 	}
-	err = lcc.etcdManager.WriteToLog(lcc.idOrGeneral, true, msg)
+	err := lcc.etcdManager.WriteToLog(lcc.idOrGeneral, true, msg)
 	return err
 }
 

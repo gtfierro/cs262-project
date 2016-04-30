@@ -143,7 +143,9 @@ func (cs *LeaderService) SetLeader(isLeader bool, changeRev int64) {
 func (cs *LeaderService) WaitForLeadership() chan bool {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
-	c := make(chan bool)
+	// if these are not buffered channels, then sending on the channel
+	// can block indefinitely and deadlock -- GTF
+	c := make(chan bool, 1)
 	if cs.isLeader {
 		c <- true
 		return c
@@ -157,7 +159,9 @@ func (cs *LeaderService) WaitForLeadership() chan bool {
 func (cs *LeaderService) WaitForNonleadership() chan bool {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
-	c := make(chan bool)
+	// if these are not buffered channels, then sending on the channel
+	// can block indefinitely and deadlock -- GTF
+	c := make(chan bool, 1)
 	if !cs.isLeader {
 		c <- true
 		return c

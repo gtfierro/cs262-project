@@ -51,3 +51,60 @@ func AssertMFBChanEmpty(assert *require.Assertions, channel chan *MessageFromBro
 	default:
 	}
 }
+
+type PassthroughCommConn struct {
+	conn   *net.TCPConn
+	writer *msgp.Writer
+	reader *msgp.Reader
+}
+
+func NewPassthroughCommConn(conn *net.TCPConn) CommConn {
+	pcc := new(PassthroughCommConn)
+	pcc.conn = conn
+	pcc.writer = msgp.NewWriter(conn)
+	pcc.reader = msgp.NewReader(conn)
+	return pcc
+}
+
+func (pcc *PassthroughCommConn) Send(msg common.Sendable) error {
+	err := msg.Encode(pcc.writer)
+	pcc.writer.Flush()
+	return err
+}
+func (pcc *PassthroughCommConn) ReceiveMessage() (msg common.Sendable, err error) {
+	return common.MessageFromDecoderMsgp(pcc.reader)
+}
+func (pcc *PassthroughCommConn) GetBrokerConn(brokerID common.UUID) CommConn {
+	return pcc
+}
+func (pcc *PassthroughCommConn) Close() {
+	pcc.conn.Close()
+}
+func (pcc *PassthroughCommConn) GetPendingMessages() map[common.MessageIDType]common.SendableWithID {
+	return make(map[common.MessageIDType]common.SendableWithID)
+}
+
+type DummyEtcdManager struct {
+}
+
+func (dem *DummyEtcdManager) UpdateEntity(entity EtcdSerializable) error {
+	return nil
+}
+func (dem *DummyEtcdManager) DeleteEntity(entity EtcdSerializable) error {
+	return nil
+}
+func (dem *DummyEtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, error) {
+	return "", nil
+}
+func (dem *DummyEtcdManager) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
+	return nil
+}
+func (dem *DummyEtcdManager) WatchLog(startKey string) string {
+	return ""
+}
+func (dem *DummyEtcdManager) CancelWatch() {}
+func (dem *DummyEtcdManager) IterateOverAllEntities(entityType string, upToRev int64, processor func(EtcdSerializable)) error {
+	return nil
+}
+func (dem *DummyEtcdManager) RegisterLogHandler(idOrGeneral string, handler LogHandler) {}
+func (dem *DummyEtcdManager) UnregisterLogHandler(idOrGeneral string)                   {}

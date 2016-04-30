@@ -1,6 +1,7 @@
 package main
 
 import (
+	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/stretchr/testify/require"
 	"net"
@@ -9,6 +10,7 @@ import (
 )
 
 func TestBrokerDeath(t *testing.T) {
+	log.Debug("Starting test TestBrokerDeath")
 	assert := require.New(t)
 
 	deathChan := make(chan *common.UUID, 5)
@@ -42,7 +44,7 @@ func TestBrokerDeath(t *testing.T) {
 	uuid3 := common.UUID("3")
 	broker3 := common.BrokerInfo{BrokerID: uuid3, CoordBrokerAddr: "0.0.0.0:0003"}
 
-	bm := NewBrokerManager(10, deathChan, liveChan, nil, nil, clock)
+	bm := NewBrokerManager(new(DummyEtcdManager), 10*time.Second, deathChan, liveChan, nil, nil, clock)
 
 	defer func() {
 		bm.TerminateBroker(uuid1)
@@ -52,9 +54,9 @@ func TestBrokerDeath(t *testing.T) {
 		time.Sleep(50 * time.Millisecond) // Brief pause to let TCP close
 	}()
 
-	bm.ConnectBroker(&broker1, conn1)
-	bm.ConnectBroker(&broker2, conn2)
-	bm.ConnectBroker(&broker3, conn3)
+	bm.ConnectBroker(&broker1, NewPassthroughCommConn(conn1))
+	bm.ConnectBroker(&broker2, NewPassthroughCommConn(conn2))
+	bm.ConnectBroker(&broker3, NewPassthroughCommConn(conn3))
 
 	for i := 0; i < 3; i++ {
 		<-liveChan // Clear out the old live channel
@@ -89,7 +91,7 @@ func TestBrokerDeath(t *testing.T) {
 
 	go fakeBroker(tcpAddr, expectMsg2a, respMsg2a, brokerDeath)
 	conn2a, _ := listener.AcceptTCP()
-	bm.ConnectBroker(&broker2, conn2a)
+	bm.ConnectBroker(&broker2, NewPassthroughCommConn(conn2a))
 
 	assert.True(bm.IsBrokerAlive(uuid2))
 	assert.Equal(&uuid2, <-liveChan)
@@ -98,6 +100,7 @@ func TestBrokerDeath(t *testing.T) {
 }
 
 func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
+	log.Debug("Starting test TestBrokerDeathWithClientReassignRequest")
 	assert := require.New(t)
 
 	deathChan := make(chan *common.UUID, 5)
@@ -133,7 +136,7 @@ func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 	broker3 := common.BrokerInfo{BrokerID: uuid3, CoordBrokerAddr: "0.0.0.0:0003"}
 
 	msgBuf := make(chan *MessageFromBroker, 100)
-	bm := NewBrokerManager(10, deathChan, liveChan, msgBuf, brokerReassignChan, clock)
+	bm := NewBrokerManager(new(DummyEtcdManager), 10*time.Second, deathChan, liveChan, msgBuf, brokerReassignChan, clock)
 
 	defer func() {
 		bm.TerminateBroker(uuid1)
@@ -143,9 +146,9 @@ func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 		time.Sleep(50 * time.Millisecond) // Brief pause to let TCP close
 	}()
 
-	bm.ConnectBroker(&broker1, conn1)
-	bm.ConnectBroker(&broker2, conn2)
-	bm.ConnectBroker(&broker3, conn3)
+	bm.ConnectBroker(&broker1, NewPassthroughCommConn(conn1))
+	bm.ConnectBroker(&broker2, NewPassthroughCommConn(conn2))
+	bm.ConnectBroker(&broker3, NewPassthroughCommConn(conn3))
 
 	for i := 0; i < 3; i++ {
 		<-liveChan // Clear out the old live channel
@@ -157,8 +160,12 @@ func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 	sendDummyMessage(conn3, expectMsg3)
 
 	// Set up broker 1 with 1 publisher, broker 2 with 2 clients, broker 3 with 1 client
-	publishMessage1.Metadata["Building"] = "Soda"
-	respMsg1 <- publishMessage1
+	publishMessage := &common.BrokerPublishMessage{
+		MessageIDStruct: common.MessageIDStruct{1}, UUID: "pub0",
+		Metadata: make(map[string]interface{}), Value: "1",
+	}
+	publishMessage.Metadata["Building"] = "Soda"
+	respMsg1 <- publishMessage
 	respMsg2 <- &common.BrokerQueryMessage{Query: queryStr, UUID: common.UUID("11")}
 	sendDummyMessage(conn2, expectMsg2)
 	respMsg2 <- &common.BrokerQueryMessage{Query: queryStr + " and Room = '2'", UUID: common.UUID("12")}
@@ -204,7 +211,7 @@ func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 
 	go fakeBroker(tcpAddr, expectMsg2a, respMsg2a, brokerDeathChan)
 	conn2a, _ := listener.AcceptTCP()
-	bm.ConnectBroker(&broker2, conn2a)
+	bm.ConnectBroker(&broker2, NewPassthroughCommConn(conn2a))
 
 	assert.True(bm.IsBrokerAlive(uuid2))
 	assert.Equal(&uuid2, <-liveChan)

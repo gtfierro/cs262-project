@@ -160,6 +160,11 @@ func (m *AcknowledgeMessage) Encode(enc *msgp.Writer) error {
 	return m.EncodeMsg(enc)
 }
 
+func (m *LeaderChangeMessage) Encode(enc *msgp.Writer) error {
+	err := enc.WriteUint8(uint8(LEADERCHANGEMSG))
+	return err
+}
+
 func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
 	msgtype_tmp, err := dec.ReadByte()
 	if err != nil {
@@ -245,7 +250,204 @@ func MessageFromDecoderMsgp(dec *msgp.Reader) (Sendable, error) {
 		msg := new(AcknowledgeMessage)
 		msg.DecodeMsg(dec)
 		return msg, err
+	case LEADERCHANGEMSG:
+		msg := new(LeaderChangeMessage)
+		return msg, err
 	default:
 		return nil, errors.New(fmt.Sprintf("MessageType unknown: %v", msgtype))
+	}
+}
+
+func (m *QueryMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(QUERYMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *SubscriptionDiffMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(SUBSCRIPDIFFMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *PublishMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(PUBLISHMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *BrokerRequestMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(BROKERREQUESTMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *BrokerConnectMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(BROKERCONNECTMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *ForwardRequestMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(FORWARDREQUESTMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *CancelForwardRequest) Marshal() ([]byte, error) {
+	bytes := []byte{byte(CANCELFORWARDREQUESTMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *BrokerSubscriptionDiffMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(BROKERSUBSCRIPDIFFMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *BrokerAssignmentMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(BROKERASSIGNMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *BrokerDeathMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(BROKERDEATHMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *ClientTerminationRequest) Marshal() ([]byte, error) {
+	bytes := []byte{byte(CLIENTTERMREQUESTMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *PublisherTerminationRequest) Marshal() ([]byte, error) {
+	bytes := []byte{byte(PUBTERMREQUESTMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *RequestHeartbeatMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(REQHEARTBEATMSG)}
+	return bytes, nil
+}
+
+func (m *HeartbeatMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(HEARTBEATMSG)}
+	return bytes, nil
+}
+
+func (m *BrokerPublishMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(BROKERPUBLISHMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *BrokerQueryMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(BROKERQUERYMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *ClientTerminationMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(CLIENTTERMMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *PublisherTerminationMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(PUBTERMMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *BrokerTerminateMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(BROKERTERMMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *AcknowledgeMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(ACKMSG)}
+	return m.MarshalMsg(bytes)
+}
+
+func (m *LeaderChangeMessage) Marshal() ([]byte, error) {
+	bytes := []byte{byte(LEADERCHANGEMSG)}
+	return bytes, nil
+}
+
+func MessageFromBytes(bytes []byte) (Sendable, error) {
+	var err error
+	switch MessageType(bytes[0]) {
+	case PUBLISHMSG:
+		msg := new(PublishMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case QUERYMSG:
+		msg := new(QueryMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case SUBSCRIPDIFFMSG:
+		msg := make(SubscriptionDiffMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return &msg, err
+	case BROKERREQUESTMSG:
+		msg := new(BrokerRequestMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case BROKERCONNECTMSG:
+		msg := new(BrokerConnectMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case FORWARDREQUESTMSG:
+		msg := new(ForwardRequestMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case CANCELFORWARDREQUESTMSG:
+		msg := new(CancelForwardRequest)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case BROKERSUBSCRIPDIFFMSG:
+		msg := new(BrokerSubscriptionDiffMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case BROKERASSIGNMSG:
+		msg := new(BrokerAssignmentMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case BROKERDEATHMSG:
+		msg := new(BrokerDeathMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case CLIENTTERMREQUESTMSG:
+		msg := new(ClientTerminationRequest)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case PUBTERMREQUESTMSG:
+		msg := new(PublisherTerminationRequest)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case REQHEARTBEATMSG:
+		msg := new(RequestHeartbeatMessage)
+		return msg, err
+	case HEARTBEATMSG:
+		msg := new(HeartbeatMessage)
+		return msg, err
+	case BROKERPUBLISHMSG:
+		msg := new(BrokerPublishMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case BROKERQUERYMSG:
+		msg := new(BrokerQueryMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case CLIENTTERMMSG:
+		msg := new(ClientTerminationMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case PUBTERMMSG:
+		msg := new(PublisherTerminationMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case BROKERTERMMSG:
+		msg := new(BrokerTerminateMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case ACKMSG:
+		msg := new(AcknowledgeMessage)
+		_, err = msg.UnmarshalMsg(bytes[1:])
+		return msg, err
+	case LEADERCHANGEMSG:
+		msg := new(LeaderChangeMessage)
+		return msg, nil
+	default:
+		return nil, errors.New(fmt.Sprintf("MessageType unknown: %v", bytes[0]))
 	}
 }

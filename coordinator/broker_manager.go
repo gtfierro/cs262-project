@@ -92,7 +92,7 @@ func (bm *BrokerManagerImpl) ConnectBroker(brokerInfo *common.BrokerInfo, conn *
 			bm.clock, bm.internalDeathChan)
 		bm.mapLock.Lock()
 		bm.brokerMap[brokerInfo.BrokerID] = brokerConn
-		bm.brokerAddrMap[brokerInfo.BrokerAddr] = brokerConn
+		bm.brokerAddrMap[brokerInfo.ClientBrokerAddr] = brokerConn
 		bm.mapLock.Unlock()
 	}
 	brokerConn.StartAsynchronously(conn)
@@ -111,7 +111,7 @@ func (bm *BrokerManagerImpl) GetBrokerAddr(brokerID common.UUID) *string {
 		log.WithField("brokerID", brokerID).Warn("Attempted to get address of a nonexistent broker")
 		return nil
 	}
-	return &bconn.BrokerAddr
+	return &bconn.CoordBrokerAddr
 }
 
 func (bm *BrokerManagerImpl) GetBrokerInfo(brokerID common.UUID) *common.BrokerInfo {
@@ -181,7 +181,7 @@ func (bm *BrokerManagerImpl) TerminateBroker(brokerID common.UUID) {
 	bconn.Terminate()
 	bm.mapLock.Lock()
 	delete(bm.brokerMap, brokerID)
-	delete(bm.brokerAddrMap, bconn.BrokerAddr)
+	delete(bm.brokerAddrMap, bconn.ClientBrokerAddr)
 	bm.mapLock.Unlock()
 }
 
@@ -257,8 +257,8 @@ func (bm *BrokerManagerImpl) HandlePubClientRemapping(msg *common.BrokerRequestM
 	}
 	return &common.BrokerAssignmentMessage{
 		BrokerInfo: common.BrokerInfo{
-			BrokerID:   newBroker.BrokerID,
-			BrokerAddr: newBroker.BrokerAddr,
+			BrokerID:        newBroker.BrokerID,
+			CoordBrokerAddr: newBroker.CoordBrokerAddr,
 		},
 	}, nil
 }
@@ -284,14 +284,14 @@ func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageH
 		switch msg := message.(type) {
 		case *common.BrokerConnectMessage:
 			log.WithFields(log.Fields{
-				"connBrokerID": brokerID, "newBrokerID": msg.BrokerID, "newBrokerAddr": msg.BrokerAddr,
+				"connBrokerID": brokerID, "newBrokerID": msg.BrokerID, "newBrokerAddr": msg.CoordBrokerAddr,
 			}).Warn("Received a BrokerConnectMessage over an existing broker connection")
 		case *common.BrokerTerminateMessage:
 			log.WithField("brokerID", brokerID).Info("BrokerManagerImpl terminating broker")
 			brokerMessage.broker.Send(&common.AcknowledgeMessage{MessageID: msg.MessageID})
 			bm.mapLock.Lock()
 			delete(bm.brokerMap, brokerMessage.broker.BrokerID)
-			delete(bm.brokerAddrMap, brokerMessage.broker.BrokerAddr)
+			delete(bm.brokerAddrMap, brokerMessage.broker.ClientBrokerAddr)
 			bm.mapLock.Unlock()
 			brokerMessage.broker.Terminate()
 		// Messages below this take some action in the BrokerManager but also forward beyond

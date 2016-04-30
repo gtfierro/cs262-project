@@ -19,7 +19,7 @@ func setupBroker(expectedMsgs, responseMsgs chan common.Sendable, brokerDeath ch
 	listener, _ := net.ListenTCP("tcp", tcpAddr)
 	go fakeBroker(tcpAddr, expectedMsgs, responseMsgs, brokerDeath)
 	conn, _ := listener.AcceptTCP()
-	broker := common.BrokerInfo{BrokerID: "42", BrokerAddr: "0.0.0.0:0000"}
+	broker := common.BrokerInfo{BrokerID: "42", CoordBrokerAddr: "0.0.0.0:0000"}
 	bc := NewBroker(&broker, msgHandler, 5*time.Second, clock, deathChan)
 	return bc, msgRcvChan, clock, conn, listener
 }
@@ -40,7 +40,7 @@ func TestSendAndReceive(t *testing.T) {
 	}()
 
 	bc.StartAsynchronously(conn)
-	smsg1 := common.BrokerAssignmentMessage{common.BrokerInfo{common.UUID("5"), ""}}
+	smsg1 := common.BrokerAssignmentMessage{common.BrokerInfo{BrokerID: common.UUID("5"), CoordBrokerAddr: ""}}
 	rmsg1 := common.BrokerTerminateMessage{}
 	smsg2 := common.ForwardRequestMessage{common.MessageIDStruct{MessageID: 1}, nil, common.BrokerInfo{}, ""}
 	rmsg2 := common.AcknowledgeMessage{MessageID: 1}

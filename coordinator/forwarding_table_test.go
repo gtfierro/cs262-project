@@ -21,9 +21,9 @@ var publishMessage1 = &common.BrokerPublishMessage{
 	MessageIDStruct: common.MessageIDStruct{1}, UUID: "pub0",
 	Metadata: make(map[string]interface{}), Value: "1",
 }
-var broker0Info = common.BrokerInfo{BrokerID: "brokerid0", BrokerAddr: "127.0.0.1:60007"}
-var broker1Info = common.BrokerInfo{BrokerID: "brokerid1", BrokerAddr: "127.0.0.1:60008"}
-var broker2Info = common.BrokerInfo{BrokerID: "brokerid2", BrokerAddr: "127.0.0.1:60009"}
+var broker0Info = common.BrokerInfo{BrokerID: "brokerid0", CoordBrokerAddr: "127.0.0.1:60007"}
+var broker1Info = common.BrokerInfo{BrokerID: "brokerid1", CoordBrokerAddr: "127.0.0.1:60008"}
+var broker2Info = common.BrokerInfo{BrokerID: "brokerid2", CoordBrokerAddr: "127.0.0.1:60009"}
 
 func LoadMongo() *common.MetadataStore {
 	config, _ := common.LoadConfig("config.ini")

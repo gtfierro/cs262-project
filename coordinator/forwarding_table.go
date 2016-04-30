@@ -194,6 +194,7 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 		if *client.HomeBrokerID == *liveID {
 			if client.CurrentBrokerID == nil {
 				client.CurrentBrokerID = client.HomeBrokerID
+				//TODO: nil pointer here
 				fq := ft.getOrEvaluateQuery(client.query.QueryString)
 				ft.activateClient(client, fq, client.CurrentBrokerID)
 			} else {

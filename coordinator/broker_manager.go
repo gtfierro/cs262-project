@@ -249,8 +249,8 @@ func (bm *BrokerManagerImpl) HandlePubClientRemapping(msg *common.BrokerRequestM
 	}
 	return &common.BrokerAssignmentMessage{
 		BrokerInfo: common.BrokerInfo{
-			BrokerID:        newBroker.BrokerID,
-			CoordBrokerAddr: newBroker.CoordBrokerAddr,
+			BrokerID:         newBroker.BrokerID,
+			ClientBrokerAddr: newBroker.ClientBrokerAddr,
 		},
 	}, nil
 }
@@ -277,7 +277,7 @@ func (bm *BrokerManagerImpl) createMessageHandler(brokerID common.UUID) MessageH
 func (bm *BrokerManagerImpl) monitorDeathChan() {
 	for {
 		deadBroker, ok := <-bm.internalDeathChan
-		log.WithField("broker", deadBroker).Debug("Broker determined as dead!")
+		log.WithField("broker", deadBroker.BrokerInfo).Debug("Broker determined as dead!")
 		if !ok {
 			return
 		}

@@ -124,7 +124,6 @@ func (c *Client) doFailover() {
 	}
 }
 
-// TODO:
 func (c *Client) connectBroker(address *net.TCPAddr) error {
 	var err error
 	if c.brokerConn, err = net.DialTCP("tcp", nil, address); err != nil {
@@ -155,6 +154,8 @@ func (c *Client) connectCoordinator() {
 		}
 		c.coordConn, err = net.DialTCP("tcp", nil, c.CoordinatorAddress)
 	}
+	log.Debug("Connected to coordinator")
+	go c.listenCoordinator()
 	c.coordEncoder = msgp.NewWriter(c.coordConn)
 }
 
@@ -169,6 +170,9 @@ func (c *Client) configureNewBroker(m *common.BrokerAssignmentMessage) {
 	if err = c.connectBroker(c.BrokerAddress); err != nil {
 		log.Critical(errors.Wrap(err, "Could not connect to local broker"))
 	}
+	// send our subscription once we're back
+	c.resubscribe()
+	go c.listen()
 }
 
 // Sends message to the currently configured broker
@@ -188,14 +192,16 @@ func (c *Client) sendBroker(m common.Sendable) error {
 
 func (c *Client) sendCoordinator(m common.Sendable) error {
 	c.coordEncodeLock.Lock()
-	defer c.coordEncodeLock.Unlock()
 	if err := m.Encode(c.coordEncoder); err != nil {
+		c.coordEncodeLock.Unlock()
 		return errors.Wrap(err, "Could not encode message")
 	}
 	if err := c.coordEncoder.Flush(); err != nil {
+		c.coordEncodeLock.Unlock()
 		c.connectCoordinator()
 		return errors.Wrap(err, "Could not send message to coordinator")
 	}
+	c.coordEncodeLock.Unlock()
 	return nil
 }
 
@@ -207,6 +213,7 @@ func (c *Client) listen() {
 		}
 		msg, err := common.MessageFromDecoderMsgp(reader)
 		if err == io.EOF {
+			log.Warn("connection closed. Do failover")
 			c.doFailover()
 			break
 		}
@@ -221,10 +228,34 @@ func (c *Client) listen() {
 			} else {
 				log.Infof("Got publish message %v", m)
 			}
+		default:
+			log.Infof("Got %T message %v", m, m)
+		}
+	}
+}
+
+func (c *Client) listenCoordinator() {
+	if c.coordConn == nil {
+		return
+	}
+	reader := msgp.NewReader(net.Conn(c.coordConn))
+	for {
+		msg, err := common.MessageFromDecoderMsgp(reader)
+		if err == io.EOF {
+			log.Warn("connection closed. Do failover")
+			c.doFailover()
+			break
+		}
+		if err != nil {
+			log.Warn(errors.Wrap(err, "Could not decode message"))
+		}
+
+		log.Infof("Got %T message %v from coordinator", msg, msg)
+		switch m := msg.(type) {
 		case *common.BrokerAssignmentMessage:
 			c.configureNewBroker(m)
 		default:
-			log.Infof("Got %T message %v", m, m)
+			log.Infof("Got %T message %v from coordinator", m, m)
 		}
 	}
 }
@@ -251,6 +282,11 @@ func (c *Client) Subscribe(query string) {
 	if err := c.sendBroker(msg); err != nil {
 		log.Errorf("Error? %v", errors.Cause(err))
 	}
+}
+
+// call to resend subscription
+func (c *Client) resubscribe() {
+	c.Subscribe(c.query)
 }
 
 // Called externally, this adds new metadata to this client if it is acting

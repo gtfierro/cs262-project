@@ -16,7 +16,7 @@ type LocalBroker struct {
 
 	// map queries to clients
 	subscriber_lock sync.RWMutex
-	subscribers     map[string]clientList
+	subscribers     map[string]*clientList
 
 	// map of producer ids to queries
 	forwarding_lock sync.RWMutex
@@ -47,15 +47,15 @@ func (sl *clientList) addClient(sub *Client) {
 	sl.Lock()
 	defer sl.Unlock()
 	for _, oldSub := range sl.List {
-		if oldSub == sub {
+		if oldSub.ID == sub.ID {
 			return
 		}
 	}
 	for i, oldSub := range sl.List {
 		if oldSub == nil {
 			sl.List[i] = sub
+			return
 		}
-		return
 	}
 
 	sl.List = append(sl.List, sub)
@@ -135,7 +135,7 @@ func (ql *queryList) empty() bool {
 func NewBroker(metadata *common.MetadataStore) *LocalBroker {
 	b := &LocalBroker{
 		metadata:    metadata,
-		subscribers: make(map[string]clientList),
+		subscribers: make(map[string]*clientList),
 		forwarding:  make(map[common.UUID]*queryList),
 		producers:   make(map[common.UUID]*Producer),
 		queries:     make(map[string]*common.Query),
@@ -167,7 +167,7 @@ func (b *LocalBroker) mapQueryToClient(query string, c *Client) {
 		b.subscribers[query] = list
 	} else {
 		// otherwise, create a new list with us in it
-		b.subscribers[query] = clientList{List: []*Client{c}}
+		b.subscribers[query] = &clientList{List: []*Client{c}}
 	}
 	b.subscriber_lock.Unlock()
 }
@@ -244,7 +244,7 @@ func (b *LocalBroker) ForwardMessage(m *common.PublishMessage) {
 		return
 	}
 
-	var deliveries clientList
+	var deliveries *clientList
 	for _, query := range matchingQueries.queries {
 		b.subscriber_lock.RLock()
 		deliveries, found = b.subscribers[query]

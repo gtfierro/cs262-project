@@ -156,7 +156,7 @@ func (s *Server) dispatch(conn net.Conn) {
 // so that we can transmit back to the client.
 func (s *Server) handleSubscribe(query *common.QueryMessage, dec *msgp.Reader, conn net.Conn) {
 	log.WithFields(log.Fields{
-		"from": conn.RemoteAddr(), "query": query,
+		"from": conn.RemoteAddr(), "clientID": query.UUID, "query": query,
 	}).Debug("Got a new Subscription!")
 	s.broker.NewSubscription(query.Query, query.UUID, conn)
 }

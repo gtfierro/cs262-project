@@ -82,8 +82,7 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 		for p.C != nil {
 			select {
 			case <-p.stop:
-				//TODO: implement
-				//b.cleanupProducer(p)
+				b.cleanupProducer(p)
 				return
 			case msg := <-p.C:
 				msg.L.RLock()
@@ -98,6 +97,17 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 			}
 		}
 	}(p)
+}
+
+// Removes the producer UUID from the forwarding and producers maps
+func (b *RemoteBroker) cleanupProducer(p *Producer) {
+	b.producers_lock.Lock()
+	b.forwarding_lock.Lock()
+	delete(b.producers, p.ID)
+	delete(b.forwarding, p.ID)
+	b.forwarding_lock.Unlock()
+	b.producers_lock.Unlock()
+	b.coordinator.terminatePublisher(p)
 }
 
 func (b *RemoteBroker) NewSubscription(query string, clientID common.UUID, conn net.Conn) *Client {
@@ -252,6 +262,16 @@ func (b *RemoteBroker) mapQueryToClient(query string, c *Client) {
 	} else {
 		// otherwise, create a new list with us in it
 		b.subscribers[query] = clientList{List: []*Client{c}}
+	}
+	b.subscriber_lock.Unlock()
+}
+
+func (b *RemoteBroker) killClients(m *common.ClientTerminationRequest) {
+	b.subscriber_lock.Lock()
+	for _, clients := range b.subscribers {
+		for _, uuid := range m.ClientIDs {
+			clients.removeByUUID(uuid)
+		}
 	}
 	b.subscriber_lock.Unlock()
 }

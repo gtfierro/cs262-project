@@ -70,12 +70,19 @@ func (c *Client) Send(m common.Sendable) {
 	}
 }
 
+// tells this client to kill itself so that references
+// to it can be safely removed
+func (c *Client) Die() {
+	c.timeout.Stop()
+	(*c.conn).Close()
+	c.death <- c
+}
+
 // This is the client event loop that handles forwarding messages from
 // the broker to the client. It uses channels to communicate. This method
 // is most likely going to run in a goroutine, so we need a way to terminate
 // it and start it when the clients leave/appear again. This is explained below.
 func (c *Client) dosend() {
-	// TODO: put this value in a configuration file
 	for {
 		select {
 		// When clients leave, we don't know that they have failed until we try to forward

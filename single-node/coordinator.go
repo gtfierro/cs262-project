@@ -152,6 +152,9 @@ func (c *Coordinator) handleStateMachine() {
 			log.Infof("Got Broker Death Message %v", m)
 			//TODO: handle broker death
 			c.ack(m.GetID())
+		case *common.ClientTerminationRequest:
+			c.broker.killClients(m)
+			c.ack(m.GetID())
 		case common.Message:
 			log.Infof("Got a %T message %v", m, m)
 			c.requests.GotMessage(m)
@@ -245,6 +248,20 @@ func (c *Coordinator) terminateClient(client *Client) {
 	ctm.MessageID = common.GetMessageID()
 	c.send(ctm)
 	response, _ := c.requests.WaitForMessage(ctm.GetID())
+	switch response.(type) {
+	case *common.AcknowledgeMessage:
+	default:
+		log.Error("Did not get an ACK!")
+	}
+}
+
+func (c *Coordinator) terminatePublisher(prod *Producer) {
+	var ptm = &common.PublisherTerminationMessage{
+		PublisherID: prod.ID,
+	}
+	ptm.MessageID = common.GetMessageID()
+	c.send(ptm)
+	response, _ := c.requests.WaitForMessage(ptm.GetID())
 	switch response.(type) {
 	case *common.AcknowledgeMessage:
 	default:

@@ -275,3 +275,14 @@ func (b *RemoteBroker) killClients(m *common.ClientTerminationRequest) {
 	}
 	b.subscriber_lock.Unlock()
 }
+
+func (b *RemoteBroker) killPublishers(m *common.PublisherTerminationRequest) {
+	b.forwarding_lock.Lock()
+	b.producers_lock.Lock()
+	for _, uuid := range m.PublisherIDs {
+		delete(b.forwarding, uuid)
+		delete(b.producers, uuid)
+	}
+	b.forwarding_lock.Unlock()
+	b.producers_lock.Unlock()
+}

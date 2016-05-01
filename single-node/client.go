@@ -107,9 +107,9 @@ func (c *Client) dosend() {
 		case m := <-c.buffer:
 			// reset the timer to the new default value when we send
 			c.timeout.Reset(10 * time.Second)
-			log.WithFields(log.Fields{
-				"query": c.query, "message": m,
-			}).Debug("Forwarding message")
+			//log.WithFields(log.Fields{
+			//	"query": c.query, "message": m,
+			//}).Debug("Forwarding message")
 			err := m.Encode(c.encoder)
 			if err != nil {
 				log.WithFields(log.Fields{

@@ -178,7 +178,7 @@ func (b *LocalBroker) ForwardMessage(m *common.PublishMessage) {
 		matchingQueries *queryList
 		found           bool
 	)
-	log.Debugf("forwarding msg? %v", m)
+	//log.Debugf("forwarding msg? %v", m)
 	b.forwarding_lock.RLock()
 	// return if we can't find anyone to forward to
 	matchingQueries, found = b.forwarding[m.UUID]
@@ -198,7 +198,7 @@ func (b *LocalBroker) ForwardMessage(m *common.PublishMessage) {
 			log.Debugf("found no clients")
 			break
 		}
-		log.Debugf("found clients %v", deliveries)
+		//log.Debugf("found clients %v", deliveries)
 		deliveries.sendToList(m)
 	}
 }

@@ -32,17 +32,17 @@ func TestBrokerDeath(t *testing.T) {
 	go fakeBroker(tcpAddr, expectMsg1, respMsg1, brokerDeath)
 	conn1, _ := listener.AcceptTCP()
 	uuid1 := common.UUID("1")
-	broker1 := common.BrokerInfo{BrokerID: uuid1, CoordBrokerAddr: "0.0.0.0:0001"}
+	broker1 := common.BrokerInfo{BrokerID: uuid1, ClientBrokerAddr: "0.0.0.0:1001", CoordBrokerAddr: "0.0.0.0:0001"}
 
 	go fakeBroker(tcpAddr, expectMsg2, respMsg2, brokerDeath)
 	conn2, _ := listener.AcceptTCP()
 	uuid2 := common.UUID("2")
-	broker2 := common.BrokerInfo{BrokerID: uuid2, CoordBrokerAddr: "0.0.0.0:0002"}
+	broker2 := common.BrokerInfo{BrokerID: uuid2, ClientBrokerAddr: "0.0.0.0:1002", CoordBrokerAddr: "0.0.0.0:0002"}
 
 	go fakeBroker(tcpAddr, expectMsg3, respMsg3, brokerDeath)
 	conn3, _ := listener.AcceptTCP()
 	uuid3 := common.UUID("3")
-	broker3 := common.BrokerInfo{BrokerID: uuid3, CoordBrokerAddr: "0.0.0.0:0003"}
+	broker3 := common.BrokerInfo{BrokerID: uuid3, ClientBrokerAddr: "0.0.0.0:1003", CoordBrokerAddr: "0.0.0.0:0003"}
 
 	bm := NewBrokerManager(new(DummyEtcdManager), 10*time.Second, deathChan, liveChan, nil, nil, clock)
 
@@ -123,17 +123,17 @@ func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 	go fakeBroker(tcpAddr, expectMsg1, respMsg1, brokerDeathChan)
 	conn1, _ := listener.AcceptTCP()
 	uuid1 := common.UUID("1")
-	broker1 := common.BrokerInfo{BrokerID: uuid1, CoordBrokerAddr: "0.0.0.0:0001"}
+	broker1 := common.BrokerInfo{BrokerID: uuid1, ClientBrokerAddr: "0.0.0.0:1001", CoordBrokerAddr: "0.0.0.0:0001"}
 
 	go fakeBroker(tcpAddr, expectMsg2, respMsg2, brokerDeathChan)
 	conn2, _ := listener.AcceptTCP()
 	uuid2 := common.UUID("2")
-	broker2 := common.BrokerInfo{BrokerID: uuid2, CoordBrokerAddr: "0.0.0.0:0002"}
+	broker2 := common.BrokerInfo{BrokerID: uuid2, ClientBrokerAddr: "0.0.0.0:1002", CoordBrokerAddr: "0.0.0.0:0002"}
 
 	go fakeBroker(tcpAddr, expectMsg3, respMsg3, brokerDeathChan)
 	conn3, _ := listener.AcceptTCP()
 	uuid3 := common.UUID("3")
-	broker3 := common.BrokerInfo{BrokerID: uuid3, CoordBrokerAddr: "0.0.0.0:0003"}
+	broker3 := common.BrokerInfo{BrokerID: uuid3, ClientBrokerAddr: "0.0.0.0:1003", CoordBrokerAddr: "0.0.0.0:0003"}
 
 	msgBuf := make(chan *MessageFromBroker, 100)
 	bm := NewBrokerManager(new(DummyEtcdManager), 10*time.Second, deathChan, liveChan, msgBuf, brokerReassignChan, clock)
@@ -173,7 +173,7 @@ func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 
 	clientResp := make(chan common.Sendable)
 	go func() {
-		resp, _ := bm.HandlePubClientRemapping(&common.BrokerRequestMessage{LocalBrokerAddr: "0.0.0.0:0002",
+		resp, _ := bm.HandlePubClientRemapping(&common.BrokerRequestMessage{LocalBrokerAddr: "0.0.0.0:1002",
 			IsPublisher: false, UUID: common.UUID("12")})
 		clientResp <- resp
 	}()
@@ -186,24 +186,26 @@ func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 	assert.False(bm.IsBrokerAlive(common.UUID("2")))
 
 	common.AssertStrEqual(assert, &common.BrokerAssignmentMessage{
-		BrokerInfo: common.BrokerInfo{BrokerID: common.UUID("1"), CoordBrokerAddr: "0.0.0.0:0001"},
+		BrokerInfo: common.BrokerInfo{BrokerID: common.UUID("1"), ClientBrokerAddr: "0.0.0.0:1001",
+			CoordBrokerAddr: "0.0.0.0:0001"},
 	}, respMsg)
 
 	<-deathChan
 
 	// since broker is dead now, BrokerDeathMessages should be sent out
 	resp1 := (<-expectMsg1).(*common.BrokerDeathMessage)
-	assert.Equal(common.BrokerInfo{BrokerID: common.UUID("2"), CoordBrokerAddr: "0.0.0.0:0002"}, resp1.BrokerInfo)
+	assert.Equal(common.BrokerInfo{BrokerID: common.UUID("2"), ClientBrokerAddr: "0.0.0.0:1002", CoordBrokerAddr: "0.0.0.0:0002"}, resp1.BrokerInfo)
 	respMsg1 <- &common.AcknowledgeMessage{MessageID: resp1.MessageID}
 	resp3 := (<-expectMsg3).(*common.BrokerDeathMessage)
-	assert.Equal(common.BrokerInfo{BrokerID: common.UUID("2"), CoordBrokerAddr: "0.0.0.0:0002"}, resp3.BrokerInfo)
+	assert.Equal(common.BrokerInfo{BrokerID: common.UUID("2"), ClientBrokerAddr: "0.0.0.0:1002", CoordBrokerAddr: "0.0.0.0:0002"}, resp3.BrokerInfo)
 	respMsg3 <- &common.AcknowledgeMessage{MessageID: resp3.MessageID}
 
 	// client 3 needs a new broker as well
-	resp, _ := bm.HandlePubClientRemapping(&common.BrokerRequestMessage{LocalBrokerAddr: "0.0.0.0:0002",
+	resp, _ := bm.HandlePubClientRemapping(&common.BrokerRequestMessage{LocalBrokerAddr: "0.0.0.0:1002",
 		IsPublisher: false, UUID: common.UUID("12")})
 	common.AssertStrEqual(assert, &common.BrokerAssignmentMessage{
-		BrokerInfo: common.BrokerInfo{BrokerID: common.UUID("3"), CoordBrokerAddr: "0.0.0.0:0003"},
+		BrokerInfo: common.BrokerInfo{BrokerID: common.UUID("3"), ClientBrokerAddr: "0.0.0.0:1003",
+			CoordBrokerAddr: "0.0.0.0:0003"},
 	}, resp)
 
 	close(respMsg2)

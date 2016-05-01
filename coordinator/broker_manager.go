@@ -250,6 +250,7 @@ func (bm *BrokerManagerImpl) HandlePubClientRemapping(msg *common.BrokerRequestM
 	return &common.BrokerAssignmentMessage{
 		BrokerInfo: common.BrokerInfo{
 			BrokerID:         newBroker.BrokerID,
+			CoordBrokerAddr:  newBroker.CoordBrokerAddr,
 			ClientBrokerAddr: newBroker.ClientBrokerAddr,
 		},
 	}, nil

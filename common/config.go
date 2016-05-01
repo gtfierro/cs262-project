@@ -40,6 +40,7 @@ type CoordinatorConfig struct {
 	Port              int
 	Global            bool
 	HeartbeatInterval int    // seconds
+	CoordinatorCount  int    // number of coordinators total
 	EtcdAddresses     string // comma-separated list
 }
 

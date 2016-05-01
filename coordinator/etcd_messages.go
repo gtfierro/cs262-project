@@ -10,6 +10,7 @@ const BrokerEntity = "broker"
 const ClientEntity = "client"
 const PublisherEntity = "publisher"
 
+const GCPrefix = "gc"
 const LogPrefix = "log"
 const GeneralSuffix = "general"
 const RcvdSuffix = "/rcvd"

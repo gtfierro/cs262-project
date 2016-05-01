@@ -15,7 +15,6 @@ const LeaderKey = "leader"
 type LeaderService struct {
 	isLeader          bool
 	leaderChangeRev   int64
-	coordAddr         string
 	leaderLease       etcdc.LeaseID
 	leaderLock        sync.RWMutex
 	leaderWaitChans   []chan bool
@@ -23,10 +22,9 @@ type LeaderService struct {
 	etcdConn          *EtcdConnection
 }
 
-func NewLeaderService(etcdConn *EtcdConnection, coordAddr string, timeout time.Duration) *LeaderService {
+func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration) *LeaderService {
 	cs := new(LeaderService)
 	cs.etcdConn = etcdConn
-	cs.coordAddr = coordAddr
 	cs.leaderChangeRev = -1
 	cs.leaderWaitChans = []chan bool{}
 	cs.unleaderWaitChans = []chan bool{}
@@ -93,7 +91,7 @@ func (cs *LeaderService) AttemptToBecomeLeader() (bool, error) {
 		log.WithField("error", err).Error("Error while attempting to get a lease for a leader key!")
 		return false, err
 	}
-	putKeyOp := etcdc.OpPut(LeaderKey, cs.coordAddr, etcdc.WithLease(leaseResp.ID))
+	putKeyOp := etcdc.OpPut(LeaderKey, "", etcdc.WithLease(leaseResp.ID))
 	getKeyOp := etcdc.OpGet(LeaderKey)
 	txnResp, err := txn.If(cmp).Then(putKeyOp).Else(getKeyOp).Commit()
 	if err != nil {

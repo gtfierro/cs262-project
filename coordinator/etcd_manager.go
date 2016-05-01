@@ -6,11 +6,15 @@ import (
 	etcdc "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/mvcc/mvccpb"
 	"github.com/gtfierro/cs262-project/common"
+	gouuid "github.com/nu7hatch/gouuid"
 	"golang.org/x/net/context"
+	"math"
 	"strings"
 	"sync"
 	"time"
 )
+
+const GCFrequency = 500
 
 type EtcdConnection struct {
 	client  *etcdc.Client
@@ -45,6 +49,8 @@ type EtcdManagerImpl struct {
 	highestKeyWritten string
 	highKeyLock       sync.Mutex
 	maxKeysPerRequest int64
+	gcNodeKey         string
+	coordCount        int
 }
 
 type LogHandler func(common.Sendable, bool)
@@ -72,11 +78,17 @@ func NewEtcdConnection(endpoints []string) *EtcdConnection {
 	return ec
 }
 
-func NewEtcdManager(etcdConn *EtcdConnection, leaderService *LeaderService, timeout time.Duration, maxKeysPerRequest int64) EtcdManager {
+func NewEtcdManager(etcdConn *EtcdConnection, leaderService *LeaderService, coordCount int, timeout time.Duration, maxKeysPerRequest int64) EtcdManager {
 	em := new(EtcdManagerImpl)
 	em.maxKeysPerRequest = maxKeysPerRequest
 	em.conn = etcdConn
 	em.leaderService = leaderService
+	uuid, err := gouuid.NewV4()
+	if err != nil {
+		log.WithField("error", err).Error("Error while creating UUID")
+	}
+	em.gcNodeKey = fmt.Sprintf("%v/%v", GCPrefix, uuid.String())
+	em.coordCount = coordCount
 
 	em.logHandlers = make(map[string]LogHandler)
 	em.handlerCond = sync.NewCond(&em.handlerLock)
@@ -168,10 +180,6 @@ func (em *EtcdManagerImpl) WriteToLog(idOrGeneral string, isSend bool, msg commo
 // Does not return until cancellation - feeds messages into registered handlers
 // starts watching AFTER max(startKey, highestKeyWritten)
 func (em *EtcdManagerImpl) WatchLog(startKey string) (lastKey string) {
-	// TODO also need to GC the log here: (also compaction!)
-	//   every so often when reading, write to some node within the prefix
-	//   what key you've read up to. also read the other replica's last read key.
-	//  then you can delete everything up to the lower of the two
 	var (
 		handler func(common.Sendable, bool)
 		found   bool
@@ -182,6 +190,7 @@ func (em *EtcdManagerImpl) WatchLog(startKey string) (lastKey string) {
 		lastKey = em.highestKeyWritten + "a"
 	}
 	watchChan := em.WatchFromKey(lastKey)
+	messagesSinceLastGC := 0
 Loop:
 	for {
 		select {
@@ -232,10 +241,55 @@ Loop:
 				}
 				em.handlerLock.RUnlock()
 				handler(msg, isSent)
+				messagesSinceLastGC += 1
+				if messagesSinceLastGC > GCFrequency {
+					messagesSinceLastGC = 0
+					go func(endKey string) {
+						em.gcLogUpTo(endKey)
+					}(lastKey)
+				}
 			}
 		}
 	}
 	return
+}
+
+func (em *EtcdManagerImpl) gcLogUpTo(endKey string) {
+	// write to gc with current key - "gc/unique_key"
+	// get all of the values in gc, delete up to the earliest one
+	_, err := em.conn.kv.Put(em.conn.GetCtx(), em.gcNodeKey, endKey)
+	if err != nil {
+		log.WithField("error", err).Error("Error while attempting to write gc progress")
+	}
+	getResp, err := em.conn.kv.Get(em.conn.GetCtx(), GCPrefix+"/", etcdc.WithPrefix())
+	if err != nil {
+		log.WithField("error", err).Error("Error while attempting to get gc progress")
+	}
+	if len(getResp.Kvs) < em.coordCount {
+		return // Can't GC yet; some coordinators haven't written progress
+	}
+	minKey := ""
+	minRev := int64(math.MaxInt64)
+	for _, gcNode := range getResp.Kvs {
+		if minKey == "" || string(gcNode.Value) < minKey {
+			minKey = string(gcNode.Value)
+		}
+		if gcNode.ModRevision < minRev {
+			minRev = gcNode.ModRevision
+		}
+	}
+	delResp, err := em.conn.kv.Delete(em.conn.GetCtx(), LogPrefix, etcdc.WithRange(minKey))
+	if err != nil {
+		log.WithField("error", err).Error("Error while attempting to delete for GC!")
+	}
+	log.WithFields(log.Fields{
+		"entriesCleared": delResp.Deleted, "minKey": minKey,
+	}).Info("Log GC complete")
+	err = em.conn.client.Compact(em.conn.GetCtx(), minRev)
+	log.WithField("minRev", minRev).Info("Compacting up to minRev")
+	if err != nil {
+		log.WithField("error", err).Error("Error while attempting to perform compaction")
+	}
 }
 
 //func (em *EtcdManagerImpl) CancelWatch() {

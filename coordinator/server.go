@@ -12,6 +12,7 @@ import (
 )
 
 type Server struct {
+	addrString    string
 	address       *net.TCPAddr
 	listener      *net.TCPListener
 	metadata      *common.MetadataStore
@@ -34,18 +35,17 @@ type Server struct {
 
 func NewServer(config *common.Config) *Server {
 	var (
-		address string
-		err     error
-		s       = &Server{}
+		err error
+		s   = &Server{}
 	)
 	if config.Coordinator.Global {
-		address = fmt.Sprintf("0.0.0.0:%d", config.Coordinator.Port)
+		s.addrString = fmt.Sprintf("0.0.0.0:%d", config.Coordinator.Port)
 	} else {
-		address = fmt.Sprintf(":%d", config.Coordinator.Port)
+		s.addrString = fmt.Sprintf(":%d", config.Coordinator.Port)
 	}
 
 	// parse the config into an address
-	s.address, err = net.ResolveTCPAddr("tcp", address)
+	s.address, err = net.ResolveTCPAddr("tcp", s.addrString)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"port": config.Coordinator.Port, "global": config.Coordinator.Global, "error": err.Error(),
@@ -69,8 +69,8 @@ func NewServer(config *common.Config) *Server {
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
 
 	s.etcdConn = NewEtcdConnection(strings.Split(config.Coordinator.EtcdAddresses, ","))
-	s.leaderService = NewLeaderService(s.etcdConn, address, 5*time.Second)
-	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, 5*time.Second, 1000)
+	s.leaderService = NewLeaderService(s.etcdConn, 5*time.Second)
+	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, config.Coordinator.CoordinatorCount, 5*time.Second, 1000)
 	s.brokerManager = NewBrokerManager(s.etcdManager, s.heartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
 	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.etcdManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)

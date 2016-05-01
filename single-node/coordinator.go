@@ -144,7 +144,6 @@ func (c *Coordinator) handleStateMachine() {
 			c.ack(m.GetID())
 		case *common.CancelForwardRequest:
 			c.broker.RemoveForwardingEntry(m)
-			c.requests.GotMessage(m)
 			c.ack(m.GetID())
 		case *common.AcknowledgeMessage:
 			c.requests.GotMessage(m)

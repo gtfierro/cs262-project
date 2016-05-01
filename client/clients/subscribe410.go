@@ -14,10 +14,16 @@ func init() {
 }
 
 func main() {
+	var id string
+	if len(os.Args) > 1 {
+		id = os.Args[1]
+	} else {
+		id = "client"
+	}
 	config := &client.Config{
 		BrokerAddress:      "0.0.0.0:4444",
 		CoordinatorAddress: "0.0.0.0:5505",
-		ID:                 client.UUIDFromName("C"),
+		ID:                 client.UUIDFromName(id),
 	}
 	C, err := client.NewClient(config)
 	if err != nil {

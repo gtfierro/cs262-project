@@ -15,9 +15,9 @@ type sendableQueue struct {
 	sync.RWMutex
 }
 
-func newSendableQueue(size int) *sendableQueue {
+func newSendableQueue() *sendableQueue {
 	return &sendableQueue{
-		q:           make([]common.Sendable, size),
+		q:           []common.Sendable{},
 		c:           make(chan common.Sendable),
 		stop:        make(chan bool),
 		replayIndex: 0,
@@ -31,21 +31,30 @@ func (q *sendableQueue) append(msg common.Sendable) {
 	q.Unlock()
 }
 
+// return true if there is stuff in the queue
+func (q *sendableQueue) hasReplayValue() bool {
+	q.RLock()
+	defer q.RUnlock()
+	return len(q.q) > 0
+}
+
 func (q *sendableQueue) startReplay() chan common.Sendable {
-	go func() {
+	c := make(chan common.Sendable)
+	go func(c chan common.Sendable) {
 		// for each message in the queue
 		q.RLock()
 		for index, msg := range q.q {
 			select {
-			case q.c <- msg:
+			case c <- msg:
 			case <-q.stop:
 				break
 			}
 			q.replayIndex = index
 		}
+		close(c)
 		q.RUnlock()
-	}()
-	return q.c
+	}(c)
+	return c
 }
 
 func (q *sendableQueue) stopReplay() {

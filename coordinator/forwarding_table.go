@@ -594,6 +594,7 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 
 	newPublishRoutes := make(map[common.UUID]map[common.UUID][]common.UUID) // SourceBrokerID -> DestBrokerID -> PublisherID (all map to fq)
 
+	//FIXME: fq is null here when we restart the coordinator
 	for publisherID, _ := range fq.MatchingProducers {
 		publishBrokerID := ft.publisherMap[publisherID].CurrentBrokerID
 		if publishBrokerID == UNASSIGNED {
@@ -732,6 +733,7 @@ func (ft *ForwardingTable) getOrEvaluateQuery(queryStr string) *ForwardedQuery {
 		for _, key := range query.Keys {
 			if potentialQueries, found := ft.keyMap[key]; found {
 				potentialQueries.addQuery(fq)
+				ft.keyMap[key] = potentialQueries
 			} else {
 				ft.keyMap[key] = &queryList{queries: []*ForwardedQuery{fq}, nonnilInArray: 1}
 			}

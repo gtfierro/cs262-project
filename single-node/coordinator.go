@@ -39,7 +39,7 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 		retryTime:          1,
 		retryTimeMax:       60,
 		requests:           newOutstandingManager(),
-		queue:              newSendableQueue(100),
+		queue:              newSendableQueue(),
 		clientside_address: fmt.Sprintf("%s:%d", config.Host, config.Port),
 		brokerID:           config.BrokerID,
 	}
@@ -53,10 +53,6 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 	}
 	// Dial a connection to the Coordinator server
 	c.rebuildConnection()
-	// send a heartbeat as well
-	c.sendHeartbeat()
-	// before we send, we want to setup the ping/pong service
-	go c.handleStateMachine()
 	go c.startBeating()
 
 	return c
@@ -65,7 +61,6 @@ func ConnectCoordinator(config common.ServerConfig, s *Server) *Coordinator {
 func (c *Coordinator) rebuildConnection() {
 	var err error
 	c.sendL.Lock()
-	defer c.sendL.Unlock()
 
 	c.conn, err = net.DialTCP("tcp", nil, c.address)
 	for err != nil {
@@ -82,6 +77,7 @@ func (c *Coordinator) rebuildConnection() {
 		// Dial a connection to the Coordinator server
 		c.conn, err = net.DialTCP("tcp", nil, c.address)
 	}
+	c.sendL.Unlock()
 	// if we were successful, reset the wait timer
 	c.retryTime = 1
 	c.encoder = msgp.NewWriter(c.conn)
@@ -100,12 +96,19 @@ func (c *Coordinator) rebuildConnection() {
 	// do the actual sending
 	c.encoder.Flush()
 
+	// send a heartbeat as well
+	c.sendHeartbeat()
+	// before we send, we want to setup the ping/pong service
+	go c.handleStateMachine()
+
 	//TODO: does this actually work as expected?
 	// do replay
-	//c.queue.startReplay()
-	//for msg := range c.queue.c {
-	//	c.send(msg)
-	//}
+	if c.queue.hasReplayValue() {
+		replay := c.queue.startReplay()
+		for msg := range replay {
+			c.send(msg)
+		}
+	}
 }
 
 // This method handles the bookkeeping messages from the coordinator server
@@ -174,7 +177,7 @@ func (c *Coordinator) send(m common.Sendable) {
 			"error": err, "coordinator": c.address, "message": m,
 		}).Error("Could not send message to coordinator")
 		// buffer!
-		//c.queue.append(m)
+		c.queue.append(m)
 	}
 }
 

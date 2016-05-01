@@ -460,8 +460,10 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 	}
 	// Determine which forwarding routes must be cancelled
 	for publisherID, _ := range oldPublishers {
-		publisherBrokerID := ft.publisherMap[*publisherID].CurrentBrokerID
-		addPublishRouteToMap(cancelForwardRoutes, &publisherBrokerID, &client.CurrentBrokerID, publisherID)
+		if publisher, found := ft.publisherMap[*publisherID]; found {
+			publisherBrokerID := publisher.CurrentBrokerID
+			addPublishRouteToMap(cancelForwardRoutes, &publisherBrokerID, &client.CurrentBrokerID, publisherID)
+		}
 	}
 	ft.publisherLock.RUnlock()
 	ft.queryPubLock.Unlock()
@@ -596,7 +598,11 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 
 	//FIXME: fq is null here when we restart the coordinator
 	for publisherID, _ := range fq.MatchingProducers {
-		publishBrokerID := ft.publisherMap[publisherID].CurrentBrokerID
+		var publishBrokerID common.UUID
+		publishBroker, found := ft.publisherMap[publisherID]
+		if found && publishBroker != nil {
+			publishBrokerID = publishBroker.CurrentBrokerID
+		}
 		if publishBrokerID == UNASSIGNED {
 			// this publisher isn't currently active
 			continue

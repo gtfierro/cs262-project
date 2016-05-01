@@ -155,6 +155,9 @@ func (c *Coordinator) handleStateMachine() {
 		case *common.ClientTerminationRequest:
 			c.broker.killClients(m)
 			c.ack(m.GetID())
+		case *common.PublisherTerminationRequest:
+			c.broker.killPublishers(m)
+			c.ack(m.GetID())
 		case common.Message:
 			log.Infof("Got a %T message %v", m, m)
 			c.requests.GotMessage(m)

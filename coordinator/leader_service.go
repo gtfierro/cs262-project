@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	etcdc "github.com/coreos/etcd/clientv3"
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
@@ -20,14 +21,16 @@ type LeaderService struct {
 	leaderWaitChans   []chan bool
 	unleaderWaitChans []chan bool
 	etcdConn          *EtcdConnection
+	ipswitcher        IPSwitcher
 }
 
-func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration) *LeaderService {
+func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration, ipswitcher IPSwitcher) *LeaderService {
 	cs := new(LeaderService)
 	cs.etcdConn = etcdConn
 	cs.leaderChangeRev = -1
 	cs.leaderWaitChans = []chan bool{}
 	cs.unleaderWaitChans = []chan bool{}
+	cs.ipswitcher = ipswitcher
 	return cs
 }
 
@@ -53,6 +56,20 @@ func (cs *LeaderService) MaintainLeaderLease() {
 	for {
 		// If we're not a leader, just wait... nothing to be done here
 		<-cs.WaitForLeadership()
+
+		// Acquire the IP
+		cs.leaderLock.RLock()
+		thinkIAmLeader := cs.isLeader
+		cs.leaderLock.RLock()
+
+		if thinkIAmLeader {
+			err := cs.ipswitcher.AcquireIP()
+			if err != nil {
+				log.WithField("Error", err).Error("Could not acquire IP!")
+			} else {
+				log.Info("Successfully got IP!")
+			}
+		}
 
 		select {
 		case <-cs.WaitForNonleadership():

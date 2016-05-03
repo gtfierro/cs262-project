@@ -121,6 +121,13 @@ func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
 			"broker": bc.BrokerID, "heartbeatInterval": bc.heartbeatInterval,
 		}).Debug("About to sleep while waiting for a heartbeat from broker")
 		select {
+		case <-done:
+			return
+		case <-bc.terminating:
+			return
+		default: // continue on
+		}
+		select {
 		case <-bc.clock.After(nextHeartbeat.Sub(lastHeartbeat)):
 			elapsed := bc.clock.Now().Sub(lastHeartbeat)
 			if elapsed >= 3*bc.heartbeatInterval { // determine that it's dead

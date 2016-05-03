@@ -155,8 +155,10 @@ func (s *Server) monitorLog(startKey string) {
 		// If we're a leader, just wait... nothing to be done here
 		select {
 		case <-s.stop:
-			return
 		case <-s.leaderService.WaitForNonleadership():
+		}
+		if common.IsChanClosed(s.stop) {
+			return
 		}
 
 		endKey = s.etcdManager.WatchLog(endKey)
@@ -170,8 +172,10 @@ func (s *Server) monitorGeneralConnections() {
 		// If we're a leader, just wait... nothing to be done here
 		select {
 		case <-s.stop:
-			return
 		case <-s.leaderService.WaitForNonleadership():
+		}
+		if common.IsChanClosed(s.stop) {
+			return
 		}
 
 		commConn := NewReplicaCommConn(s.etcdManager, s.leaderService, GeneralSuffix, s.heartbeatInterval)

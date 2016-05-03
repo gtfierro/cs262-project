@@ -14,7 +14,7 @@ func (sl *clientList) addClient(sub *Client) {
 	sl.Lock()
 	defer sl.Unlock()
 	for _, oldSub := range sl.List {
-		if oldSub.ID == sub.ID {
+		if oldSub != nil && oldSub.ID == sub.ID {
 			return
 		}
 	}

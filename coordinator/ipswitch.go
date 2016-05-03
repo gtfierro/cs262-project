@@ -36,7 +36,7 @@ func NewAWSIPSwitcher(iid, region, ipaddr string) (*AWSIPSwitcher, error) {
 	}
 	// need to grab the allocation reference for the given elastic IP
 	describeAddressesParams := &ec2.DescribeAddressesInput{
-		Filters: []*ec2.Filter{&ec2.Filter{Name: aws.String("public-ip"), Values: []*string{aws.String("54.153.45.89")}}},
+		Filters: []*ec2.Filter{&ec2.Filter{Name: aws.String("public-ip"), Values: []*string{aws.String(ipaddr)}}},
 	}
 	addresses, err := ip.ec2.DescribeAddresses(describeAddressesParams)
 	if err != nil {
@@ -50,8 +50,24 @@ func NewAWSIPSwitcher(iid, region, ipaddr string) (*AWSIPSwitcher, error) {
 }
 
 func (ip *AWSIPSwitcher) AcquireIP() error {
+	// need to grab the allocation reference for the given elastic IP
+	describeAddressesParams := &ec2.DescribeAddressesInput{
+		Filters: []*ec2.Filter{&ec2.Filter{Name: aws.String("public-ip"), Values: []*string{aws.String(ip.ipaddr)}}},
+	}
+	addresses, err := ip.ec2.DescribeAddresses(describeAddressesParams)
+	if err != nil {
+		return err
+	}
+	address := addresses.Addresses[0]
+	associd := address.AssociationId
+
 	disassocParams := &ec2.DisassociateAddressInput{
-		AssociationId: ip.associd,
+		AssociationId: associd,
+	}
+
+	// these are not equal if we lost control
+	if associd != ip.associd {
+		ip.ec2.DisassociateAddress(disassocParams)
 	}
 
 	assocParams := &ec2.AssociateAddressInput{
@@ -60,9 +76,8 @@ func (ip *AWSIPSwitcher) AcquireIP() error {
 		InstanceId:         aws.String(ip.iid),
 		AllowReassociation: aws.Bool(true),
 	}
-	ip.ec2.DisassociateAddress(disassocParams)
 
-	_, err := ip.ec2.AssociateAddress(assocParams)
+	_, err = ip.ec2.AssociateAddress(assocParams)
 	if err != nil {
 		return err
 	}

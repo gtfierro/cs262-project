@@ -59,7 +59,7 @@ func (cs *LeaderService) MaintainLeaderLease() {
 		// Acquire the IP
 		cs.leaderLock.RLock()
 		thinkIAmLeader := cs.isLeader
-		cs.leaderLock.RLock()
+		cs.leaderLock.RUnlock()
 
 		if thinkIAmLeader {
 			err := cs.ipswitcher.AcquireIP()

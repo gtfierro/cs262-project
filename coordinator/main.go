@@ -2,14 +2,9 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	log "github.com/Sirupsen/logrus"
-	"github.com/coreos/etcd/clientv3"
-	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
-	"github.com/coreos/etcd/etcdserver/etcdserverpb"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/pkg/profile"
-	"golang.org/x/net/context"
 	"os"
 	"runtime/trace"
 	"time"
@@ -61,10 +56,5 @@ func main() {
 	}
 
 	server := NewServer(config)
-	logStartKey := server.rebuildIfNecessary()
-	go server.handleLeadership()
-	go server.handleBrokerMessages()
-	go server.monitorLog(logStartKey)
-	go server.monitorGeneralConnections()
-	server.listenAndDispatch()
+	server.Run()
 }

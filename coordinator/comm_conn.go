@@ -61,6 +61,7 @@ func NewReplicaCommConn(etcdMgr EtcdManager, leaderService *LeaderService,
 	rcc.messageBuffer = make(chan common.Sendable, 20)
 	rcc.pendingMessageBuffer = make(map[common.MessageIDType]common.SendableWithID)
 	rcc.heartbeatChan = make(chan bool)
+	rcc.closeChan = make(chan bool, 1)
 
 	go func() {
 		<-leaderService.WaitForLeadership()
@@ -90,7 +91,7 @@ func (rcc *ReplicaCommConn) logHandler(msg common.Sendable, isSend bool) {
 		switch m := msg.(type) {
 		case *common.LeaderChangeMessage:
 			rcc.leaderStatusLock.RLock()
-			if rcc.leaderStatusChanged {
+			if rcc.leaderStatusChanged && !common.IsChanClosed(rcc.closeChan) {
 				close(rcc.closeChan)
 			}
 			rcc.leaderStatusLock.RUnlock()
@@ -122,6 +123,9 @@ func (rcc *ReplicaCommConn) ReceiveMessage() (msg common.Sendable, err error) {
 	for {
 		select {
 		case msg := <-rcc.messageBuffer:
+			log.WithFields(log.Fields{
+				"message": msg, "messageType": common.GetMessageType(msg),
+			}).Debug("Receiving message on replica")
 			return msg, nil
 		case <-rcc.closeChan:
 			return nil, io.EOF
@@ -145,7 +149,7 @@ func (rcc *ReplicaCommConn) Send(msg common.Sendable) error {
 }
 
 func (rcc *ReplicaCommConn) Close() {
-	if rcc.closeChan != nil {
+	if !common.IsChanClosed(rcc.closeChan) {
 		close(rcc.closeChan)
 	}
 	rcc.etcdManager.UnregisterLogHandler(rcc.idOrGeneral)
@@ -182,6 +186,10 @@ func (lcc *LeaderCommConn) ReceiveMessage() (msg common.Sendable, err error) {
 	if err != nil {
 		log.WithField("error", err).Error("Error receiving message!")
 		return
+	} else {
+		log.WithFields(log.Fields{
+			"msg": msg, "messageType": common.GetMessageType(msg),
+		}).Debug("Received message on leader")
 	}
 	if ack, ok := msg.(*common.AcknowledgeMessage); ok {
 		// We store ACKs in the send log so it's easier to see which messages were acked
@@ -206,7 +214,7 @@ func (lcc *LeaderCommConn) Send(msg common.Sendable) error {
 	if err := lcc.writer.Flush(); err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "message": msg,
-		}).Error("Error sending message!")
+		}).Warn("Error sending message!")
 		return err
 	}
 	if _, ok := msg.(*common.AcknowledgeMessage); ok {

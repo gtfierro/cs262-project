@@ -22,11 +22,11 @@ type ForwardingTable struct {
 	clientMap  map[common.UUID]*Client
 
 	// map of publisher ids to queries
-	pubQueryLock sync.RWMutex
+	pubQueryLock sync.Mutex
 	pubQueryMap  map[common.UUID]*queryList
 
 	// map of queries to publisher ids
-	queryPubLock sync.RWMutex
+	queryPubLock sync.Mutex
 	queryPubMap  map[*ForwardedQuery]map[*common.UUID]struct{}
 
 	// index of publishers
@@ -64,7 +64,7 @@ func (fq *ForwardedQuery) addClient(client *Client, brokerID *common.UUID) (exis
 	defer fq.Unlock()
 	if clientList, existingBroker = fq.CurrentBrokerIDs[*brokerID]; !existingBroker {
 		log.WithFields(log.Fields{
-			"clientID": client.ClientID, "query": client.QueryString, "brokerID": brokerID,
+			"clientID": client.ClientID, "query": client.QueryString, "brokerID": *brokerID,
 		}).Debug("Not yet forwarding to this broker for this query; creating new subscribe list")
 		clientList = list.New()
 		fq.CurrentBrokerIDs[*brokerID] = clientList
@@ -212,6 +212,7 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 	// assigned to the wrong broker and ask that broker to terminate the connection
 	// Also, any publishers or clients which did not yet get assigned a new broker should
 	// be automatically reactivated
+	log.WithField("liveID", *liveID).Info("Handling a broker coming alive")
 	ft.clientLock.Lock()
 	brokerClientMap := make(map[common.UUID][]common.UUID)
 	for _, client := range ft.clientMap {
@@ -239,14 +240,15 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 	ft.clientLock.Unlock()
 	ft.publisherLock.Lock()
 	brokerPublisherMap := make(map[common.UUID][]common.UUID)
+	publishersToCancel := []*common.UUID{}
 	for _, publisher := range ft.publisherMap {
 		if publisher.HomeBrokerID == *liveID {
 			if publisher.CurrentBrokerID == UNASSIGNED {
 				publisher.CurrentBrokerID = publisher.HomeBrokerID
 				candidateQueries := ft.gatherCandidateQueries(&publisher.PublisherID, publisher.Metadata)
-				ft.reevaluateQueries(candidateQueries, false)
+				ft.reevaluateQueries(candidateQueries, false, true)
 			} else {
-				ft.CancelPublisherForwarding(publisher.PublisherID) // cancel old routes
+				publishersToCancel = append(publishersToCancel, &publisher.PublisherID)
 				if ids, found := brokerPublisherMap[publisher.CurrentBrokerID]; found {
 					brokerPublisherMap[publisher.CurrentBrokerID] = append(ids, publisher.PublisherID)
 				} else {
@@ -258,6 +260,9 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 		}
 	}
 	ft.publisherLock.Unlock()
+	for _, pubID := range publishersToCancel {
+		ft.CancelPublisherForwarding(*pubID) // cancel old routes
+	}
 	for brokerID, clients := range brokerClientMap {
 		ft.brokerManager.SendToBroker(brokerID, &common.ClientTerminationRequest{
 			MessageIDStruct: common.GetMessageIDStruct(),
@@ -328,8 +333,9 @@ func (ft *ForwardingTable) HandleSubscription(queryStr string, clientID common.U
 
 	// Respond with SubscriptionDiff
 	respMsg := &common.BrokerSubscriptionDiffMessage{
-		DelPublishers: emptyList,
-		Query:         queryStr,
+		MessageIDStruct: common.GetMessageIDStruct(),
+		DelPublishers:   emptyList,
+		Query:           queryStr,
 	}
 	respMsg.FromProducerState(fq.MatchingProducers)
 
@@ -341,7 +347,7 @@ func (ft *ForwardingTable) activateClient(client *Client, fq *ForwardedQuery, br
 	// Creating forwarding routes as necessary
 	existingBroker := fq.addClient(client, brokerID)
 	if !existingBroker {
-		ft.addForwardingRoutes(fq, brokerID)
+		ft.addForwardingRoutes(fq, brokerID, false)
 	}
 }
 
@@ -402,7 +408,7 @@ func (ft *ForwardingTable) HandlePublish(publisherID common.UUID, metadata map[s
 	ft.publisherLock.Unlock()
 
 	candidateQueries := ft.gatherCandidateQueries(&publisherID, metadata)
-	ft.reevaluateQueries(candidateQueries, true)
+	ft.reevaluateQueries(candidateQueries, true, false)
 }
 
 // Cancel all forwarding routes relevant to this client
@@ -437,10 +443,12 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 		return
 	}
 
+	ft.pubQueryLock.Lock()
 	ft.queryPubLock.Lock()
 	if oldPublishers, found = ft.queryPubMap[fq]; !found {
 		log.WithField("query", fq.QueryString).Info("No existing publishers found for query while removing it")
 		ft.queryPubLock.Unlock()
+		ft.pubQueryLock.Unlock()
 		return // nothing to be done
 	}
 	if remainingBrokers == 0 {
@@ -450,19 +458,17 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 	cancelForwardRoutes := make(map[common.UUID]map[common.UUID][]common.UUID)
 	ft.publisherLock.RLock()
 	if remainingBrokers == 0 {
-		ft.pubQueryLock.Lock()
 		for publisherID, _ := range oldPublishers {
 			if queries, found := ft.pubQueryMap[*publisherID]; found {
 				queries.removeQuery(fq)
 			}
 		}
-		ft.pubQueryLock.Unlock()
 	}
+	ft.pubQueryLock.Unlock()
 	// Determine which forwarding routes must be cancelled
 	for publisherID, _ := range oldPublishers {
-		if publisher, found := ft.publisherMap[*publisherID]; found {
-			publisherBrokerID := publisher.CurrentBrokerID
-			addPublishRouteToMap(cancelForwardRoutes, &publisherBrokerID, &client.CurrentBrokerID, publisherID)
+		if publisher, found := ft.publisherMap[*publisherID]; found && publisher.CurrentBrokerID != UNASSIGNED {
+			addPublishRouteToMap(cancelForwardRoutes, &publisher.CurrentBrokerID, &client.CurrentBrokerID, publisherID)
 		}
 	}
 	ft.publisherLock.RUnlock()
@@ -518,9 +524,10 @@ func (ft *ForwardingTable) CancelPublisherForwarding(publisherID common.UUID) {
 			delete(query.MatchingProducers, publisherID)
 			for brokerID, _ := range query.CurrentBrokerIDs {
 				ft.brokerManager.SendToBroker(brokerID, &common.BrokerSubscriptionDiffMessage{
-					NewPublishers: emptyList,
-					DelPublishers: []common.UUID{publisherID},
-					Query:         query.QueryString,
+					MessageIDStruct: common.GetMessageIDStruct(),
+					NewPublishers:   emptyList,
+					DelPublishers:   []common.UUID{publisherID},
+					Query:           query.QueryString,
 				})
 			}
 			query.Unlock()
@@ -570,9 +577,10 @@ func (ft *ForwardingTable) SendSubscriptionDiffs(query *ForwardedQuery, added, r
 	query.RLock()
 	for brokerID, _ := range query.CurrentBrokerIDs {
 		msg := &common.BrokerSubscriptionDiffMessage{
-			NewPublishers: added,
-			DelPublishers: removed,
-			Query:         query.QueryString,
+			MessageIDStruct: common.GetMessageIDStruct(),
+			NewPublishers:   added,
+			DelPublishers:   removed,
+			Query:           query.QueryString,
 		}
 		ft.brokerManager.SendToBroker(brokerID, msg)
 	}
@@ -583,16 +591,15 @@ func (ft *ForwardingTable) SendSubscriptionDiffs(query *ForwardedQuery, added, r
 // Does not remove old publishing routes!
 // If brokerID is not nil, treats brokerID as newly introduced (i.e., not yet forwarding)
 // for this query
-func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *common.UUID) {
+func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *common.UUID, pubLockHeld bool) {
 	log.WithFields(log.Fields{
 		"query": fq.QueryString, "MatchingProducers": fq.MatchingProducers,
 	}).Debug("Adding forward routes for query with matching producers")
 	ft.pubQueryLock.Lock()
-	defer ft.pubQueryLock.Unlock()
 	ft.queryPubLock.Lock()
-	defer ft.queryPubLock.Unlock()
-	ft.publisherLock.RLock()
-	defer ft.publisherLock.RUnlock()
+	if !pubLockHeld {
+		ft.publisherLock.RLock()
+	}
 
 	newPublishRoutes := make(map[common.UUID]map[common.UUID][]common.UUID) // SourceBrokerID -> DestBrokerID -> PublisherID (all map to fq)
 
@@ -605,6 +612,9 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 		}
 		if publishBrokerID == UNASSIGNED {
 			// this publisher isn't currently active
+			log.WithFields(log.Fields{
+				"publisherID": publisherID, "query": fq.QueryString,
+			}).Info("Not creating a forwarding route because publisherBrokerID is unassigned")
 			continue
 		}
 		if forwardedQueries, found := ft.pubQueryMap[publisherID]; found {
@@ -642,6 +652,11 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 			addPublishRouteToMap(newPublishRoutes, &publishBrokerID, &destBroker, &publisherID)
 		}
 	}
+	ft.pubQueryLock.Unlock()
+	ft.queryPubLock.Unlock()
+	if !pubLockHeld {
+		ft.publisherLock.RUnlock()
+	}
 	//log.Debugf("forwarding table %v", ft.forwarding)
 	logtmp := log.WithField("query", fq.QueryString)
 	if newBrokerID != nil {
@@ -656,7 +671,7 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 	}
 }
 
-func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []common.UUID) {
+func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []common.UUID, hasPubLock bool) {
 	var (
 		queries *queryList
 		found   bool
@@ -667,7 +682,9 @@ func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []
 	cancelPublishRoutes := make(map[common.UUID]map[common.UUID][]common.UUID) // SourceBrokerID -> DestBrokerID -> PublisherIDs
 	ft.pubQueryLock.Lock()
 	ft.queryPubLock.Lock()
-	ft.publisherLock.RLock()
+	if !hasPubLock {
+		ft.publisherLock.RLock()
+	}
 	for _, rm_uuid := range removed {
 		if queries, found = ft.pubQueryMap[rm_uuid]; !found {
 			continue // no subscribers for this uuid
@@ -695,7 +712,9 @@ func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []
 			fq.RUnlock()
 		}
 	}
-	ft.publisherLock.RUnlock()
+	if !hasPubLock {
+		ft.publisherLock.RUnlock()
+	}
 	ft.queryPubLock.Unlock()
 	ft.pubQueryLock.Unlock()
 	if len(cancelPublishRoutes) == 0 {
@@ -775,14 +794,15 @@ func (ft *ForwardingTable) gatherCandidateQueries(publisherID *common.UUID, meta
 	return candidateQueries
 }
 
-func (ft *ForwardingTable) reevaluateQueries(candidateQueries map[*ForwardedQuery]struct{}, sendDiffs bool) {
+// hasPubLock should be true if the goroutine calling this already has the publisherLock read lock held
+func (ft *ForwardingTable) reevaluateQueries(candidateQueries map[*ForwardedQuery]struct{}, sendDiffs bool, hasPubLock bool) {
 	for query, _ := range candidateQueries {
 		added, removed := ft.metadata.Reevaluate(&query.Query)
 		log.WithFields(log.Fields{
 			"query": query.QueryString, "added": added, "removed": removed,
 		}).Info("Reevaluated query")
-		ft.addForwardingRoutes(query, nil)
-		ft.cancelForwardingRoutes(query, removed)
+		ft.addForwardingRoutes(query, nil, hasPubLock)
+		ft.cancelForwardingRoutes(query, removed, hasPubLock)
 		if sendDiffs {
 			ft.SendSubscriptionDiffs(query, added, removed)
 		}

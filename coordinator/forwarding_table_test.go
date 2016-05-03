@@ -18,6 +18,26 @@ var expectedDiffMinusOne = &common.BrokerSubscriptionDiffMessage{
 	NewPublishers: []common.UUID{}, DelPublishers: []common.UUID{"pub0"}, Query: queryStr,
 }
 
+func getBrokerDiffMatcher(expectedDiff *common.BrokerSubscriptionDiffMessage) interface{} {
+	return func(msg *common.BrokerSubscriptionDiffMessage) bool {
+		if len(msg.NewPublishers) != len(expectedDiff.NewPublishers) ||
+			len(msg.DelPublishers) != len(expectedDiff.DelPublishers) {
+			return false
+		}
+		for idx, pub := range msg.NewPublishers {
+			if expectedDiff.NewPublishers[idx] != pub {
+				return false
+			}
+		}
+		for idx, pub := range msg.DelPublishers {
+			if expectedDiff.DelPublishers[idx] != pub {
+				return false
+			}
+		}
+		return msg.Query == expectedDiff.Query
+	}
+}
+
 var metadata = make(map[string]interface{})
 var metadata2 = make(map[string]interface{})
 var pub0id = common.UUID("pub0")
@@ -43,7 +63,7 @@ func TestSingleSubscription(t *testing.T) {
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffBlank).Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Return(nil)
 
 	ft := NewForwardingTable(mongo, bm, new(DummyEtcdManager), nil, nil, nil)
 	ft.HandleSubscription(queryStr, "42", "brokerid0", nil)
@@ -60,8 +80,8 @@ func TestSingleSubscribeSingleMatchingPublisher(t *testing.T) {
 	defer mongo.DropDatabase()
 
 	metadata["Building"] = "Soda"
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffBlank).Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffPlusOne).Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Return(nil)
 	bm.On("GetBrokerInfo", common.UUID("brokerid0")).Return(&broker0Info)
 	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker0Info && msg.Query == queryStr &&
@@ -84,10 +104,10 @@ func TestSingleQueryMultipleSubscribe(t *testing.T) {
 	defer mongo.DropDatabase()
 
 	metadata["Building"] = "Soda"
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffBlank).Twice().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffBlank).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffPlusOne).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffPlusOne).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Twice().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
 	bm.On("GetBrokerInfo", common.UUID("brokerid0")).Return(&broker0Info)
 	bm.On("GetBrokerInfo", common.UUID("brokerid1")).Return(&broker1Info)
 	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
@@ -118,12 +138,12 @@ func TestSingleQueryMultipleSubscribeMetadataChange(t *testing.T) {
 	mongo := common.NewMetadataStore(config)
 	defer mongo.DropDatabase()
 
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffBlank).Twice().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffBlank).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffPlusOne).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffPlusOne).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffMinusOne).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffMinusOne).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Twice().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffMinusOne))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffMinusOne))).Once().Return(nil)
 	bm.On("GetBrokerInfo", common.UUID("brokerid0")).Return(&broker0Info)
 	bm.On("GetBrokerInfo", common.UUID("brokerid1")).Return(&broker1Info)
 	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
@@ -170,14 +190,14 @@ func TestPublisherDeath(t *testing.T) {
 		Query: queryStr + " and Foo != 'Bar'",
 	}
 
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffPlusOne).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
 	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub0id
 	})).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffMinusOne).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid0"), expectedDiffBlank).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid2"), expectedDiffBlankNewQuery).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffMinusOne))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid2"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlankNewQuery))).Once().Return(nil)
 	bm.On("GetBrokerInfo", common.UUID("brokerid1")).Return(&broker1Info)
 
 	ft := NewForwardingTable(mongo, bm, new(DummyEtcdManager), nil, nil, nil)
@@ -204,10 +224,10 @@ func TestSubscriberDeathSharedQuery(t *testing.T) {
 		Query: queryStr,
 	}
 
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffBlank).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid2"), expectedDiffBlank).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffPlusOne).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid2"), expectedDiffPlusOne).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid2"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid2"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
 	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub0id
@@ -220,7 +240,7 @@ func TestSubscriberDeathSharedQuery(t *testing.T) {
 		return msg.BrokerInfo == broker1Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub0id
 	})).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid2"), expectedDiffPub1).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid2"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPub1))).Once().Return(nil)
 	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker2Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub1id
@@ -254,13 +274,13 @@ func TestSubscriberDeathSharedQuerySharedBroker(t *testing.T) {
 		Query: queryStr,
 	}
 
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffBlank).Twice().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffPlusOne).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Twice().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
 	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub0id
 	})).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffPub1).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPub1))).Once().Return(nil)
 	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub1id
@@ -294,9 +314,9 @@ func TestSingleSubscriberQueryDeath(t *testing.T) {
 		Query: "Building = 'Cory'",
 	}
 
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffBlank).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffBadQuery).Once().Return(nil)
-	bm.On("SendToBroker", common.UUID("brokerid1"), expectedDiffPlusOne).Twice().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlank))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBadQuery))).Once().Return(nil)
+	bm.On("SendToBroker", common.UUID("brokerid1"), mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Twice().Return(nil)
 	bm.On("SendToBroker", common.UUID("brokerid0"), mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub0id
@@ -353,29 +373,29 @@ func TestBrokerFailureFailover(t *testing.T) {
 	bm.On("GetBrokerInfo", bid1).Return(&broker1Info)
 	bm.On("GetBrokerInfo", bid0).Return(&broker0Info)
 	// initial setup
-	bm.On("SendToBroker", bid0, expectedDiffPlusOne).Once().Return(nil)
+	bm.On("SendToBroker", bid0, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
 	bm.On("SendToBroker", bid1, mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker0Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub0id
 	})).Once().Return(nil)
-	bm.On("SendToBroker", bid0, expectedDiffBlankNewQuery).Once().Return(nil)
-	bm.On("SendToBroker", bid1, expectedDiffPlusOne).Once().Return(nil)
+	bm.On("SendToBroker", bid0, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffBlankNewQuery))).Once().Return(nil)
+	bm.On("SendToBroker", bid1, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOne))).Once().Return(nil)
 	bm.On("SendToBroker", bid1, mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == queryStr &&
 			msg.PublisherList[0] == pub0id
 	})).Once().Return(nil)
-	bm.On("SendToBroker", bid0, expectedDiffPlusOneNewQuery).Once().Return(nil)
+	bm.On("SendToBroker", bid0, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOneNewQuery))).Once().Return(nil)
 	bm.On("SendToBroker", bid0, mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker0Info && msg.Query == newQuery &&
 			msg.PublisherList[0] == pub1id
 	})).Once().Return(nil)
-	bm.On("SendToBroker", bid1, expectedDiffPlusOneNewQuery).Once().Return(nil)
+	bm.On("SendToBroker", bid1, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOneNewQuery))).Once().Return(nil)
 	bm.On("SendToBroker", bid0, mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == newQuery &&
 			msg.PublisherList[0] == pub1id
 	})).Once().Return(nil)
 	// Then death, cancel forward routes
-	bm.On("SendToBroker", bid1, expectedDiffMinusOneNewQuery).Once().Return(nil)
+	bm.On("SendToBroker", bid1, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffMinusOneNewQuery))).Once().Return(nil)
 	bm.On("SendToBroker", bid0, mock.MatchedBy(func(msg *common.CancelForwardRequest) bool {
 		return msg.BrokerInfo == broker0Info && msg.Query == newQuery &&
 			msg.PublisherList[0] == pub1id
@@ -385,13 +405,13 @@ func TestBrokerFailureFailover(t *testing.T) {
 			msg.PublisherList[0] == pub0id
 	})).Once().Return(nil)
 	// pub1 and c1 connect to brokerid1; c0 doesn't
-	bm.On("SendToBroker", bid1, expectedDiffPlusOneNewQuery).Twice().Return(nil)
+	bm.On("SendToBroker", bid1, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOneNewQuery))).Twice().Return(nil)
 	bm.On("SendToBroker", bid1, mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == newQuery &&
 			msg.PublisherList[0] == pub1id
 	})).Once().Return(nil)
 	// brokerid0 comes alive again, cancel old forwarding, set up new forwarding for c0
-	bm.On("SendToBroker", bid1, expectedDiffMinusOneNewQuery).Once().Return(nil)
+	bm.On("SendToBroker", bid1, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffMinusOneNewQuery))).Once().Return(nil)
 	bm.On("SendToBroker", bid1, mock.MatchedBy(func(msg *common.ClientTerminationRequest) bool {
 		return msg.ClientIDs[0] == cid1
 	})).Once().Return(nil)
@@ -403,12 +423,12 @@ func TestBrokerFailureFailover(t *testing.T) {
 			msg.PublisherList[0] == pub0id
 	})).Once().Return(nil)
 	// set up new forwarding for c1 and pub1
-	bm.On("SendToBroker", bid1, expectedDiffPlusOneNewQuery).Once().Return(nil)
+	bm.On("SendToBroker", bid1, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOneNewQuery))).Once().Return(nil)
 	bm.On("SendToBroker", bid0, mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker1Info && msg.Query == newQuery &&
 			msg.PublisherList[0] == pub1id
 	})).Once().Return(nil)
-	bm.On("SendToBroker", bid0, expectedDiffPlusOneNewQuery).Once().Return(nil)
+	bm.On("SendToBroker", bid0, mock.MatchedBy(getBrokerDiffMatcher(expectedDiffPlusOneNewQuery))).Once().Return(nil)
 	bm.On("SendToBroker", bid0, mock.MatchedBy(func(msg *common.ForwardRequestMessage) bool {
 		return msg.BrokerInfo == broker0Info && msg.Query == newQuery &&
 			msg.PublisherList[0] == pub1id

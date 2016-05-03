@@ -6,6 +6,7 @@ import (
 	"github.com/coreos/etcd/etcdserver/api/v3rpc/rpctypes"
 	"github.com/coreos/etcd/etcdserver/etcdserverpb"
 	"github.com/coreos/etcd/mvcc/mvccpb"
+	"github.com/gtfierro/cs262-project/common"
 	"sync"
 	"time"
 )
@@ -20,6 +21,8 @@ type LeaderService struct {
 	leaderWaitChans   []chan bool
 	unleaderWaitChans []chan bool
 	etcdConn          *EtcdConnection
+	stop              chan bool
+	waitGroup         sync.WaitGroup
 }
 
 func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration) *LeaderService {
@@ -28,15 +31,26 @@ func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration) *LeaderSe
 	cs.leaderChangeRev = -1
 	cs.leaderWaitChans = []chan bool{}
 	cs.unleaderWaitChans = []chan bool{}
+	cs.stop = make(chan bool, 1)
 	return cs
 }
 
 // Doesn't return. Watches for a lack of a leader and if so
 // attempts to become the new leader
 func (cs *LeaderService) WatchForLeadershipChange() {
+	cs.waitGroup.Add(1)
+	defer cs.waitGroup.Done()
+	var watchResp etcdc.WatchResponse
 	watchChan := cs.etcdConn.watcher.Watch(cs.etcdConn.GetCtx(), LeaderKey)
 	for {
-		watchResp := <-watchChan
+		select {
+		case <-cs.stop:
+			return
+		case watchResp = <-watchChan:
+		}
+		if common.IsChanClosed(cs.stop) {
+			return
+		}
 		if watchResp.Canceled {
 			watchChan = cs.etcdConn.watcher.Watch(cs.etcdConn.GetCtx(), LeaderKey)
 		}
@@ -48,20 +62,55 @@ func (cs *LeaderService) WatchForLeadershipChange() {
 	}
 }
 
+func (cs *LeaderService) CancelWatch() {
+	cs.leaderLock.Lock()
+	defer cs.leaderLock.Unlock()
+	for _, waitChan := range cs.unleaderWaitChans {
+		close(waitChan)
+	}
+	for _, waitChan := range cs.leaderWaitChans {
+		close(waitChan)
+	}
+	close(cs.stop)
+	cs.waitGroup.Wait()
+}
+
 // Maintain the leadership lease; doesn't return
 func (cs *LeaderService) MaintainLeaderLease() {
+	var waitChan chan bool
+	cs.waitGroup.Add(1)
+	defer cs.waitGroup.Done()
 	for {
 		// If we're not a leader, just wait... nothing to be done here
-		<-cs.WaitForLeadership()
+		waitChan = cs.WaitForLeadership()
+		select {
+		case <-cs.stop:
+			return
+		case <-waitChan:
+			if common.IsChanClosed(cs.stop) {
+				return
+			}
+		}
+		waitChan = cs.WaitForNonleadership()
 
 		select {
-		case <-cs.WaitForNonleadership():
-			continue
+		case <-cs.stop:
+			return
+		case <-waitChan:
+			if common.IsChanClosed(cs.stop) {
+				return
+			} else {
+				continue
+			}
 		case <-time.After(3 * time.Second): // to maintain lease
+			if common.IsChanClosed(cs.stop) {
+				return
+			}
 			cs.leaderLock.RLock()
 			_, err := cs.etcdConn.client.KeepAliveOnce(cs.etcdConn.GetCtx(), cs.leaderLease)
 			cs.leaderLock.RUnlock()
 			if err == rpctypes.ErrLeaseNotFound {
+				log.Info("Lost leadership! Lease expired.")
 				// Lost our lease; we are no longer the leader
 				cs.AttemptToBecomeLeader()
 			} else if err != nil {
@@ -109,6 +158,7 @@ func (cs *LeaderService) AttemptToBecomeLeader() (bool, error) {
 			cs.leaderLock.Unlock()
 		}
 	}
+	log.WithField("isLeader", isLeader).Info("Attempted to become leader")
 	cs.SetLeader(isLeader, changeRev)
 	return isLeader, nil
 }
@@ -145,7 +195,7 @@ func (cs *LeaderService) WaitForLeadership() chan bool {
 	// can block indefinitely and deadlock -- GTF
 	c := make(chan bool, 1)
 	if cs.isLeader {
-		c <- true
+		close(c)
 		return c
 	} else {
 		cs.leaderWaitChans = append(cs.leaderWaitChans, c)

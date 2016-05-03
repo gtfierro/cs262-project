@@ -5,9 +5,9 @@ import (
 	log "github.com/Sirupsen/logrus"
 	etcdc "github.com/coreos/etcd/clientv3"
 	"github.com/gtfierro/cs262-project/common"
-	"io"
 	"net"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -29,8 +29,9 @@ type Server struct {
 	brokerLiveChan     chan *common.UUID
 	brokerReassignChan chan *BrokerReassignment
 
-	stop    chan bool
-	stopped bool
+	waitGroup sync.WaitGroup
+	stop      chan bool
+	stopped   bool
 }
 
 func NewServer(config *common.Config) *Server {
@@ -75,23 +76,44 @@ func NewServer(config *common.Config) *Server {
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
 	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.etcdManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
 	go s.fwdTable.monitorInboundChannels()
-	s.stop = make(chan bool)
+	s.stop = make(chan bool, 1)
 	s.stopped = false
 
 	return s
+}
+
+func (s *Server) Shutdown() {
+	close(s.stop)
+	s.listener.Close()
+	s.etcdManager.CancelWatch()
+	s.leaderService.CancelWatch()
+	s.waitGroup.Wait()
+	s.stopped = true
+}
+
+// Starts the necessary goroutines and then listens; does not return
+func (s *Server) Run() {
+	logStartKey := s.rebuildIfNecessary()
+	go s.handleLeadership()
+	go s.handleBrokerMessages()
+	go s.monitorLog(logStartKey)
+	go s.monitorGeneralConnections()
+	s.listenAndDispatch()
 }
 
 // Check the log: if there is more than one entry (the initial leader entry),
 // then start the rebuild process
 // Returns the key at which the log should start being monitored
 func (s *Server) rebuildIfNecessary() string {
+	s.metadata.DropDatabase() // Clear out DB; it's transient and only for running queries
 	opts := append(etcdc.WithLastRev(), etcdc.WithLimit(2))
-	getResp, err := s.etcdConn.kv.Get(s.etcdConn.GetCtx(), LogPrefix, opts...)
+	getResp, err := s.etcdConn.kv.Get(s.etcdConn.GetCtx(), LogPrefix+"/", opts...)
 	if err != nil {
 		log.WithField("error", err).Fatal("Error contacting etcd")
 	}
-	if len(getResp.Kvs) <= 1 {
-		return LogPrefix
+	log.WithField("logEntries", len(getResp.Kvs)).Info("Found this many log entries")
+	if len(getResp.Kvs) <= 100 {
+		return LogPrefix + "/"
 	}
 	logRev := getResp.Kvs[0].ModRevision
 	logKey := string(getResp.Kvs[0].Key)
@@ -102,11 +124,11 @@ func (s *Server) rebuildIfNecessary() string {
 
 // Doesn't return
 func (s *Server) handleLeadership() {
-	leader, err := s.leaderService.AttemptToBecomeLeader()
+	s.waitGroup.Add(1)
+	defer s.waitGroup.Done()
+	_, err := s.leaderService.AttemptToBecomeLeader()
 	if err != nil {
 		log.WithField("error", err).Error("Error while attempting to become the initial leader")
-	} else {
-		log.WithField("leaderStatus", leader).Info("Attempted to become initial leader")
 	}
 	go s.leaderService.WatchForLeadershipChange()
 	s.leaderService.MaintainLeaderLease()
@@ -114,23 +136,38 @@ func (s *Server) handleLeadership() {
 
 // Won't return
 func (s *Server) monitorLog(startKey string) {
+	s.waitGroup.Add(1)
+	defer s.waitGroup.Done()
 	endKey := startKey
 	for {
 		// If we're a leader, just wait... nothing to be done here
-		<-s.leaderService.WaitForNonleadership()
+		select {
+		case <-s.stop:
+			return
+		case <-s.leaderService.WaitForNonleadership():
+		}
 
 		endKey = s.etcdManager.WatchLog(endKey)
 	}
 }
 
 func (s *Server) monitorGeneralConnections() {
+	s.waitGroup.Add(1)
+	defer s.waitGroup.Done()
 	for {
 		// If we're a leader, just wait... nothing to be done here
-		<-s.leaderService.WaitForNonleadership()
+		select {
+		case <-s.stop:
+			return
+		case <-s.leaderService.WaitForNonleadership():
+		}
 
 		commConn := NewReplicaCommConn(s.etcdManager, s.leaderService, GeneralSuffix, s.heartbeatInterval)
 		go func() {
-			<-s.leaderService.WaitForLeadership()
+			select {
+			case <-s.stop:
+			case <-s.leaderService.WaitForLeadership():
+			}
 			commConn.Close()
 		}()
 		// Now we're definitely not a leader, set up a watch for the leader's events
@@ -138,7 +175,7 @@ func (s *Server) monitorGeneralConnections() {
 			msg, err := commConn.ReceiveMessage()
 			if err == nil {
 				go s.dispatch(NewSingleEventCommConn(commConn, msg), LogPrefix+"/"+GeneralSuffix)
-			} else if err == io.EOF {
+			} else {
 				break // continue outer loop since we're no longer leader
 			}
 		}
@@ -176,6 +213,9 @@ func (s *Server) dispatch(commConn CommConn, address string) {
 		commConn.Close()
 		return
 	}
+	log.WithFields(log.Fields{
+		"msg": msg, "messageType": common.GetMessageType(msg), "address": address,
+	}).Info("Received a message")
 	switch m := msg.(type) {
 	case *common.BrokerConnectMessage:
 		err = s.brokerManager.ConnectBroker(&m.BrokerInfo, commConn.GetBrokerConn(m.BrokerID))
@@ -202,8 +242,15 @@ func (s *Server) dispatch(commConn CommConn, address string) {
 }
 
 func (s *Server) handleBrokerMessages() {
+	s.waitGroup.Add(1)
+	defer s.waitGroup.Done()
 	for {
-		go s.handleMessage(<-s.messageBuffer)
+		select {
+		case <-s.stop:
+			return
+		case msg := <-s.messageBuffer:
+			go s.handleMessage(msg)
+		}
 	}
 }
 
@@ -212,6 +259,8 @@ func (s *Server) listenAndDispatch() {
 		conn *net.TCPConn
 		err  error
 	)
+	s.waitGroup.Add(1)
+	defer s.waitGroup.Done()
 	log.WithFields(log.Fields{
 		"address": s.address,
 	}).Info("Coordinator listening for requests!")
@@ -220,16 +269,21 @@ func (s *Server) listenAndDispatch() {
 	for {
 		conn, err = s.listener.AcceptTCP()
 		if err != nil {
-			//if s.closed {
-			//	return // exit
-			//}
-			log.WithFields(log.Fields{
-				"error": err.Error(),
-			}).Error("Error accepting connection")
+			select {
+			case <-s.stop:
+				return
+			default:
+				log.WithFields(log.Fields{
+					"error": err.Error(),
+				}).Error("Error accepting connection")
+				continue
+			}
 		}
 		if !s.leaderService.IsLeader() {
+			log.WithField("address", conn.RemoteAddr()).Info("Rejecting inbound connection because leadership is not held")
 			conn.Close() // Reject connections when not the leader
 		} else {
+			log.WithField("address", conn.RemoteAddr()).Info("Accepting inbound connection on leader")
 			commConn := NewLeaderCommConn(s.etcdManager, s.leaderService, GeneralSuffix, conn)
 			go s.dispatch(commConn, fmt.Sprintf("%v", conn.RemoteAddr()))
 		}

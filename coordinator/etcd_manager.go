@@ -33,7 +33,7 @@ type EtcdManager interface {
 	DeleteEntity(entity EtcdSerializable) error
 	WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error
 	WatchLog(startKey string) string
-	//CancelWatch()
+	CancelWatch()
 	IterateOverAllEntities(entityType string, upToRev int64, processor func(EtcdSerializable)) error
 	RegisterLogHandler(idOrGeneral string, handler LogHandler)
 	UnregisterLogHandler(idOrGeneral string)
@@ -146,8 +146,9 @@ func (em *EtcdManagerImpl) DeleteEntity(entity EtcdSerializable) error {
 	return err
 }
 
-func (em *EtcdManagerImpl) WatchFromKey(startKey string) etcdc.WatchChan {
-	return em.conn.watcher.Watch(em.conn.GetCtx(), startKey, etcdc.WithFromKey())
+func (em *EtcdManagerImpl) WatchFromKey(prefix, startKey string) etcdc.WatchChan {
+	return em.conn.watcher.Watch(em.conn.GetCtx(), startKey,
+		etcdc.WithRange(prefix+"/ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"))
 }
 
 func (em *EtcdManagerImpl) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
@@ -168,6 +169,10 @@ func (em *EtcdManagerImpl) WriteToLog(idOrGeneral string, isSend bool, msg commo
 		log.WithFields(log.Fields{
 			"error": err, "suffix": suffix, "message": msg,
 		}).Error("Error while storing into log")
+	} else {
+		log.WithFields(log.Fields{
+			"message": msg, "messageType": common.GetMessageType(msg), "suffix": suffix, "key": newKey,
+		}).Debug("Writing message to log")
 	}
 	em.highKeyLock.Lock()
 	if newKey > em.highestKeyWritten {
@@ -181,15 +186,19 @@ func (em *EtcdManagerImpl) WriteToLog(idOrGeneral string, isSend bool, msg commo
 // starts watching AFTER max(startKey, highestKeyWritten)
 func (em *EtcdManagerImpl) WatchLog(startKey string) (lastKey string) {
 	var (
-		handler func(common.Sendable, bool)
-		found   bool
+		handler   func(common.Sendable, bool)
+		found     bool
+		watchResp etcdc.WatchResponse
 	)
 	if startKey > em.highestKeyWritten {
-		lastKey = startKey + "a"
+		lastKey = startKey + "0"
 	} else {
-		lastKey = em.highestKeyWritten + "a"
+		lastKey = em.highestKeyWritten + "0"
 	}
-	watchChan := em.WatchFromKey(lastKey)
+	log.WithFields(log.Fields{
+		"startKey": startKey, "lastKey": lastKey, "highestKeyWritten": em.highestKeyWritten,
+	}).Info("Starting a watch for the log at lastKey")
+	watchChan := em.WatchFromKey(LogPrefix, lastKey)
 	messagesSinceLastGC := 0
 Loop:
 	for {
@@ -199,17 +208,20 @@ Loop:
 			em.logHandlers = make(map[string]LogHandler)
 			em.handlerLock.Unlock()
 			return
-		case watchResp := <-watchChan:
+		case watchResp = <-watchChan:
 			if watchResp.Canceled {
 				// Restart the watch
-				watchChan = em.WatchFromKey(lastKey)
+				watchChan = em.WatchFromKey(LogPrefix, lastKey)
 				continue Loop
 			}
 		EventLoop:
 			for _, event := range watchResp.Events {
+				if event.Type == mvccpb.DELETE {
+					continue EventLoop // no need to worry about this
+				}
 				if event.Type != mvccpb.PUT || !event.IsCreate() {
 					log.WithFields(log.Fields{
-						"eventType": event.Type, "key": event.Kv.Key,
+						"eventType": event.Type, "key": string(event.Kv.Key),
 					}).Warn("Non put+create event found in the general receive log!")
 					continue EventLoop
 				}
@@ -221,7 +233,7 @@ Loop:
 					continue EventLoop
 				}
 				if newKey := string(event.Kv.Key); newKey > lastKey {
-					lastKey = newKey + "a"
+					lastKey = newKey + "0"
 				}
 				if _, ok := msg.(*common.LeaderChangeMessage); ok {
 					em.handlerLock.RLock()
@@ -240,6 +252,9 @@ Loop:
 					em.handlerCond.Wait()
 				}
 				em.handlerLock.RUnlock()
+				log.WithFields(log.Fields{
+					"message": msg, "isSent": isSent, "logKey": string(event.Kv.Key), "messageType": common.GetMessageType(msg),
+				}).Debug("Found message in shared log")
 				handler(msg, isSent)
 				messagesSinceLastGC += 1
 				if messagesSinceLastGC > GCFrequency {
@@ -292,9 +307,9 @@ func (em *EtcdManagerImpl) gcLogUpTo(endKey string) {
 	}
 }
 
-//func (em *EtcdManagerImpl) CancelWatch() {
-//	em.cancelWatchChan <- true
-//}
+func (em *EtcdManagerImpl) CancelWatch() {
+	em.cancelWatchChan <- true
+}
 
 func (em *EtcdManagerImpl) RegisterLogHandler(idOrGeneral string, handler LogHandler) {
 	em.handlerLock.Lock()

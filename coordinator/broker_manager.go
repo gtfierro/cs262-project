@@ -19,7 +19,7 @@ type BrokerManager interface {
 	GetLiveBroker() *Broker
 	TerminateBroker(brokerID common.UUID)
 	SendToBroker(brokerID common.UUID, message common.Sendable) (err error)
-	BroadcastToBrokers(message common.Sendable)
+	BroadcastToBrokers(message common.Sendable, skipBrokerID *common.UUID)
 	HandlePubClientRemapping(msg *common.BrokerRequestMessage) (*common.BrokerAssignmentMessage, error)
 	RebuildFromEtcd(upToRev int64) (err error)
 }
@@ -198,14 +198,19 @@ func (bm *BrokerManagerImpl) SendToBroker(brokerID common.UUID, message common.S
 // Asynchronously send a message to all currently living brokers
 // Automatically adjusts the MessageID of the messages to be distinct
 // if the message contains it
-func (bm *BrokerManagerImpl) BroadcastToBrokers(message common.Sendable) {
+// if skipBrokerID is non-nil, skips a broker with that ID
+func (bm *BrokerManagerImpl) BroadcastToBrokers(message common.Sendable, skipBrokerID *common.UUID) {
 	bm.mapLock.RLock()
 	defer bm.mapLock.RUnlock()
 	switch msg := message.(type) {
 	case common.SendableWithID:
-		for _, brokerConn := range bm.brokerMap {
-			msg.SetID(common.GetMessageID())
-			brokerConn.Send(msg)
+		for id, brokerConn := range bm.brokerMap {
+			if skipBrokerID != nil && *skipBrokerID != id {
+				// To set the ID to be different we have to make copies of the object
+				m := msg.Copy()
+				m.SetID(common.GetMessageID())
+				brokerConn.Send(m)
+			}
 		}
 	case common.Sendable:
 		for _, brokerConn := range bm.brokerMap {
@@ -288,7 +293,7 @@ func (bm *BrokerManagerImpl) monitorDeathChan() {
 		bm.queueLock.Unlock()
 
 		bm.BrokerDeathChan <- &deadBroker.BrokerID // Forward on to outward death chan
-		bm.BroadcastToBrokers(&common.BrokerDeathMessage{BrokerInfo: deadBroker.BrokerInfo})
+		bm.BroadcastToBrokers(&common.BrokerDeathMessage{BrokerInfo: deadBroker.BrokerInfo}, &deadBroker.BrokerID)
 	}
 }
 

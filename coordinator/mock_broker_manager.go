@@ -9,9 +9,9 @@ type MockBrokerManager struct {
 	mock.Mock
 }
 
-// BroadcastToBrokers provides a mock function with given fields: message
-func (_m *MockBrokerManager) BroadcastToBrokers(message common.Sendable) {
-	_m.Called(message)
+// BroadcastToBrokers provides a mock function with given fields: message, skipBrokerID
+func (_m *MockBrokerManager) BroadcastToBrokers(message common.Sendable, skipBrokerID *common.UUID) {
+	_m.Called(message, skipBrokerID)
 }
 
 // ConnectBroker provides a mock function with given fields: brokerInfo, commConn

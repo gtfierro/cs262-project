@@ -39,6 +39,7 @@ type SendableWithID interface {
 	Marshal() (o []byte, err error)
 	GetID() MessageIDType
 	SetID(MessageIDType)
+	Copy() SendableWithID
 }
 
 type MessageIDType uint32
@@ -219,6 +220,15 @@ type ForwardRequestMessage struct {
 	Query string
 }
 
+func (m *ForwardRequestMessage) Copy() SendableWithID {
+	return &ForwardRequestMessage{
+		MessageIDStruct: m.MessageIDStruct,
+		PublisherList:   m.PublisherList,
+		BrokerInfo:      m.BrokerInfo,
+		Query:           m.Query,
+	}
+}
+
 /////////////////////////////////////////////////////
 /***************** Sent by COORDINATOR *****************/
 /////////////////////////////////////////////////////
@@ -238,6 +248,15 @@ type CancelForwardRequest struct {
 	BrokerInfo
 }
 
+func (m *CancelForwardRequest) Copy() SendableWithID {
+	return &CancelForwardRequest{
+		MessageIDStruct: m.MessageIDStruct,
+		PublisherList:   m.PublisherList,
+		Query:           m.Query,
+		BrokerInfo:      m.BrokerInfo,
+	}
+}
+
 /***** BrokerSubscriptionDiff Message *****/
 
 // Analogous to SubscriptionDiffMessage, but used for internal comm., i.e. when
@@ -247,6 +266,15 @@ type BrokerSubscriptionDiffMessage struct {
 	NewPublishers []UUID
 	DelPublishers []UUID
 	Query         string
+}
+
+func (m *BrokerSubscriptionDiffMessage) Copy() SendableWithID {
+	return &BrokerSubscriptionDiffMessage{
+		MessageIDStruct: m.MessageIDStruct,
+		NewPublishers:   m.NewPublishers,
+		DelPublishers:   m.DelPublishers,
+		Query:           m.Query,
+	}
 }
 
 func (m *BrokerSubscriptionDiffMessage) FromProducerState(state map[UUID]ProducerState) {
@@ -277,6 +305,13 @@ type BrokerDeathMessage struct {
 	BrokerInfo
 }
 
+func (m *BrokerDeathMessage) Copy() SendableWithID {
+	return &BrokerDeathMessage{
+		MessageIDStruct: m.MessageIDStruct,
+		BrokerInfo:      m.BrokerInfo,
+	}
+}
+
 /***** ClientTerminationRequest *****/
 // Sent from coordinator -> broker when coordinator wants the broker to break the
 // connection with a specific client (i.e., when the broker is a
@@ -287,6 +322,13 @@ type ClientTerminationRequest struct {
 	ClientIDs []UUID
 }
 
+func (m *ClientTerminationRequest) Copy() SendableWithID {
+	return &ClientTerminationRequest{
+		MessageIDStruct: m.MessageIDStruct,
+		ClientIDs:       m.ClientIDs,
+	}
+}
+
 /***** PublisherTerminationRequest *****/
 // Sent from coordinator -> broker when coordinator wants the broker to break the
 // connection with a specific publisher (i.e., when the broker is a
@@ -294,6 +336,13 @@ type ClientTerminationRequest struct {
 type PublisherTerminationRequest struct {
 	MessageIDStruct
 	PublisherIDs []UUID
+}
+
+func (m *PublisherTerminationRequest) Copy() SendableWithID {
+	return &PublisherTerminationRequest{
+		MessageIDStruct: m.MessageIDStruct,
+		PublisherIDs:    m.PublisherIDs,
+	}
 }
 
 /***** RequestHeartbeatMessage *****/
@@ -322,6 +371,15 @@ type BrokerPublishMessage struct {
 	L        sync.RWMutex `msg:"-"`
 }
 
+func (m *BrokerPublishMessage) Copy() SendableWithID {
+	return &BrokerPublishMessage{
+		MessageIDStruct: m.MessageIDStruct,
+		UUID:            m.UUID,
+		Metadata:        m.Metadata,
+		Value:           m.Value,
+	}
+}
+
 func (m *BrokerPublishMessage) ToRegular() *PublishMessage {
 	pm := new(PublishMessage)
 	pm.FromBroker(m)
@@ -346,6 +404,14 @@ type BrokerQueryMessage struct {
 	UUID  UUID
 }
 
+func (m *BrokerQueryMessage) Copy() SendableWithID {
+	return &BrokerQueryMessage{
+		MessageIDStruct: m.MessageIDStruct,
+		Query:           m.Query,
+		UUID:            m.UUID,
+	}
+}
+
 /***** ClientTermination Message *****/
 
 // Sent from broker -> coordinator when a client connection / subscription is
@@ -354,6 +420,13 @@ type ClientTerminationMessage struct {
 	MessageIDStruct
 	// the client that has left
 	ClientID UUID
+}
+
+func (m *ClientTerminationMessage) Copy() SendableWithID {
+	return &ClientTerminationMessage{
+		MessageIDStruct: m.MessageIDStruct,
+		ClientID:        m.ClientID,
+	}
 }
 
 /****** PublisherTermination Message *****/
@@ -365,6 +438,13 @@ type PublisherTerminationMessage struct {
 	PublisherID UUID
 }
 
+func (m *PublisherTerminationMessage) Copy() SendableWithID {
+	return &PublisherTerminationMessage{
+		MessageIDStruct: m.MessageIDStruct,
+		PublisherID:     m.PublisherID,
+	}
+}
+
 /***** BrokerConnectMessage *****/
 
 // Sent from broker -> Coordinator whenever a broker comes online
@@ -373,11 +453,24 @@ type BrokerConnectMessage struct {
 	BrokerInfo // its own ID and where incoming requests should be routed to
 }
 
+func (m *BrokerConnectMessage) Copy() SendableWithID {
+	return &BrokerConnectMessage{
+		MessageIDStruct: m.MessageIDStruct,
+		BrokerInfo:      m.BrokerInfo,
+	}
+}
+
 /***** BrokerTerminateMessage *****/
 
 // Sent from broker -> coordinator if it is going offline permanently
 type BrokerTerminateMessage struct {
 	MessageIDStruct
+}
+
+func (m *BrokerTerminateMessage) Copy() SendableWithID {
+	return &BrokerTerminateMessage{
+		MessageIDStruct: m.MessageIDStruct,
+	}
 }
 
 /////////////////////////////////

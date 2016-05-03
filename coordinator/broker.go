@@ -4,7 +4,6 @@ import (
 	"container/list"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
-	"io"
 	"sync"
 	"time"
 )
@@ -131,7 +130,7 @@ func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
 				for respChan, _ := range outstandingRespChans {
 					respChan <- false // Broker is dead
 				}
-				close(done)
+				closeIfNotClosed(done)
 			} else if elapsed >= 2*bc.heartbeatInterval && !heartbeatRequested {
 				log.WithFields(log.Fields{
 					"brokerID": bc.BrokerID, "heartbeatInterval": bc.heartbeatInterval, "secSinceResponse": elapsed.Seconds(),
@@ -144,7 +143,7 @@ func (bc *Broker) monitorHeartbeats(done chan bool, wg *sync.WaitGroup) {
 				for respChan, _ := range outstandingRespChans {
 					respChan <- false // Broker is dead
 				}
-				close(done)
+				closeIfNotClosed(done)
 			}
 		case respChan := <-bc.requestHeartbeatBuffer:
 			// TODO maybe ignore it and just return true on the channel if it's only been
@@ -218,15 +217,12 @@ func (bc *Broker) receiveLoop(commConn CommConn, done chan bool, loopFinished ch
 				go bc.messageHandler(&MessageFromBroker{msg, bc})
 			}
 		} else {
-			if err == io.EOF {
-				close(done)
-				log.WithField("brokerID", bc.BrokerID).Warn("No longer receiving messages from broker; EOF reached")
-				return // connection closed
-			}
+			closeIfNotClosed(done)
+			commConn.Close()
 			log.WithFields(log.Fields{
 				"brokerID": bc.BrokerID, "error": err,
-			}).Warn("Error while reading message from broker")
-			bc.clock.Sleep(time.Second) // wait before retry
+			}).Warn("No longer receiving messages from broker; error encountered")
+			return // connection closed
 		}
 	}
 }
@@ -249,16 +245,11 @@ func (bc *Broker) sendLoop(commConn CommConn, done chan bool, wg *sync.WaitGroup
 				err = commConn.Send(m)
 			}
 			if err != nil {
-				if err == io.EOF {
-					bc.messageSendBuffer <- msg
-					close(done)
-					log.WithField("brokerID", bc.BrokerID).Warn("No longer sending to broker; EOF reached")
-				} else {
-					bc.messageSendBuffer <- msg
-					log.WithFields(log.Fields{
-						"brokerID": bc.BrokerID, "error": err, "message": msg, "messageType": common.GetMessageType(msg),
-					}).Error("Error sending message to broker")
-				}
+				bc.messageSendBuffer <- msg
+				closeIfNotClosed(done)
+				log.WithFields(log.Fields{
+					"brokerID": bc.BrokerID, "error": err,
+				}).Warn("No longer sending to broker; error encountered")
 			}
 		case <-done:
 			log.WithField("brokerID", bc.BrokerID).Warn("Exiting the send loop to broker (death)")
@@ -314,4 +305,15 @@ func (bc *Broker) handleAck(ack *common.AcknowledgeMessage) {
 	bc.outMessageLock.Lock()
 	defer bc.outMessageLock.Unlock()
 	delete(bc.outstandingMessages, ack.MessageID)
+}
+
+func closeIfNotClosed(channel chan bool) {
+	select {
+	case _, ok := <-channel:
+		if ok {
+			close(channel)
+		}
+	default:
+		close(channel)
+	}
 }

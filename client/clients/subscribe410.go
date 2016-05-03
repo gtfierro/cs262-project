@@ -21,7 +21,7 @@ func main() {
 		id = "client"
 	}
 	config := &client.Config{
-		BrokerAddress:      "0.0.0.0:4444",
+		BrokerAddress:      "54.183.51.243:4444",
 		CoordinatorAddress: "cs262.cal-sdb.org:5055",
 		ID:                 client.UUIDFromName(id),
 	}

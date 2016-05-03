@@ -33,6 +33,7 @@ func (ql *queryList) addQuery(q *ForwardedQuery) {
 		ql.queries[ql.nonnilInArray] = q
 		ql.nonnilInArray += 1
 	} else {
+		ql.nonnilInArray += 1
 		ql.queries = append(ql.queries, q)
 	}
 }
@@ -43,6 +44,7 @@ func (ql *queryList) removeQuery(q *ForwardedQuery) {
 	if ql.nonnilInArray == 1 {
 		// last remaining query
 		if ql.queries[0] == q {
+			ql.nonnilInArray = 0
 			ql.queries[0] = nil
 			return
 		}
@@ -60,5 +62,5 @@ func (ql *queryList) removeQuery(q *ForwardedQuery) {
 	}
 	log.WithFields(log.Fields{
 		"query": q, "queryList": ql,
-	}).Fatal("Attempted to remove query from queryList that doesn't contain it")
+	}).Error("Attempted to remove query from queryList that doesn't contain it")
 }

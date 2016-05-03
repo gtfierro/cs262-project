@@ -77,9 +77,13 @@ func (bm *BrokerManagerImpl) ConnectBroker(brokerInfo *common.BrokerInfo, commCo
 	brokerConn, ok := bm.brokerMap[brokerInfo.BrokerID]
 	bm.mapLock.RUnlock()
 	if ok {
-		brokerConn.WaitForCleanup()
+		//brokerConn.WaitForCleanup()
 		bm.queueLock.Lock()
-		brokerConn.RemoveFromList(bm.deadBrokerQueue)
+		if brokerConn.IsAlive() {
+			brokerConn.RemoveFromList(bm.liveBrokerQueue)
+		} else {
+			brokerConn.RemoveFromList(bm.deadBrokerQueue)
+		}
 		bm.queueLock.Unlock()
 	} else {
 		messageHandler := bm.createMessageHandler(brokerInfo.BrokerID)

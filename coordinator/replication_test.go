@@ -186,7 +186,7 @@ func TestReplication(t *testing.T) {
 	(&common.AcknowledgeMessage{MessageID: msg.(common.SendableWithID).GetID()}).Encode(write2a)
 	write2a.Flush()
 
-	for sawAck, sawFwd1, sawFwd2, sawBDM, sawDiffMsg := false, false, false, false, false; sawAck && sawFwd1 && sawFwd2 && sawDiffMsg && sawBDM; {
+	for sawAck, sawFwd1, sawFwd2, sawDiffMsg := false, false, false, false; sawAck && sawFwd1 && sawFwd2 && sawDiffMsg; {
 		msg, _ := common.MessageFromDecoderMsgp(read1a)
 		switch m := msg.(type) {
 		case *common.AcknowledgeMessage:
@@ -207,11 +207,6 @@ func TestReplication(t *testing.T) {
 			}
 			(&common.AcknowledgeMessage{MessageID: m.MessageID}).Encode(write1a)
 			write1a.Flush()
-		case *common.BrokerDeathMessage:
-			assert.Equal(common.UUID("broker2"), m.BrokerID)
-			(&common.AcknowledgeMessage{MessageID: m.MessageID}).Encode(write1a)
-			write1a.Flush()
-			sawBDM = true
 		case *common.CancelForwardRequest:
 			(&common.AcknowledgeMessage{MessageID: m.MessageID}).Encode(write1a)
 			write1a.Flush()

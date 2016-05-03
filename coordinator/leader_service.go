@@ -57,7 +57,10 @@ func (cs *LeaderService) WatchForLeadershipChange() {
 			watchChan = cs.etcdConn.watcher.Watch(cs.etcdConn.GetCtx(), LeaderKey)
 		}
 		for _, event := range watchResp.Events {
-			if event.Type == mvccpb.DELETE { // Currently no leader!
+			if event.Type == mvccpb.DELETE && string(event.Kv.Key) == LeaderKey { // Currently no leader!
+				log.WithFields(log.Fields{
+					"isCreate": event.IsCreate(), "isModify": event.IsModify(), "version": event.Kv.Version,
+				}).Debug("WatchForLeadershipChange detected a deletion event!")
 				cs.AttemptToBecomeLeader()
 			}
 		}

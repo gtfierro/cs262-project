@@ -60,6 +60,9 @@ type Client struct {
 	publishersLock sync.RWMutex
 	publishers     map[common.UUID]*Publisher
 
+	hasDiffHandler bool
+	diffHandler    func(m *common.SubscriptionDiffMessage)
+
 	brokerDead bool
 
 	// client signals on this channel when it is done
@@ -77,6 +80,7 @@ func NewClient(cfg *Config) (*Client, error) {
 		Stop:              make(chan bool),
 		hasPublishHandler: false,
 		publishers:        make(map[common.UUID]*Publisher),
+		hasDiffHandler:    false,
 		brokerDead:        true,
 	}
 	c.BrokerAddress, err = net.ResolveTCPAddr("tcp", cfg.BrokerAddress)
@@ -102,6 +106,11 @@ func NewClient(cfg *Config) (*Client, error) {
 func (c *Client) AttachPublishHandler(f func(m *common.PublishMessage)) {
 	c.hasPublishHandler = true
 	c.publishHandler = f
+}
+
+func (c *Client) AttachDiffHandler(f func(m *common.SubscriptionDiffMessage)) {
+	c.hasDiffHandler = true
+	c.diffHandler = f
 }
 
 // This should be triggered when we can no longer contact our local broker. In this
@@ -227,6 +236,12 @@ func (c *Client) listen() {
 				c.publishHandler(m)
 			} else {
 				log.Infof("Got publish message %v", m)
+			}
+		case *common.SubscriptionDiffMessage:
+			if c.hasDiffHandler {
+				c.diffHandler(m)
+			} else {
+				log.Infof("Got diff message %v", m)
 			}
 		default:
 			log.Infof("Got %T message %v", m, m)

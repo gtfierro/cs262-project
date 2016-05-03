@@ -69,8 +69,20 @@ func NewServer(config *common.Config) *Server {
 	s.brokerReassignChan = make(chan *BrokerReassignment, 500)
 	s.messageBuffer = make(chan *MessageFromBroker, 50)
 
+	var ipswitcher IPSwitcher
+	if config.Coordinator.UseAWSIPSwitcher {
+		ipswitcher, err = NewAWSIPSwitcher(config.Coordinator.InstanceId, config.Coordinator.Region, config.Coordinator.ElasticIP)
+		if err != nil {
+			log.WithFields(log.Fields{
+				"error": err.Error(),
+			}).Fatal("Could not create AWS IP Switcher")
+		}
+	} else {
+		ipswitcher = &DummyIPSwitcher{}
+	}
+
 	s.etcdConn = NewEtcdConnection(strings.Split(config.Coordinator.EtcdAddresses, ","))
-	s.leaderService = NewLeaderService(s.etcdConn, 5*time.Second)
+	s.leaderService = NewLeaderService(s.etcdConn, 5*time.Second, ipswitcher)
 	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, config.Coordinator.CoordinatorCount, 5*time.Second, 1000)
 	s.brokerManager = NewBrokerManager(s.etcdManager, s.heartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))

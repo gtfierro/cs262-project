@@ -23,15 +23,17 @@ type LeaderService struct {
 	etcdConn          *EtcdConnection
 	stop              chan bool
 	waitGroup         sync.WaitGroup
+	ipswitcher        IPSwitcher
 }
 
-func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration) *LeaderService {
+func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration, ipswitcher IPSwitcher) *LeaderService {
 	cs := new(LeaderService)
 	cs.etcdConn = etcdConn
 	cs.leaderChangeRev = -1
 	cs.leaderWaitChans = []chan bool{}
 	cs.unleaderWaitChans = []chan bool{}
 	cs.stop = make(chan bool, 1)
+	cs.ipswitcher = ipswitcher
 	return cs
 }
 
@@ -92,6 +94,20 @@ func (cs *LeaderService) MaintainLeaderLease() {
 			}
 		}
 		waitChan = cs.WaitForNonleadership()
+
+		// Acquire the IP
+		cs.leaderLock.RLock()
+		thinkIAmLeader := cs.isLeader
+		cs.leaderLock.RUnlock()
+
+		if thinkIAmLeader {
+			err := cs.ipswitcher.AcquireIP()
+			if err != nil {
+				log.WithField("Error", err).Error("Could not acquire IP!")
+			} else {
+				log.Info("Successfully got IP!")
+			}
+		}
 
 		select {
 		case <-cs.stop:

@@ -297,6 +297,7 @@ func (s *Server) listenAndDispatch() {
 		}
 		if !s.leaderService.IsLeader() {
 			log.WithField("address", conn.RemoteAddr()).Info("Rejecting inbound connection because leadership is not held")
+			time.Sleep(time.Second)
 			conn.Close() // Reject connections when not the leader
 		} else {
 			log.WithField("address", conn.RemoteAddr()).Info("Accepting inbound connection on leader")

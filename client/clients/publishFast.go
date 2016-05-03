@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/ccding/go-logging/logging"
 	"github.com/gtfierro/cs262-project/client"
 	"os"
@@ -16,13 +17,14 @@ func init() {
 
 func main() {
 	var dur int64
+	brokerIP := os.Args[1]
 	config := &client.Config{
-		BrokerAddress:      "0.0.0.0:4444",
-		CoordinatorAddress: "cs262.cal-sdb.org:5055",
+		BrokerAddress:      fmt.Sprintf("%s:4444", brokerIP),
+		CoordinatorAddress: "cs262.cal-sdb.org:5505",
 		ID:                 client.UUIDFromName("C"),
 	}
-	if len(os.Args) > 1 {
-		dur, _ = strconv.ParseInt(os.Args[1], 10, 64)
+	if len(os.Args) > 2 {
+		dur, _ = strconv.ParseInt(os.Args[2], 10, 64)
 	} else {
 		dur = 1000
 	}

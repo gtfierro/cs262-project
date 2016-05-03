@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/ccding/go-logging/logging"
 	"github.com/gtfierro/cs262-project/client"
 	"github.com/gtfierro/cs262-project/common"
@@ -20,14 +21,15 @@ func main() {
 		numClients int64
 		err        error
 	)
-	if len(os.Args) > 1 {
-		numClients, _ = strconv.ParseInt(os.Args[1], 10, 64)
+	brokerIP := os.Args[1]
+	if len(os.Args) > 2 {
+		numClients, _ = strconv.ParseInt(os.Args[2], 10, 64)
 	} else {
 		numClients = 10
 	}
 	config := &client.Config{
-		BrokerAddress:      "0.0.0.0:4444",
-		CoordinatorAddress: "cs262.cal-sdb.org:5055",
+		BrokerAddress:      fmt.Sprintf("%s:4444", brokerIP),
+		CoordinatorAddress: "cs262.cal-sdb.org:5505",
 	}
 
 	var clients = make([]*client.Client, numClients)

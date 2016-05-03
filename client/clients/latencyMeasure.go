@@ -26,9 +26,10 @@ func init() {
 }
 
 func main() {
+	brokerIP := os.Args[1]
 	config := &client.Config{
-		BrokerAddress:      "0.0.0.0:4444",
-		CoordinatorAddress: "cs262.cal-sdb.org:5055",
+		BrokerAddress:      fmt.Sprintf("%s:4444", brokerIP),
+		CoordinatorAddress: "cs262.cal-sdb.org:5505",
 	}
 
 	var wg sync.WaitGroup

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"github.com/ccding/go-logging/logging"
 	"github.com/gtfierro/cs262-project/client"
 	"os"
@@ -14,9 +15,10 @@ func init() {
 }
 
 func main() {
+	brokerIP := os.Args[1]
 	config := &client.Config{
-		BrokerAddress:      "54.183.51.243:4444",
-		CoordinatorAddress: "cs262.cal-sdb.org:5055",
+		BrokerAddress:      fmt.Sprintf("%s:4444", brokerIP),
+		CoordinatorAddress: "cs262.cal-sdb.org:5505",
 		ID:                 client.UUIDFromName("C"),
 	}
 	C, err := client.NewClient(config)

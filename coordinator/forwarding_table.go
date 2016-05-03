@@ -27,7 +27,7 @@ type ForwardingTable struct {
 
 	// map of queries to publisher ids
 	queryPubLock sync.Mutex
-	queryPubMap  map[*ForwardedQuery]map[*common.UUID]struct{}
+	queryPubMap  map[*ForwardedQuery]map[common.UUID]struct{}
 
 	// index of publishers
 	publisherLock sync.RWMutex
@@ -91,7 +91,7 @@ func NewForwardingTable(metadata *common.MetadataStore, brokerMgr BrokerManager,
 		etcdManager:        etcdMgr,
 		clientMap:          make(map[common.UUID]*Client),
 		pubQueryMap:        make(map[common.UUID]*queryList),
-		queryPubMap:        make(map[*ForwardedQuery]map[*common.UUID]struct{}),
+		queryPubMap:        make(map[*ForwardedQuery]map[common.UUID]struct{}),
 		publisherMap:       make(map[common.UUID]*Publisher),
 		queryMap:           make(map[string]*ForwardedQuery),
 		keyMap:             make(map[string]*queryList),
@@ -141,24 +141,25 @@ func (ft *ForwardingTable) monitorInboundChannels() {
 func (ft *ForwardingTable) HandleBrokerDeath(deadID *common.UUID) {
 	// when a broker dies, mark its publishers/clients as currently inactive
 	log.WithField("brokerID", *deadID).Info("Forwarding table handling the death of broker")
-	ft.clientLock.Lock()
-	for _, client := range ft.clientMap {
-		if client.CurrentBrokerID == *deadID {
-			ft.CancelSubscriberForwarding(client) // clear out forwarding routes for this client
-			client.CurrentBrokerID = UNASSIGNED   // mark as currently homeless
-			ft.etcdManager.UpdateEntity(client)
-		}
-	}
-	ft.clientLock.Unlock()
-	ft.publisherLock.Lock()
-	for _, pub := range ft.publisherMap {
-		if pub.CurrentBrokerID == *deadID {
-			ft.CancelPublisherForwarding(pub.PublisherID)
-			pub.CurrentBrokerID = UNASSIGNED // mark as currently homeless
-			ft.etcdManager.UpdateEntity(pub)
-		}
-	}
-	ft.publisherLock.Unlock()
+	// TODO don't think we want this; we want to cancel the routes once the client *reconnects*
+	//ft.clientLock.Lock()
+	//for _, client := range ft.clientMap {
+	//	if client.CurrentBrokerID == *deadID {
+	//		ft.CancelSubscriberForwarding(client) // clear out forwarding routes for this client
+	//		client.CurrentBrokerID = UNASSIGNED   // mark as currently homeless
+	//		ft.etcdManager.UpdateEntity(client)
+	//	}
+	//}
+	//ft.clientLock.Unlock()
+	//ft.publisherLock.Lock()
+	//for _, pub := range ft.publisherMap {
+	//	if pub.CurrentBrokerID == *deadID {
+	//		ft.CancelPublisherForwarding(pub.PublisherID)
+	//		pub.CurrentBrokerID = UNASSIGNED // mark as currently homeless
+	//		ft.etcdManager.UpdateEntity(pub)
+	//	}
+	//}
+	//ft.publisherLock.Unlock()
 }
 
 func (ft *ForwardingTable) HandleBrokerReassignment(brokerReassign *BrokerReassignment) {
@@ -216,7 +217,7 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 	ft.clientLock.Lock()
 	brokerClientMap := make(map[common.UUID][]common.UUID)
 	for _, client := range ft.clientMap {
-		if client.HomeBrokerID == *liveID {
+		if client.HomeBrokerID == *liveID && client.CurrentBrokerID != *liveID {
 			if client.CurrentBrokerID == UNASSIGNED {
 				client.CurrentBrokerID = client.HomeBrokerID
 				//TODO: nil pointer here
@@ -242,7 +243,7 @@ func (ft *ForwardingTable) HandleBrokerLife(liveID *common.UUID) {
 	brokerPublisherMap := make(map[common.UUID][]common.UUID)
 	publishersToCancel := []*common.UUID{}
 	for _, publisher := range ft.publisherMap {
-		if publisher.HomeBrokerID == *liveID {
+		if publisher.HomeBrokerID == *liveID && publisher.CurrentBrokerID != *liveID {
 			if publisher.CurrentBrokerID == UNASSIGNED {
 				publisher.CurrentBrokerID = publisher.HomeBrokerID
 				candidateQueries := ft.gatherCandidateQueries(&publisher.PublisherID, publisher.Metadata)
@@ -418,7 +419,7 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 	// if this client was the only one from any broker, remove the query from our mappings
 	var (
 		clientList    *list.List
-		oldPublishers map[*common.UUID]struct{}
+		oldPublishers map[common.UUID]struct{}
 		found         bool
 	)
 	log.WithFields(log.Fields{
@@ -459,7 +460,7 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 	ft.publisherLock.RLock()
 	if remainingBrokers == 0 {
 		for publisherID, _ := range oldPublishers {
-			if queries, found := ft.pubQueryMap[*publisherID]; found {
+			if queries, found := ft.pubQueryMap[publisherID]; found {
 				queries.removeQuery(fq)
 			}
 		}
@@ -467,8 +468,8 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 	ft.pubQueryLock.Unlock()
 	// Determine which forwarding routes must be cancelled
 	for publisherID, _ := range oldPublishers {
-		if publisher, found := ft.publisherMap[*publisherID]; found && publisher.CurrentBrokerID != UNASSIGNED {
-			addPublishRouteToMap(cancelForwardRoutes, &publisher.CurrentBrokerID, &client.CurrentBrokerID, publisherID)
+		if publisher, found := ft.publisherMap[publisherID]; found && publisher.CurrentBrokerID != UNASSIGNED {
+			addPublishRouteToMap(cancelForwardRoutes, &publisher.CurrentBrokerID, &client.CurrentBrokerID, &publisherID)
 		}
 	}
 	ft.publisherLock.RUnlock()
@@ -518,7 +519,7 @@ func (ft *ForwardingTable) CancelPublisherForwarding(publisherID common.UUID) {
 				continue
 			}
 			if publishers, found := ft.queryPubMap[query]; found {
-				delete(publishers, &publisherID)
+				delete(publishers, publisherID)
 			}
 			query.Lock()
 			delete(query.MatchingProducers, publisherID)
@@ -639,10 +640,10 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 			ft.pubQueryMap[publisherID] = &queryList{queries: []*ForwardedQuery{fq}, nonnilInArray: 1}
 		}
 		if qpm, found := ft.queryPubMap[fq]; found {
-			qpm[&publisherID] = struct{}{}
+			qpm[publisherID] = struct{}{}
 		} else {
-			ft.queryPubMap[fq] = make(map[*common.UUID]struct{})
-			ft.queryPubMap[fq][&publisherID] = struct{}{}
+			ft.queryPubMap[fq] = make(map[common.UUID]struct{})
+			ft.queryPubMap[fq][publisherID] = struct{}{}
 		}
 		log.WithFields(log.Fields{
 			"publisherID": publisherID, "query": fq.QueryString,
@@ -698,7 +699,7 @@ func (ft *ForwardingTable) cancelForwardingRoutes(fq *ForwardedQuery, removed []
 		}
 		if queries.containsQuery(fq) {
 			if publishers, found := ft.queryPubMap[fq]; found {
-				delete(publishers, &rm_uuid)
+				delete(publishers, rm_uuid)
 			} else {
 				log.WithFields(log.Fields{
 					"publisherID": rm_uuid, "query": fq.QueryString,

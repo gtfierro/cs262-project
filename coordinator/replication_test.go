@@ -92,10 +92,9 @@ func TestReplication(t *testing.T) {
 	publish1 := &common.BrokerPublishMessage{
 		MessageIDStruct: common.GetMessageIDStruct(),
 		UUID:            common.UUID("pub1"),
-		Metadata:        make(map[string]interface{}),
+		Metadata:        map[string]interface{}{"Room": "410"},
 		Value:           "5",
 	}
-	publish1.Metadata["Room"] = "410"
 	publish1.Encode(write1)
 	write1.Flush()
 
@@ -181,10 +180,6 @@ func TestReplication(t *testing.T) {
 	}
 	sub2.Encode(write1a)
 	write1a.Flush()
-
-	msg, _ := common.MessageFromDecoderMsgp(read2a)
-	(&common.AcknowledgeMessage{MessageID: msg.(common.SendableWithID).GetID()}).Encode(write2a)
-	write2a.Flush()
 
 	for sawAck, sawFwd1, sawFwd2, sawDiffMsg := false, false, false, false; sawAck && sawFwd1 && sawFwd2 && sawDiffMsg; {
 		msg, _ := common.MessageFromDecoderMsgp(read1a)

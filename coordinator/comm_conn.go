@@ -202,20 +202,20 @@ func (lcc *LeaderCommConn) ReceiveMessage() (msg common.Sendable, err error) {
 	return
 }
 
-func (lcc *LeaderCommConn) Send(msg common.Sendable) error {
+func (lcc *LeaderCommConn) Send(msg common.Sendable) (err error) {
 	// TODO sender needs to GC its send log at some point
 	// should have some sort of interaction with the ACKs
-	if err := msg.Encode(lcc.writer); err != nil {
+	if err = msg.Encode(lcc.writer); err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "message": msg,
 		}).Error("Error sending message!")
-		return err
+		return
 	}
-	if err := lcc.writer.Flush(); err != nil {
+	if err = lcc.writer.Flush(); err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "message": msg,
 		}).Warn("Error sending message!")
-		return err
+		return
 	}
 	if _, ok := msg.(*common.AcknowledgeMessage); ok {
 		// Do nothing - don't want to log outbound acks (the broker can always resend)
@@ -223,9 +223,10 @@ func (lcc *LeaderCommConn) Send(msg common.Sendable) error {
 		// Don't want to log these
 	} else if _, ok := msg.(*common.BrokerAssignmentMessage); ok {
 		// No need to log these; if the client/pub doesn't receive it, it will ask again
+	} else {
+		err = lcc.etcdManager.WriteToLog(lcc.idOrGeneral, true, msg)
 	}
-	err := lcc.etcdManager.WriteToLog(lcc.idOrGeneral, true, msg)
-	return err
+	return
 }
 
 func (lcc *LeaderCommConn) Close() {

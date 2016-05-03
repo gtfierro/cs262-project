@@ -27,7 +27,7 @@ func main() {
 	}
 	config := &client.Config{
 		BrokerAddress:      "0.0.0.0:4444",
-		CoordinatorAddress: "0.0.0.0:5505",
+		CoordinatorAddress: "cs262.cal-sdb.org:5055",
 	}
 
 	var clients = make([]*client.Client, numClients)

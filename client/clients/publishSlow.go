@@ -16,7 +16,7 @@ func init() {
 func main() {
 	config := &client.Config{
 		BrokerAddress:      "0.0.0.0:4444",
-		CoordinatorAddress: "0.0.0.0:5505",
+		CoordinatorAddress: "cs262.cal-sdb.org:5055",
 		ID:                 client.UUIDFromName("C"),
 	}
 	C, err := client.NewClient(config)

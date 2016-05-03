@@ -78,6 +78,7 @@ func (c *Coordinator) rebuildConnection() {
 		c.conn, err = net.DialTCP("tcp", nil, c.address)
 	}
 	c.sendL.Unlock()
+	log.Info("Connection with coordinator established")
 	// if we were successful, reset the wait timer
 	c.retryTime = 1
 	c.encoder = msgp.NewWriter(c.conn)
@@ -119,14 +120,16 @@ func (c *Coordinator) handleStateMachine() {
 		// when the connection with the coordinator breaks, buffer
 		// all outgoing messages
 		if err == io.EOF {
+			log.Warn("Coordinator connection broken; attempting to reconnect!")
 			c.rebuildConnection()
-			log.Warn("Coordinator is no longer reachable!")
 			break
 		}
 		if err != nil {
 			log.WithFields(log.Fields{
 				"brokerID": c.brokerID, "message": msg, "error": err, "coordinator": c.address,
 			}).Warn("Could not decode incoming message from coordinator")
+			c.rebuildConnection()
+			break
 		}
 		// handle incoming message types
 		switch m := msg.(type) {

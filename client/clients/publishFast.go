@@ -18,7 +18,7 @@ func main() {
 	var dur int64
 	config := &client.Config{
 		BrokerAddress:      "0.0.0.0:4444",
-		CoordinatorAddress: "0.0.0.0:5505",
+		CoordinatorAddress: "cs262.cal-sdb.org:5055",
 		ID:                 client.UUIDFromName("C"),
 	}
 	if len(os.Args) > 1 {

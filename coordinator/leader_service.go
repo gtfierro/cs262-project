@@ -98,20 +98,6 @@ func (cs *LeaderService) MaintainLeaderLease() {
 		}
 		waitChan = cs.WaitForNonleadership()
 
-		// Acquire the IP
-		cs.leaderLock.RLock()
-		thinkIAmLeader := cs.isLeader
-		cs.leaderLock.RUnlock()
-
-		if thinkIAmLeader {
-			err := cs.ipswitcher.AcquireIP()
-			if err != nil {
-				log.WithField("Error", err).Error("Could not acquire IP!")
-			} else {
-				log.Info("Successfully got IP!")
-			}
-		}
-
 		select {
 		case <-cs.stop:
 			return
@@ -175,6 +161,14 @@ func (cs *LeaderService) AttemptToBecomeLeader() (bool, error) {
 			cs.leaderLock.Lock()
 			cs.leaderLease = leaseResp.ID
 			cs.leaderLock.Unlock()
+
+			// Acquire the IP
+			err := cs.ipswitcher.AcquireIP()
+			if err != nil {
+				log.WithField("Error", err).Error("Could not acquire IP!")
+			} else {
+				log.Info("Successfully got IP!")
+			}
 		}
 	}
 	log.WithField("isLeader", isLeader).Info("Attempted to become leader")

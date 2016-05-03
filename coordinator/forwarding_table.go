@@ -307,7 +307,7 @@ func (ft *ForwardingTable) HandleSubscription(queryStr string, clientID common.U
 		} else if client.CurrentBrokerID != brokerID {
 			log.WithFields(log.Fields{
 				"homeBrokerID": client.HomeBrokerID, "clientID": clientID, "brokerID": brokerID, "query": client.QueryString,
-			}).Info("Client connected at new broker without going inactive first...")
+			}).Warn("Client connected at new broker without going inactive first...")
 			ft.CancelSubscriberForwarding(client) // Cancel old routes before making new ones
 			client.CurrentBrokerID = brokerID
 			client.query = fq
@@ -326,6 +326,9 @@ func (ft *ForwardingTable) HandleSubscription(queryStr string, clientID common.U
 			query:           fq,
 		}
 		ft.clientMap[clientID] = client
+		log.WithFields(log.Fields{
+			"clientID": clientID, "brokerID": client.CurrentBrokerID, "query": queryStr,
+		}).Info("New client connected")
 	}
 	ft.etcdManager.UpdateEntity(client)
 	ft.clientLock.Unlock()
@@ -424,7 +427,7 @@ func (ft *ForwardingTable) CancelSubscriberForwarding(client *Client) {
 	)
 	log.WithFields(log.Fields{
 		"clientID": client.ClientID, "homeBrokerID": client.HomeBrokerID, "currentBrokerID": client.CurrentBrokerID,
-	}).Debug("Cancelling all forwarding relevant to client")
+	}).Info("Cancelling all forwarding relevant to client")
 	fq := client.query
 	fq.Lock()
 	if clientList, found = fq.CurrentBrokerIDs[client.CurrentBrokerID]; !found {
@@ -648,7 +651,7 @@ func (ft *ForwardingTable) addForwardingRoutes(fq *ForwardedQuery, newBrokerID *
 		log.WithFields(log.Fields{
 			"publisherID": publisherID, "query": fq.QueryString,
 			"sourceBrokerID": publishBrokerID, "destinations": fq.CurrentBrokerIDs,
-		}).Debug("Submitting a new forwarding route from publisherID to query at destinations")
+		}).Info("Submitting a new forwarding route from publisherID to query at destinations")
 		for destBroker, _ := range fq.CurrentBrokerIDs {
 			addPublishRouteToMap(newPublishRoutes, &publishBrokerID, &destBroker, &publisherID)
 		}

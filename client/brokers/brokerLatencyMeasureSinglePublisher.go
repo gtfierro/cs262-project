@@ -9,6 +9,7 @@ import (
 	"os"
 	"sync"
 	"time"
+	"sync/atomic"
 )
 
 var log *logging.Logger
@@ -23,11 +24,14 @@ func main() {
 
 	var wg sync.WaitGroup
 	var publisherWorkGroup sync.WaitGroup
+	var queriesFinished uint32 = 0
 
-	delayBetweenQueries := 100 * time.Millisecond // per broker so requests will arrive at (delayBetweenQueries / numBrokers)
-	offsetBetweenBrokers := 10 * time.Millisecond // space out the requests so they're more constant
-	numBrokers := 10
-	queriesPerBroker := 1000
+	maxDuration := (1000 * time.Second).Nanoseconds()
+
+	numBrokers := 5
+	queriesPerBroker := 20
+	queryFrequency := 500 * time.Millisecond // overall; per broker will be (queryFrequency * numBrokers)
+	delayBetweenQueries := time.Duration(numBrokers)*queryFrequency // per broker so requests will arrive at (delayBetweenQueries / numBrokers)
 	wg.Add(numBrokers * queriesPerBroker)
 	publisherWorkGroup.Add(numBrokers)
 
@@ -45,8 +49,10 @@ func main() {
 						CoordBrokerAddr: fmt.Sprintf("0.0.0.%d:5505", bNum),
 					},
 				}
-				if err := broker.Send(connectMsg); err != nil {
+				if err := broker.Send(connectMsg); err != nil {		
 					return 
+				} else {
+					time.Sleep(500*time.Millisecond)
 				}
 				if !hasPublisher {
 					err := broker.Send(&common.BrokerPublishMessage{
@@ -61,29 +67,43 @@ func main() {
 					time.Sleep(5 * time.Second) // give it time to stabilize
 					publisherWorkGroup.Done()
 					publisherWorkGroup.Wait()
+					time.Sleep(time.Duration(bNum) * queryFrequency)
 				}
 				for ; queryNum < queriesPerBroker; queryNum++ {
 					queryMsg := &common.BrokerQueryMessage{
 						MessageIDStruct: common.GetMessageIDStruct(),
-						Query:           fmt.Sprintf("Room = '410' and QueryNum != '%d'", queryNum), // encode querynum in query
+						Query:           fmt.Sprintf("Room = '410' and Query != '%d' and Broker != '%d'", queryNum, bNum), // encode querynum in query
 						UUID:            client.UUIDFromName(fmt.Sprintf("broker%d-query%d", bNum, queryNum)),
 					}
-					initialDiffLatencies[queryNum*numBrokers+bNum] = time.Now().UnixNano()
 					if err := broker.Send(queryMsg); err != nil {
+						queryNum -= 1
 						return
 					}
+					log.Infof("Sent query %v from broker %v", queryNum, bNum)
+					initialDiffLatencies[queryNum*numBrokers+bNum] = time.Now().UnixNano()
 					time.Sleep(delayBetweenQueries)
 				}
 			}
 			msgHandler := func(msg common.Sendable) {
 				if subDiff, ok := msg.(*common.BrokerSubscriptionDiffMessage); ok {
 					var qNum int
-					if _, err := fmt.Sscanf(subDiff.Query, "Room = '410' and QueryNum != '%d'", &qNum); err != nil {
+					var bNumQuery int
+					if _, err := fmt.Sscanf(subDiff.Query, "Room = '410' and Query != '%d' and Broker != '%d'", &qNum, &bNumQuery); err != nil {
 						log.Fatal("Error while scanning query num from query")
 					}
+					if bNumQuery != bNum {
+						log.Errorf("bNumQuery: %d, bNum: %d (queryNum %d)", bNumQuery, bNum, qNum)
+					} 
 					startTime := initialDiffLatencies[qNum*numBrokers+bNum]
-					initialDiffLatencies[qNum*numBrokers+bNum] = time.Now().UnixNano() - startTime
-					wg.Done()
+					latency := time.Now().UnixNano() - startTime
+					if startTime < maxDuration {
+						log.Errorf("Received a duplicate message on broker %d about query %d", bNum, qNum)
+					} else {
+						initialDiffLatencies[qNum*numBrokers+bNum] = latency
+						wg.Done()
+					}
+					fin := atomic.AddUint32(&queriesFinished, 1)
+					log.Infof("Finished %d queries; query %v on broker %v had %v latency", fin, qNum, bNum, latency)
 				}
 			}
 			broker, err := client.NewSimulatedBroker(connectCallback, msgHandler, client.UUIDFromName("broker"+string(bNum)), coordinatorAddress)
@@ -93,7 +113,6 @@ func main() {
 			}
 			broker.Start()
 		}(brokerNum)
-		time.Sleep(offsetBetweenBrokers)
 	}
 	wg.Wait()
 	floatLatencies := make([]float64, numBrokers*queriesPerBroker)
@@ -108,7 +127,7 @@ func main() {
 	variance, _ := stats.Variance(floatLatencies)
 	percent99, _ := stats.Percentile(floatLatencies, 99)
 
-	fmt.Printf("Settings: delayBetweenQueries %s, offsetBetweenBrokers %s, numBrokers %d, queriesPerBroker %d\n", delayBetweenQueries.String(), offsetBetweenBrokers.String(), numBrokers, queriesPerBroker)
+	fmt.Printf("Settings: queryFrequency %s, numBrokers %d, queriesPerBroker %d\n", queryFrequency.String(), numBrokers, queriesPerBroker)
 	fmt.Printf("Quartiles. 25%% %s, 50%% %s, 75%% %s\n", q1.String(), q2.String(), q3.String())
 	fmt.Printf("Mean: %s   Variance %s\n", time.Duration(mean).String(), time.Duration(variance).String())
 	fmt.Printf("99 percentile: %s\n", time.Duration(percent99).String())

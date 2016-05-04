@@ -14,7 +14,7 @@ type SimulatedBroker struct {
 	CoordinatorAddress *net.TCPAddr
 	coordConn          *net.TCPConn
 	coordEncoder       *msgp.Writer
-	coordEncodeLock    sync.Mutex
+	coordEncodeLock    sync.RWMutex
 
 	// signals on this channel when it is done
 	Stop chan bool
@@ -63,6 +63,8 @@ func (bc *SimulatedBroker) connectCoordinator(startListener bool) {
 		waitTime = 500 * time.Millisecond
 		maxWait  = 10 * time.Second
 	)
+	bc.coordEncodeLock.Lock()
+	defer bc.coordEncodeLock.Unlock()
 	bc.coordConn, err = net.DialTCP("tcp", nil, bc.CoordinatorAddress)
 	for err != nil {
 		log.Warningf("Retrying coordinator connection to %v with delay %v", bc.CoordinatorAddress, waitTime)
@@ -77,11 +79,13 @@ func (bc *SimulatedBroker) connectCoordinator(startListener bool) {
 	bc.coordEncoder = msgp.NewWriter(bc.coordConn)
 	if startListener {
 		go bc.listenCoordinator()
-		bc.connectCallback(bc)
+		go bc.connectCallback(bc)
 	}
 }
 
 func (bc *SimulatedBroker) listenCoordinator() {
+	bc.coordEncodeLock.RLock()
+	defer bc.coordEncodeLock.RUnlock()
 	heartbeat := common.HeartbeatMessage{}
 	reader := msgp.NewReader(net.Conn(bc.coordConn))
 	for {
@@ -107,8 +111,11 @@ func (bc *SimulatedBroker) listenCoordinator() {
 }
 
 func (bc *SimulatedBroker) Send(m common.Sendable) error {
-	bc.coordEncodeLock.Lock()
-	defer bc.coordEncodeLock.Unlock()
+	bc.coordEncodeLock.RLock()
+	defer bc.coordEncodeLock.RUnlock()
+	if bc.coordEncoder == nil {
+		return errors.Wrap(nil, "Nil encoder")
+	}
 	if err := m.Encode(bc.coordEncoder); err != nil {
 		return errors.Wrap(err, "Could not encode message")
 	}

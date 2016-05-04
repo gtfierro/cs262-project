@@ -13,7 +13,6 @@ import (
 type Server struct {
 	addrString    string
 	address       *net.TCPAddr
-	listener      *net.TCPListener
 	metadata      *common.MetadataStore
 	fwdTable      *ForwardingTable
 	brokerManager BrokerManager
@@ -49,14 +48,6 @@ func NewServer(config *common.Config) *Server {
 		log.WithFields(log.Fields{
 			"port": config.Coordinator.Port, "global": config.Coordinator.Global, "error": err.Error(),
 		}).Fatal("Could not resolve the generated TCP address")
-	}
-
-	// listen on the address
-	s.listener, err = net.ListenTCP("tcp", s.address)
-	if err != nil {
-		log.WithFields(log.Fields{
-			"address": s.address, "error": err.Error(),
-		}).Fatal("Could not listen on the provided address")
 	}
 
 	s.heartbeatInterval = time.Duration(config.Coordinator.HeartbeatInterval) * time.Second
@@ -100,7 +91,6 @@ func NewServer(config *common.Config) *Server {
 
 func (s *Server) Shutdown() {
 	close(s.stop)
-	s.listener.Close()
 	s.etcdManager.CancelWatch()
 	s.leaderService.CancelWatch()
 	s.waitGroup.Wait()
@@ -268,8 +258,9 @@ func (s *Server) handleBrokerMessages() {
 
 func (s *Server) listenAndDispatch() {
 	var (
-		conn *net.TCPConn
-		err  error
+		listener *net.TCPListener
+		conn     *net.TCPConn
+		err      error
 	)
 	s.waitGroup.Add(1)
 	defer s.waitGroup.Done()
@@ -278,27 +269,54 @@ func (s *Server) listenAndDispatch() {
 	}).Info("Coordinator listening for requests!")
 
 	// loop on the TCP connection and hand new connections to the dispatcher
+LeaderLoop:
 	for {
-		conn, err = s.listener.AcceptTCP()
+		waitChan := s.leaderService.WaitForLeadership()
+		select {
+		case <-waitChan:
+		case <-s.stop:
+		}
+		if common.IsChanClosed(s.stop) {
+			return
+		}
+		// listen on the address
+		listener, err = net.ListenTCP("tcp", s.address)
 		if err != nil {
+			log.WithFields(log.Fields{
+				"address": s.address, "error": err.Error(),
+			}).Fatal("Could not listen on the provided address")
+			return
+		}
+		go func() {
+			waitChan := s.leaderService.WaitForNonleadership()
 			select {
 			case <-s.stop:
-				return
-			default:
-				log.WithFields(log.Fields{
-					"error": err.Error(),
-				}).Error("Error accepting connection")
-				continue
+				listener.Close()
+			case <-waitChan:
+				listener.Close()
 			}
-		}
-		if !s.leaderService.IsLeader() {
-			log.WithField("address", conn.RemoteAddr()).Info("Rejecting inbound connection because leadership is not held")
-			time.Sleep(time.Second)
-			conn.Close() // Reject connections when not the leader
-		} else {
-			log.WithField("address", conn.RemoteAddr()).Info("Accepting inbound connection on leader")
-			commConn := NewLeaderCommConn(s.etcdManager, s.leaderService, GeneralSuffix, conn)
-			go s.dispatch(commConn, fmt.Sprintf("%v", conn.RemoteAddr()))
+		}()
+	ListenLoop:
+		for {
+			conn, err = listener.AcceptTCP()
+			if err != nil {
+				if common.IsChanClosed(s.stop) {
+					return
+				} else {
+					log.WithField("error", err.Error()).Error("Error accepting connection")
+					continue ListenLoop
+				}
+			}
+			if !s.leaderService.IsLeader() {
+				log.WithField("address", conn.RemoteAddr()).Info("Rejecting inbound connection because leadership is not held")
+				conn.Close() // Reject connections when not the leader
+				listener.Close()
+				continue LeaderLoop
+			} else {
+				log.WithField("address", conn.RemoteAddr()).Info("Accepting inbound connection on leader")
+				commConn := NewLeaderCommConn(s.etcdManager, s.leaderService, GeneralSuffix, conn)
+				go s.dispatch(commConn, fmt.Sprintf("%v", conn.RemoteAddr()))
+			}
 		}
 	}
 }

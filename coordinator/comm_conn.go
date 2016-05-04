@@ -22,7 +22,7 @@ type CommConn interface {
 // Communication Connection
 type ReplicaCommConn struct {
 	etcdManager          EtcdManager
-	leaderService        *LeaderService
+	leaderService        LeaderService
 	heartbeatInterval    time.Duration
 	idOrGeneral          string
 	revLock              sync.Mutex
@@ -38,7 +38,7 @@ type ReplicaCommConn struct {
 // Communication Connection
 type LeaderCommConn struct {
 	etcdManager   EtcdManager
-	leaderService *LeaderService
+	leaderService LeaderService
 	idOrGeneral   string
 	tcpConn       *net.TCPConn
 	reader        *msgp.Reader
@@ -51,7 +51,7 @@ type SingleEventCommConn struct {
 	event      common.Sendable
 }
 
-func NewReplicaCommConn(etcdMgr EtcdManager, leaderService *LeaderService,
+func NewReplicaCommConn(etcdMgr EtcdManager, leaderService LeaderService,
 	idOrGeneral string, heartbeatInterval time.Duration) *ReplicaCommConn {
 	rcc := new(ReplicaCommConn)
 	rcc.etcdManager = etcdMgr
@@ -159,7 +159,7 @@ func (rcc *ReplicaCommConn) GetBrokerConn(brokerID common.UUID) CommConn {
 	return NewReplicaCommConn(rcc.etcdManager, rcc.leaderService, string(brokerID), rcc.heartbeatInterval)
 }
 
-func NewLeaderCommConn(etcdMgr EtcdManager, leaderService *LeaderService, idOrGeneral string, tcpConn *net.TCPConn) *LeaderCommConn {
+func NewLeaderCommConn(etcdMgr EtcdManager, leaderService LeaderService, idOrGeneral string, tcpConn *net.TCPConn) *LeaderCommConn {
 	lcc := new(LeaderCommConn)
 	lcc.etcdManager = etcdMgr
 	lcc.leaderService = leaderService

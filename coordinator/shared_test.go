@@ -83,28 +83,3 @@ func (pcc *PassthroughCommConn) Close() {
 func (pcc *PassthroughCommConn) GetPendingMessages() map[common.MessageIDType]common.SendableWithID {
 	return make(map[common.MessageIDType]common.SendableWithID)
 }
-
-type DummyEtcdManager struct {
-}
-
-func (dem *DummyEtcdManager) UpdateEntity(entity EtcdSerializable) error {
-	return nil
-}
-func (dem *DummyEtcdManager) DeleteEntity(entity EtcdSerializable) error {
-	return nil
-}
-func (dem *DummyEtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, error) {
-	return "", nil
-}
-func (dem *DummyEtcdManager) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
-	return nil
-}
-func (dem *DummyEtcdManager) WatchLog(startKey string) string {
-	return ""
-}
-func (dem *DummyEtcdManager) CancelWatch() {}
-func (dem *DummyEtcdManager) IterateOverAllEntities(entityType string, upToRev int64, processor func(EtcdSerializable)) error {
-	return nil
-}
-func (dem *DummyEtcdManager) RegisterLogHandler(idOrGeneral string, handler LogHandler) {}
-func (dem *DummyEtcdManager) UnregisterLogHandler(idOrGeneral string)                   {}

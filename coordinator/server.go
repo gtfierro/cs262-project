@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	log "github.com/Sirupsen/logrus"
-	etcdc "github.com/coreos/etcd/clientv3"
 	"github.com/gtfierro/cs262-project/common"
 	"net"
 	"strings"
@@ -18,8 +17,7 @@ type Server struct {
 	metadata      *common.MetadataStore
 	fwdTable      *ForwardingTable
 	brokerManager BrokerManager
-	leaderService *LeaderService
-	etcdConn      *EtcdConnection
+	leaderService LeaderService
 	etcdManager   EtcdManager
 
 	heartbeatInterval time.Duration
@@ -81,9 +79,14 @@ func NewServer(config *common.Config) *Server {
 		ipswitcher = &DummyIPSwitcher{}
 	}
 
-	s.etcdConn = NewEtcdConnection(strings.Split(config.Coordinator.EtcdAddresses, ","))
-	s.leaderService = NewLeaderService(s.etcdConn, 5*time.Second, ipswitcher)
-	s.etcdManager = NewEtcdManager(s.etcdConn, s.leaderService, config.Coordinator.CoordinatorCount, 5*time.Second, 1000)
+	if config.Coordinator.UseEtcd {
+		etcdConn := NewEtcdConnection(strings.Split(config.Coordinator.EtcdAddresses, ","))
+		s.leaderService = NewLeaderService(etcdConn, 5*time.Second, ipswitcher)
+		s.etcdManager = NewEtcdManager(etcdConn, s.leaderService, config.Coordinator.CoordinatorCount, 5*time.Second, 1000)
+	} else {
+		s.leaderService = &DummyLeaderService{}
+		s.etcdManager = &DummyEtcdManager{}
+	}
 	s.brokerManager = NewBrokerManager(s.etcdManager, s.heartbeatInterval, s.brokerDeathChan,
 		s.brokerLiveChan, s.messageBuffer, s.brokerReassignChan, new(common.RealClock))
 	s.fwdTable = NewForwardingTable(s.metadata, s.brokerManager, s.etcdManager, s.brokerDeathChan, s.brokerLiveChan, s.brokerReassignChan)
@@ -118,19 +121,11 @@ func (s *Server) Run() {
 // Returns the key at which the log should start being monitored
 func (s *Server) rebuildIfNecessary() string {
 	s.metadata.DropDatabase() // Clear out DB; it's transient and only for running queries
-	opts := append(etcdc.WithLastRev(), etcdc.WithLimit(2))
-	getResp, err := s.etcdConn.kv.Get(s.etcdConn.GetCtx(), LogPrefix+"/", opts...)
-	if err != nil {
-		log.WithField("error", err).Fatal("Error contacting etcd")
+	logBelowThreshold, logKey, logRev := s.etcdManager.GetLogStatus()
+	if !logBelowThreshold {
+		s.brokerManager.RebuildFromEtcd(logRev)
+		s.fwdTable.RebuildFromEtcd(logRev)
 	}
-	log.WithField("logEntries", len(getResp.Kvs)).Info("Found this many log entries")
-	if len(getResp.Kvs) <= 100 {
-		return LogPrefix + "/"
-	}
-	logRev := getResp.Kvs[0].ModRevision
-	logKey := string(getResp.Kvs[0].Key)
-	s.brokerManager.RebuildFromEtcd(logRev)
-	s.fwdTable.RebuildFromEtcd(logRev)
 	return logKey
 }
 

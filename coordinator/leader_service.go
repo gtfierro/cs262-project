@@ -13,7 +13,18 @@ import (
 
 const LeaderKey = "leader"
 
-type LeaderService struct {
+type LeaderService interface {
+	MaintainLeaderLease()
+	WatchForLeadershipChange()
+	CancelWatch()
+	IsLeader() bool
+	AttemptToBecomeLeader() (bool, error)
+	GetLeadershipChangeRevision() int64
+	WaitForLeadership() chan bool
+	WaitForNonleadership() chan bool
+}
+
+type LeaderServiceImpl struct {
 	isLeader          bool
 	leaderChangeRev   int64
 	leaderLease       etcdc.LeaseID
@@ -26,8 +37,8 @@ type LeaderService struct {
 	ipswitcher        IPSwitcher
 }
 
-func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration, ipswitcher IPSwitcher) *LeaderService {
-	cs := new(LeaderService)
+func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration, ipswitcher IPSwitcher) *LeaderServiceImpl {
+	cs := new(LeaderServiceImpl)
 	cs.etcdConn = etcdConn
 	cs.leaderChangeRev = -1
 	cs.leaderWaitChans = []chan bool{}
@@ -39,7 +50,7 @@ func NewLeaderService(etcdConn *EtcdConnection, timeout time.Duration, ipswitche
 
 // Doesn't return. Watches for a lack of a leader and if so
 // attempts to become the new leader
-func (cs *LeaderService) WatchForLeadershipChange() {
+func (cs *LeaderServiceImpl) WatchForLeadershipChange() {
 	cs.waitGroup.Add(1)
 	defer cs.waitGroup.Done()
 	var watchResp etcdc.WatchResponse
@@ -67,7 +78,7 @@ func (cs *LeaderService) WatchForLeadershipChange() {
 	}
 }
 
-func (cs *LeaderService) CancelWatch() {
+func (cs *LeaderServiceImpl) CancelWatch() {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
 	for _, waitChan := range cs.unleaderWaitChans {
@@ -81,7 +92,7 @@ func (cs *LeaderService) CancelWatch() {
 }
 
 // Maintain the leadership lease; doesn't return
-func (cs *LeaderService) MaintainLeaderLease() {
+func (cs *LeaderServiceImpl) MaintainLeaderLease() {
 	var waitChan chan bool
 	cs.waitGroup.Add(1)
 	defer cs.waitGroup.Done()
@@ -125,7 +136,7 @@ func (cs *LeaderService) MaintainLeaderLease() {
 	}
 }
 
-func (cs *LeaderService) GetLeadershipChangeRevision() int64 {
+func (cs *LeaderServiceImpl) GetLeadershipChangeRevision() int64 {
 	cs.leaderLock.RLock()
 	defer cs.leaderLock.RUnlock()
 	return cs.leaderChangeRev
@@ -133,7 +144,7 @@ func (cs *LeaderService) GetLeadershipChangeRevision() int64 {
 
 // return true iff we became the leader which will happen only if there is
 // currently no leader
-func (cs *LeaderService) AttemptToBecomeLeader() (bool, error) {
+func (cs *LeaderServiceImpl) AttemptToBecomeLeader() (bool, error) {
 	var (
 		changeRev int64
 		isLeader  bool
@@ -172,17 +183,17 @@ func (cs *LeaderService) AttemptToBecomeLeader() (bool, error) {
 		}
 	}
 	log.WithField("isLeader", isLeader).Info("Attempted to become leader")
-	cs.SetLeader(isLeader, changeRev)
+	cs.setLeader(isLeader, changeRev)
 	return isLeader, nil
 }
 
-func (cs *LeaderService) IsLeader() bool {
+func (cs *LeaderServiceImpl) IsLeader() bool {
 	cs.leaderLock.RLock()
 	defer cs.leaderLock.RUnlock()
 	return cs.isLeader
 }
 
-func (cs *LeaderService) SetLeader(isLeader bool, changeRev int64) {
+func (cs *LeaderServiceImpl) setLeader(isLeader bool, changeRev int64) {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
 	cs.leaderChangeRev = changeRev
@@ -201,7 +212,7 @@ func (cs *LeaderService) SetLeader(isLeader bool, changeRev int64) {
 }
 
 // Returns a channel which will be closed when this is leader
-func (cs *LeaderService) WaitForLeadership() chan bool {
+func (cs *LeaderServiceImpl) WaitForLeadership() chan bool {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
 	// if these are not buffered channels, then sending on the channel
@@ -217,7 +228,7 @@ func (cs *LeaderService) WaitForLeadership() chan bool {
 }
 
 // Returns a channel which will be closed when this is nonleader
-func (cs *LeaderService) WaitForNonleadership() chan bool {
+func (cs *LeaderServiceImpl) WaitForNonleadership() chan bool {
 	cs.leaderLock.Lock()
 	defer cs.leaderLock.Unlock()
 	// if these are not buffered channels, then sending on the channel
@@ -230,4 +241,27 @@ func (cs *LeaderService) WaitForNonleadership() chan bool {
 		cs.unleaderWaitChans = append(cs.unleaderWaitChans, c)
 		return c
 	}
+}
+
+type DummyLeaderService struct{}
+
+func (dls *DummyLeaderService) MaintainLeaderLease()      {}
+func (dls *DummyLeaderService) WatchForLeadershipChange() {}
+func (dls *DummyLeaderService) CancelWatch()              {}
+func (dls *DummyLeaderService) IsLeader() bool {
+	return true
+}
+func (dls *DummyLeaderService) AttemptToBecomeLeader() (bool, error) {
+	return true, nil
+}
+func (dls *DummyLeaderService) GetLeadershipChangeRevision() int64 {
+	return -1
+}
+func (dls *DummyLeaderService) WaitForLeadership() chan bool {
+	c := make(chan bool)
+	close(c)
+	return c
+}
+func (dls *DummyLeaderService) WaitForNonleadership() chan bool {
+	return make(chan bool)
 }

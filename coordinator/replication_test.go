@@ -26,6 +26,7 @@ func makeConfig(port int) *common.Config {
 			HeartbeatInterval: 200,
 			CoordinatorCount:  3,
 			EtcdAddresses:     "127.0.0.1:2379",
+			UseEtcd:           true,
 		},
 	}
 }
@@ -139,13 +140,13 @@ func TestReplication(t *testing.T) {
 	}
 
 	leaderCoord.Shutdown() // kill and ensure that a new leader is elected
-	//oldLeader := leaderCoord
+	oldLeader := leaderCoord
 
 	// Wait for a leader election
 	leaderCoord = nil
 	for leaderCoord == nil {
 		for _, c := range coords {
-			if !c.stopped && c.leaderService.IsLeader() {
+			if !c.stopped && c != oldLeader && c.leaderService.IsLeader() {
 				leaderCoord = c
 			}
 		}

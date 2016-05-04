@@ -29,6 +29,7 @@ func (ec *EtcdConnection) GetCtx() context.Context {
 }
 
 type EtcdManager interface {
+	GetLogStatus() (logBelowThreshold bool, logKey string, logRev int64)
 	UpdateEntity(entity EtcdSerializable) error
 	DeleteEntity(entity EtcdSerializable) error
 	WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error
@@ -41,7 +42,7 @@ type EtcdManager interface {
 
 type EtcdManagerImpl struct {
 	conn              *EtcdConnection
-	leaderService     *LeaderService
+	leaderService     LeaderService
 	logHandlers       map[string]LogHandler
 	cancelWatchChan   chan bool
 	handlerLock       sync.RWMutex
@@ -78,7 +79,7 @@ func NewEtcdConnection(endpoints []string) *EtcdConnection {
 	return ec
 }
 
-func NewEtcdManager(etcdConn *EtcdConnection, leaderService *LeaderService, coordCount int, timeout time.Duration, maxKeysPerRequest int64) EtcdManager {
+func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coordCount int, timeout time.Duration, maxKeysPerRequest int64) EtcdManager {
 	em := new(EtcdManagerImpl)
 	em.maxKeysPerRequest = maxKeysPerRequest
 	em.conn = etcdConn
@@ -109,6 +110,25 @@ func (em *EtcdManagerImpl) handleLeaderLog() {
 		em.WriteToLog(GeneralSuffix, false, &common.LeaderChangeMessage{})
 		<-em.leaderService.WaitForNonleadership()
 	}
+}
+
+func (em *EtcdManagerImpl) GetLogStatus() (logBelowThreshold bool, logKey string, logRev int64) {
+	opts := append(etcdc.WithLastRev(), etcdc.WithLimit(50))
+	getResp, err := em.conn.kv.Get(em.conn.GetCtx(), LogPrefix+"/", opts...)
+	if err != nil {
+		log.WithField("error", err).Fatal("Error contacting etcd")
+	}
+	log.WithField("logEntries", len(getResp.Kvs)).Info("Found this many log entries")
+	if len(getResp.Kvs) < 50 {
+		logBelowThreshold = true
+		logKey = LogPrefix + "/"
+		logRev = -1
+	} else {
+		logBelowThreshold = false
+		logRev = getResp.Kvs[0].ModRevision
+		logKey = string(getResp.Kvs[0].Key)
+	}
+	return
 }
 
 func (em *EtcdManagerImpl) UpdateEntity(entity EtcdSerializable) error {
@@ -409,3 +429,32 @@ func (em *EtcdManagerImpl) newSequentialKV(prefix, suffix, val string) (string, 
 	}
 	return newKey, nil
 }
+
+type DummyEtcdManager struct {
+}
+
+func (dem *DummyEtcdManager) GetLogStatus() (logBelowThreshold bool, logKey string, logRev int64) {
+	return true, "", -1
+}
+
+func (dem *DummyEtcdManager) UpdateEntity(entity EtcdSerializable) error {
+	return nil
+}
+func (dem *DummyEtcdManager) DeleteEntity(entity EtcdSerializable) error {
+	return nil
+}
+func (dem *DummyEtcdManager) GetHighestKeyAtRev(prefix string, rev int64) (string, error) {
+	return "", nil
+}
+func (dem *DummyEtcdManager) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
+	return nil
+}
+func (dem *DummyEtcdManager) WatchLog(startKey string) string {
+	return ""
+}
+func (dem *DummyEtcdManager) CancelWatch() {}
+func (dem *DummyEtcdManager) IterateOverAllEntities(entityType string, upToRev int64, processor func(EtcdSerializable)) error {
+	return nil
+}
+func (dem *DummyEtcdManager) RegisterLogHandler(idOrGeneral string, handler LogHandler) {}
+func (dem *DummyEtcdManager) UnregisterLogHandler(idOrGeneral string)                   {}

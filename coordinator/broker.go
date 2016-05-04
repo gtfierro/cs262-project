@@ -229,15 +229,17 @@ func (bc *Broker) receiveLoop(commConn CommConn, done chan bool, wg *sync.WaitGr
 		default: // fall through
 		}
 		if err == nil {
-			log.WithFields(log.Fields{
-				"brokerID": bc.BrokerID, "message": msg, "messageType": common.GetMessageType(msg),
-			}).Debug("Received message from broker")
 			switch m := msg.(type) {
 			case *common.AcknowledgeMessage:
+				log.WithField("brokerID", bc.BrokerID).WithField("ID", m.MessageID).Debug("Received ACK from Broker for messageID")
 				bc.handleAck(m)
 			case *common.HeartbeatMessage:
+				log.WithField("brokerID", bc.BrokerID).Debug("Received heartbeat from Broker")
 				bc.heartbeatBuffer <- true
 			default:
+				log.WithFields(log.Fields{
+					"brokerID": bc.BrokerID, "message": msg, "messageType": common.GetMessageType(msg),
+				}).Info("Received message from broker")
 				go bc.messageHandler(&MessageFromBroker{msg, bc})
 			}
 		} else {
@@ -264,7 +266,7 @@ func (bc *Broker) sendLoop(commConn CommConn, done chan bool, wg *sync.WaitGroup
 			case common.Sendable:
 				log.WithFields(log.Fields{
 					"brokerID": bc.BrokerID, "message": m, "messageType": common.GetMessageType(m),
-				}).Debug("Sending message to broker...")
+				}).Info("Sending message to broker...")
 				err = commConn.Send(m)
 			}
 			if err != nil {
@@ -294,7 +296,7 @@ func (bc *Broker) sendEnsureDelivery(commConn CommConn, message common.SendableW
 	done chan bool) (err error) {
 	log.WithFields(log.Fields{
 		"brokerID": bc.BrokerID, "message": message, "messageType": common.GetMessageType(message),
-	}).Debug("Sending message to broker with ensured delivery...")
+	}).Info("Sending message to broker with ensured delivery...")
 	err = commConn.Send(message)
 	if err != nil {
 		return err

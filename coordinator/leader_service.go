@@ -176,9 +176,9 @@ func (cs *LeaderServiceImpl) AttemptToBecomeLeader() (bool, error) {
 			// Acquire the IP
 			err := cs.ipswitcher.AcquireIP()
 			if err != nil {
-				log.WithField("Error", err).Error("Could not acquire IP!")
+				log.WithField("Error", err).Error("Came leader but could not acquire IP!")
 			} else {
-				log.Info("Successfully got IP!")
+				log.Warn("Successfully became leader and got IP!")
 			}
 		}
 	}

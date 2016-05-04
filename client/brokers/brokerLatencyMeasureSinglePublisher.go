@@ -24,23 +24,35 @@ func main() {
 	var wg sync.WaitGroup
 	var publisherWorkGroup sync.WaitGroup
 
-	delayBetweenQueries := time.Second // per broker so requests will arrive at (delayBetweenQueries / numBrokers)
+	delayBetweenQueries := 100 * time.Millisecond // per broker so requests will arrive at (delayBetweenQueries / numBrokers)
+	offsetBetweenBrokers := 10 * time.Millisecond // space out the requests so they're more constant
 	numBrokers := 10
-	queriesPerBroker := 100
+	queriesPerBroker := 1000
 	wg.Add(numBrokers * queriesPerBroker)
 	publisherWorkGroup.Add(numBrokers)
 
 	var initialDiffLatencies = make([]int64, numBrokers*queriesPerBroker)
 	for brokerNum := 0; brokerNum < numBrokers; brokerNum++ {
-		go func() {
+		go func(bNum int) {
 			hasPublisher := false
 			queryNum := 0
 			connectCallback := func(broker *client.SimulatedBroker) {
+				connectMsg := &common.BrokerConnectMessage{
+					MessageIDStruct: common.GetMessageIDStruct(),
+					BrokerInfo: common.BrokerInfo{
+						BrokerID: client.UUIDFromName(fmt.Sprintf("broker%d", bNum)),
+						ClientBrokerAddr: fmt.Sprintf("0.0.0.%d:4444", bNum),
+						CoordBrokerAddr: fmt.Sprintf("0.0.0.%d:5505", bNum),
+					},
+				}
+				if err := broker.Send(connectMsg); err != nil {
+					return 
+				}
 				if !hasPublisher {
 					err := broker.Send(&common.BrokerPublishMessage{
 						MessageIDStruct: common.GetMessageIDStruct(),
-						UUID:            client.UUIDFromName(fmt.Sprintf("broker%d-publisher", brokerNum)),
-						Metadata:        map[string]interface{}{"Room": "410", "BuildingNum": brokerNum},
+						UUID:            client.UUIDFromName(fmt.Sprintf("broker%d-publisher", bNum)),
+						Metadata:        map[string]interface{}{"Room": "410", "BuildingNum": bNum},
 					})
 					if err != nil {
 						return
@@ -54,9 +66,9 @@ func main() {
 					queryMsg := &common.BrokerQueryMessage{
 						MessageIDStruct: common.GetMessageIDStruct(),
 						Query:           fmt.Sprintf("Room = '410' and QueryNum != '%d'", queryNum), // encode querynum in query
-						UUID:            client.UUIDFromName(fmt.Sprintf("broker%d-query%d", brokerNum, queryNum)),
+						UUID:            client.UUIDFromName(fmt.Sprintf("broker%d-query%d", bNum, queryNum)),
 					}
-					initialDiffLatencies[queryNum+brokerNum*queriesPerBroker] = time.Now().UnixNano()
+					initialDiffLatencies[queryNum*numBrokers+bNum] = time.Now().UnixNano()
 					if err := broker.Send(queryMsg); err != nil {
 						return
 					}
@@ -69,18 +81,19 @@ func main() {
 					if _, err := fmt.Sscanf(subDiff.Query, "Room = '410' and QueryNum != '%d'", &qNum); err != nil {
 						log.Fatal("Error while scanning query num from query")
 					}
-					startTime := initialDiffLatencies[qNum+brokerNum*queriesPerBroker]
-					initialDiffLatencies[qNum+brokerNum*queriesPerBroker] = time.Now().UnixNano() - startTime
+					startTime := initialDiffLatencies[qNum*numBrokers+bNum]
+					initialDiffLatencies[qNum*numBrokers+bNum] = time.Now().UnixNano() - startTime
 					wg.Done()
 				}
 			}
-			broker, err := client.NewSimulatedBroker(connectCallback, msgHandler, client.UUIDFromName("broker"+string(brokerNum)), coordinatorAddress)
+			broker, err := client.NewSimulatedBroker(connectCallback, msgHandler, client.UUIDFromName("broker"+string(bNum)), coordinatorAddress)
 			if err != nil {
 				log.Criticalf("Could not create client: %v", err)
 				os.Exit(1)
 			}
 			broker.Start()
-		}()
+		}(brokerNum)
+		time.Sleep(offsetBetweenBrokers)
 	}
 	wg.Wait()
 	floatLatencies := make([]float64, numBrokers*queriesPerBroker)
@@ -94,6 +107,8 @@ func main() {
 	mean, _ := stats.Mean(floatLatencies)
 	variance, _ := stats.Variance(floatLatencies)
 	percent99, _ := stats.Percentile(floatLatencies, 99)
+
+	fmt.Printf("Settings: delayBetweenQueries %s, offsetBetweenBrokers %s, numBrokers %d, queriesPerBroker %d\n", delayBetweenQueries.String(), offsetBetweenBrokers.String(), numBrokers, queriesPerBroker)
 	fmt.Printf("Quartiles. 25%% %s, 50%% %s, 75%% %s\n", q1.String(), q2.String(), q3.String())
 	fmt.Printf("Mean: %s   Variance %s\n", time.Duration(mean).String(), time.Duration(variance).String())
 	fmt.Printf("99 percentile: %s\n", time.Duration(percent99).String())

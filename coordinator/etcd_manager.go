@@ -14,8 +14,6 @@ import (
 	"time"
 )
 
-const GCFrequency = 500
-
 type EtcdConnection struct {
 	client  *etcdc.Client
 	kv      etcdc.KV
@@ -51,6 +49,7 @@ type EtcdManagerImpl struct {
 	highKeyLock       sync.Mutex
 	maxKeysPerRequest int64
 	gcNodeKey         string
+	gcFreq            int
 	coordCount        int
 }
 
@@ -79,7 +78,7 @@ func NewEtcdConnection(endpoints []string) *EtcdConnection {
 	return ec
 }
 
-func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coordCount int, timeout time.Duration, maxKeysPerRequest int64) EtcdManager {
+func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coordCount, gcFreq int, timeout time.Duration, maxKeysPerRequest int64) EtcdManager {
 	em := new(EtcdManagerImpl)
 	em.maxKeysPerRequest = maxKeysPerRequest
 	em.conn = etcdConn
@@ -89,6 +88,7 @@ func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coord
 		log.WithField("error", err).Error("Error while creating UUID")
 	}
 	em.gcNodeKey = fmt.Sprintf("%v/%v", GCPrefix, uuid.String())
+	em.gcFreq = gcFreq
 	em.coordCount = coordCount
 
 	em.logHandlers = make(map[string]LogHandler)
@@ -277,7 +277,7 @@ Loop:
 				}).Debug("Found message in shared log")
 				handler(msg, isSent)
 				messagesSinceLastGC += 1
-				if messagesSinceLastGC > GCFrequency {
+				if em.gcFreq > 0 && messagesSinceLastGC > em.gcFreq {
 					messagesSinceLastGC = 0
 					go func(endKey string) {
 						em.gcLogUpTo(endKey)

@@ -42,6 +42,7 @@ type CoordinatorConfig struct {
 	HeartbeatInterval int    // seconds
 	CoordinatorCount  int    // number of coordinators total
 	EtcdAddresses     string // comma-separated list
+	GCFreq            int    // how often (number of events) to GC etcd
 	UseAWSIPSwitcher  bool   // true to use the AWP IP Switcher; doesn't switch IPs otherwise
 	UseEtcd           bool   // true if events should be stored in Etcd; CoordinatorCount must be 1
 	InstanceId        string // AWS instance id, e.g. i-1a2b3c4d

@@ -82,7 +82,8 @@ func NewServer(config *common.Config) *Server {
 	if config.Coordinator.UseEtcd {
 		etcdConn := NewEtcdConnection(strings.Split(config.Coordinator.EtcdAddresses, ","))
 		s.leaderService = NewLeaderService(etcdConn, 5*time.Second, ipswitcher)
-		s.etcdManager = NewEtcdManager(etcdConn, s.leaderService, config.Coordinator.CoordinatorCount, 5*time.Second, 1000)
+		s.etcdManager = NewEtcdManager(etcdConn, s.leaderService, config.Coordinator.CoordinatorCount,
+			config.Coordinator.GCFreq, 5*time.Second, 1000)
 	} else {
 		s.leaderService = &DummyLeaderService{}
 		s.etcdManager = &DummyEtcdManager{}

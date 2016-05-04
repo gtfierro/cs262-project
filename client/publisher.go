@@ -34,7 +34,7 @@ func NewPublisher(id common.UUID, publishLoop func(*Publisher), cfg *Config) (p 
 	connectCallback := func() {
 		go publishLoop(p)
 	}
-	err = (&p.BrokerConnection).initialize(connectCallback, func(common.Sendable) {}, cfg)
+	err = (&p.BrokerConnection).initialize(connectCallback, func(common.Sendable) {}, true, id, cfg)
 	if err != nil {
 		p = nil
 		return

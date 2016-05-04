@@ -29,16 +29,23 @@ type BrokerConnection struct {
 	Stop       chan bool
 	brokerDead bool
 
+	isPublisher bool
+	uuid        common.UUID
+
 	connectCallback func()
 	msgHandler      func(common.Sendable)
 }
 
-func (bc *BrokerConnection) initialize(connectCallback func(), msgHandler func(common.Sendable), cfg *Config) (err error) {
+func (bc *BrokerConnection) initialize(connectCallback func(), msgHandler func(common.Sendable), isPublisher bool,
+	id common.UUID, cfg *Config) (err error) {
+
 	bc.brokerDead = true
 	bc.connectCallback = connectCallback
 	bc.msgHandler = msgHandler
 	bc.Stop = make(chan bool)
 	bc.BrokerAddrStr = cfg.BrokerAddress
+	bc.uuid = id
+	bc.isPublisher = isPublisher
 
 	if bc.BrokerAddress, err = net.ResolveTCPAddr("tcp", cfg.BrokerAddress); err != nil {
 		return
@@ -134,8 +141,8 @@ func (bc *BrokerConnection) doFailover() {
 	// prepare the BrokerRequestMessage
 	brm := &common.BrokerRequestMessage{
 		LocalBrokerAddr: bc.BrokerAddrStr,
-		IsPublisher:     false,                                  // TODO
-		UUID:            "392c1b18-0c37-11e6-b352-1002b58053c7", // TODO
+		IsPublisher:     bc.isPublisher,
+		UUID:            bc.uuid,
 	}
 	// loop until we can contact the coordinator
 	err := bc.sendCoordinator(brm)

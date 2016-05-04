@@ -56,7 +56,7 @@ func NewClient(clientID common.UUID, query string, cfg *Config) (c *Client, err 
 		hasPublishHandler: false,
 		hasDiffHandler:    false,
 	}
-	err = (&c.BrokerConnection).initialize(c.subscribe, c.messageHandler, cfg)
+	err = (&c.BrokerConnection).initialize(c.subscribe, c.messageHandler, false, clientID, cfg)
 	if err != nil {
 		return nil, err
 	}

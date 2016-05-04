@@ -17,6 +17,7 @@ type Broker struct {
 	rcvWaitGroup     *sync.WaitGroup
 	aliveLock        sync.Mutex
 	aliveCond        *sync.Cond
+	activeCond       *sync.Cond
 
 	outstandingMessages    map[common.MessageIDType]common.SendableWithID // messageID -> message
 	outMessageLock         sync.RWMutex
@@ -43,6 +44,7 @@ func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
 	bc.outstandingMessages = make(map[common.MessageIDType]common.SendableWithID)
 	bc.aliveLock = sync.Mutex{}
 	bc.aliveCond = sync.NewCond(&bc.aliveLock)
+	bc.activeCond = sync.NewCond(&bc.activeCond)
 	bc.outMessageLock = sync.RWMutex{}
 	bc.messageHandler = messageHandler
 	bc.heartbeatInterval = heartbeatInterval
@@ -114,14 +116,36 @@ func (bc *Broker) Send(msg common.Sendable) {
 // Returns true if the broker is alive, or else false
 func (bc *Broker) RequestHeartbeatAndWait() bool {
 	bc.aliveLock.Lock()
-	defer bc.aliveLock.Unlock()
 	if !bc.connectionActive {
+		bc.aliveLock.Unlock()
 		return false
 	}
+	bc.aliveLock.Unlock()
+
 	bc.messageSendBuffer <- &common.RequestHeartbeatMessage{}
 	respChan := make(chan bool)
 	bc.requestHeartbeatBuffer <- respChan
-	return <-respChan
+	determineDeathChan := make(chan bool)
+	go func() {
+		bc.aliveLock.Lock()
+		for bc.connectionActive && !common.IsChanClosed(determineDeathChan) {
+			bc.activeCond.Wait()
+		}
+		bc.aliveLock.Unlock()
+		if !common.IsChanClosed(determineDeathChan) {
+			close(determineDeathChan)
+		}
+	}()
+	select {
+	case ready := <-respChan:
+		close(determineDeathChan)
+		bc.aliveLock.Lock()
+		bc.activeCond.Broadcast()
+		bc.aliveLock.Unlock()
+		return ready
+	case <-determineDeathChan:
+		return false
+	}
 }
 
 // Returns true iff currently alive
@@ -254,6 +278,7 @@ func (bc *Broker) receiveLoop(commConn CommConn, done chan bool, wg *sync.WaitGr
 			//closeIfNotClosed(done)
 			bc.aliveLock.Lock()
 			bc.connectionActive = false
+			bc.activeCond.Broadcast()
 			bc.aliveLock.Unlock()
 			commConn.Close()
 			log.WithFields(log.Fields{
@@ -285,6 +310,7 @@ func (bc *Broker) sendLoop(commConn CommConn, done chan bool, wg *sync.WaitGroup
 				//closeIfNotClosed(done)
 				bc.aliveLock.Lock()
 				bc.connectionActive = false
+				bc.activeCond.Broadcast()
 				bc.aliveLock.Unlock()
 				commConn.Close()
 				log.WithFields(log.Fields{

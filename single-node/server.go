@@ -147,7 +147,10 @@ func (s *Server) dispatch(conn net.Conn) {
 	case *common.BrokerPublishMessage:
 		log.Warnf("got broker publish message %v", m)
 	default:
-		log.WithField("message", msg).Warn("Server received unexpected message type!")
+		log.WithFields(log.Fields{
+			"message": msg,
+			"type":    fmt.Sprintf("%T", msg),
+		}).Warn("Server received unexpected message type!")
 	}
 }
 

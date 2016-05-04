@@ -13,6 +13,7 @@ import (
 type BrokerConnection struct {
 	// Handling the connection to the local broker
 	// the IP:Port of the local broker we talk to
+	BrokerAddrStr    string
 	BrokerAddress    *net.TCPAddr
 	brokerConn       *net.TCPConn
 	brokerEncoder    *msgp.Writer
@@ -37,6 +38,7 @@ func (bc *BrokerConnection) initialize(connectCallback func(), msgHandler func(c
 	bc.connectCallback = connectCallback
 	bc.msgHandler = msgHandler
 	bc.Stop = make(chan bool)
+	bc.BrokerAddrStr = cfg.BrokerAddress
 
 	if bc.BrokerAddress, err = net.ResolveTCPAddr("tcp", cfg.BrokerAddress); err != nil {
 		return
@@ -131,7 +133,7 @@ func (bc *BrokerConnection) doFailover() {
 	bc.connectCoordinator()
 	// prepare the BrokerRequestMessage
 	brm := &common.BrokerRequestMessage{
-		LocalBrokerAddr: bc.BrokerAddress.String(),
+		LocalBrokerAddr: bc.BrokerAddrStr,
 		IsPublisher:     false,                                  // TODO
 		UUID:            "392c1b18-0c37-11e6-b352-1002b58053c7", // TODO
 	}

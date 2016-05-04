@@ -562,7 +562,9 @@ func (ft *ForwardingTable) HandlePublisherTermination(publisherID common.UUID, b
 	delete(ft.publisherMap, publisherID) // delete is a no-op if the ID doesn't exist
 	ft.publisherLock.Unlock()
 
-	ft.etcdManager.DeleteEntity(publisher)
+	if found {
+		ft.etcdManager.DeleteEntity(publisher)
+	}
 	ft.CancelPublisherForwarding(publisherID)
 }
 

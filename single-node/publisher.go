@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	log "github.com/Sirupsen/logrus"
 	"github.com/gtfierro/cs262-project/common"
 	"github.com/tinylib/msgp/msgp"
@@ -29,39 +30,34 @@ func NewProducer(id common.UUID, decoder *msgp.Reader) *Producer {
 }
 
 func (p *Producer) dorecv() {
-	var (
-		err error
-		msg = new(common.PublishMessage)
-	)
 	for {
-		if msgtype, err := p.dec.ReadByte(); common.MessageType(uint8(msgtype)) != common.PUBLISHMSG || err != nil && err != io.EOF {
-			log.WithFields(log.Fields{
-				"error":   err,
-				"msgtype": msgtype,
-			}).Error("Error decoding incoming PublishMessage")
-			return
-		}
+		m, err := common.MessageFromDecoderMsgp(p.dec)
 
-		msg.L.Lock()
-		err = msg.DecodeMsg(p.dec)
-		msg.L.Unlock()
-		if err == io.EOF {
-			p.stop <- true
-			return // connection is closed
-		}
-		if msg.IsEmpty() {
-			continue
-		}
 		if err != nil {
 			log.WithFields(log.Fields{
-				"error": err,
-			}).Error("Error decoding msgpack producer")
+				"error":   err,
+				"msgtype": fmt.Sprintf("%T", m),
+			}).Error("Error decoding incoming message")
+			return
 		}
-		select {
-		case p.C <- msg: // buffer message
+		switch msg := m.(type) {
+		case *common.PublishMessage:
+			if err == io.EOF {
+				p.stop <- true
+				return // connection is closed
+			}
+			if msg.IsEmpty() {
+				continue
+			}
+			select {
+			case p.C <- msg: // buffer message
+			default:
+				//log.Warn("Dropping incoming message from publisher")
+				continue // drop if buffer is full
+			}
 		default:
-			//log.Warn("Dropping incoming message from publisher")
-			continue // drop if buffer is full
+			continue
 		}
+
 	}
 }

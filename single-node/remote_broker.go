@@ -15,6 +15,7 @@ type RemoteBroker struct {
 	// map queries to clients
 	subscriber_lock sync.RWMutex
 	subscribers     map[string]clientList
+	subbedBrokers   map[string]brokerClientList
 
 	// map of producer ids to queries
 	forwarding_lock sync.RWMutex
@@ -30,12 +31,13 @@ type RemoteBroker struct {
 
 func NewRemoteBroker(metadata *common.MetadataStore, coordinator *Coordinator) *RemoteBroker {
 	b := &RemoteBroker{
-		metadata:    metadata,
-		coordinator: coordinator,
-		subscribers: make(map[string]clientList),
-		forwarding:  make(map[common.UUID]*queryList),
-		producers:   make(map[common.UUID]*Producer),
-		killClient:  make(chan *Client),
+		metadata:      metadata,
+		coordinator:   coordinator,
+		subscribers:   make(map[string]clientList),
+		subbedBrokers: make(map[string]brokerClientList),
+		forwarding:    make(map[common.UUID]*queryList),
+		producers:     make(map[common.UUID]*Producer),
+		killClient:    make(chan *Client),
 	}
 
 	// background loop to wait for clients to die so that we can
@@ -124,6 +126,7 @@ func (b *RemoteBroker) ForwardMessage(msg *common.PublishMessage) {
 	var (
 		matchingQueries *queryList
 		found           bool
+		brokerFound     bool
 	)
 	b.forwarding_lock.RLock()
 	// return if we can't find anyone to forward to
@@ -136,16 +139,19 @@ func (b *RemoteBroker) ForwardMessage(msg *common.PublishMessage) {
 	}
 
 	var deliveries clientList
+	var brokerDeliveries brokerClientList
 	for _, query := range matchingQueries.queries {
 		b.subscriber_lock.RLock()
 		deliveries, found = b.subscribers[query]
+		brokerDeliveries, brokerFound = b.subbedBrokers[query]
 		b.subscriber_lock.RUnlock()
-		if !found || len(deliveries.List) == 0 {
+		if (!found && !brokerFound) || (len(deliveries.List) == 0 && len(brokerDeliveries.List) == 0) {
 			log.Debugf("found no clients")
 			break
 		}
-		log.Debugf("found clients %v", deliveries)
+		log.Debugf("found clients %v %v", deliveries, brokerDeliveries)
 		deliveries.sendToList(msg)
+		brokerDeliveries.sendToList(msg)
 	}
 }
 
@@ -159,7 +165,12 @@ func (b *RemoteBroker) ForwardMessage(msg *common.PublishMessage) {
 //	Query string
 func (b *RemoteBroker) AddForwardingEntries(msg *common.ForwardRequestMessage) {
 	//TODO: figure out what to do with the error here
-	client, err := ClientFromBrokerString(b.coordinator.brokerID, msg.Query, msg.ClientBrokerAddr, b.killClient)
+	if msg.BrokerID == b.coordinator.brokerID { // this is a local client!
+		//client, err := NewClient(query, clientID
+		return
+	}
+	client, err := NewBrokerClient(b.coordinator.brokerID, msg.Query, msg.ClientBrokerAddr)
+	log.Warnf("adding broker client, dialing %v", msg.ClientBrokerAddr)
 	if err != nil {
 		log.WithFields(log.Fields{
 			"error": err, "address": msg.ClientBrokerAddr,
@@ -168,7 +179,7 @@ func (b *RemoteBroker) AddForwardingEntries(msg *common.ForwardRequestMessage) {
 	}
 	// for this list of publishers, setup forwarding to the client
 	b.remapPublishers(msg.PublisherList, msg.Query)
-	b.mapQueryToClient(msg.Query, client)
+	b.mapQueryToBrokerClient(msg.Query, client)
 }
 
 // The coordinator may send us a CancelForwardRequest which contains:
@@ -249,8 +260,10 @@ func (b *RemoteBroker) ForwardSubscriptionDiffs(msg *common.BrokerSubscriptionDi
 	sdm := common.SubscriptionDiffMessage{"New": msg.NewPublishers, "Del": msg.DelPublishers}
 	b.subscriber_lock.RLock()
 	subscribers := b.subscribers[msg.Query]
+	brokerSubscribers := b.subbedBrokers[msg.Query]
 	b.subscriber_lock.RUnlock()
 	go subscribers.sendToList(&sdm)
+	go brokerSubscribers.sendToList(&sdm)
 }
 
 // safely adds entry to map[query][]Client map
@@ -262,6 +275,18 @@ func (b *RemoteBroker) mapQueryToClient(query string, c *Client) {
 	} else {
 		// otherwise, create a new list with us in it
 		b.subscribers[query] = clientList{List: []*Client{c}}
+	}
+	b.subscriber_lock.Unlock()
+}
+
+func (b *RemoteBroker) mapQueryToBrokerClient(query string, c *BrokerClient) {
+	b.subscriber_lock.Lock()
+	if list, found := b.subbedBrokers[query]; found {
+		list.addBrokerClient(c)
+		b.subbedBrokers[query] = list
+	} else {
+		// otherwise, create a new list with us in it
+		b.subbedBrokers[query] = brokerClientList{List: []*BrokerClient{c}}
 	}
 	b.subscriber_lock.Unlock()
 }

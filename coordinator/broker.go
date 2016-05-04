@@ -44,7 +44,7 @@ func NewBroker(broker *common.BrokerInfo, messageHandler MessageHandler,
 	bc.outstandingMessages = make(map[common.MessageIDType]common.SendableWithID)
 	bc.aliveLock = sync.Mutex{}
 	bc.aliveCond = sync.NewCond(&bc.aliveLock)
-	bc.activeCond = sync.NewCond(&bc.activeCond)
+	bc.activeCond = sync.NewCond(&bc.aliveLock)
 	bc.outMessageLock = sync.RWMutex{}
 	bc.messageHandler = messageHandler
 	bc.heartbeatInterval = heartbeatInterval

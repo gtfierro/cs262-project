@@ -297,7 +297,7 @@ func (em *EtcdManagerImpl) gcLogUpTo(endKey string) {
 	if err != nil {
 		log.WithField("error", err).Error("Error while attempting to write gc progress")
 	}
-	if em.IsLeader() {
+	if em.leaderService.IsLeader() {
 		getResp, err := em.conn.kv.Get(em.conn.GetCtx(), GCPrefix+"/", etcdc.WithPrefix())
 		if err != nil {
 			log.WithField("error", err).Error("Error while attempting to get gc progress")

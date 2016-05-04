@@ -243,7 +243,6 @@ func (bm *BrokerManagerImpl) HandlePubClientRemapping(msg *common.BrokerRequestM
 		brokerDead = true
 	} else {
 		brokerDead = !homeBroker.RequestHeartbeatAndWait()
-		homeBroker.WaitForCleanup()
 	}
 
 	if brokerDead { // actions to take if broker determined dead

@@ -289,6 +289,7 @@ Loop:
 	return
 }
 
+// only the leader does GC
 func (em *EtcdManagerImpl) gcLogUpTo(endKey string) {
 	// write to gc with current key - "gc/unique_key"
 	// get all of the values in gc, delete up to the earliest one
@@ -296,34 +297,36 @@ func (em *EtcdManagerImpl) gcLogUpTo(endKey string) {
 	if err != nil {
 		log.WithField("error", err).Error("Error while attempting to write gc progress")
 	}
-	getResp, err := em.conn.kv.Get(em.conn.GetCtx(), GCPrefix+"/", etcdc.WithPrefix())
-	if err != nil {
-		log.WithField("error", err).Error("Error while attempting to get gc progress")
-	}
-	if len(getResp.Kvs) < em.coordCount {
-		return // Can't GC yet; some coordinators haven't written progress
-	}
-	minKey := ""
-	minRev := int64(math.MaxInt64)
-	for _, gcNode := range getResp.Kvs {
-		if minKey == "" || string(gcNode.Value) < minKey {
-			minKey = string(gcNode.Value)
+	if em.IsLeader() {
+		getResp, err := em.conn.kv.Get(em.conn.GetCtx(), GCPrefix+"/", etcdc.WithPrefix())
+		if err != nil {
+			log.WithField("error", err).Error("Error while attempting to get gc progress")
 		}
-		if gcNode.ModRevision < minRev {
-			minRev = gcNode.ModRevision
+		if len(getResp.Kvs) < em.coordCount {
+			return // Can't GC yet; some coordinators haven't written progress
 		}
-	}
-	delResp, err := em.conn.kv.Delete(em.conn.GetCtx(), LogPrefix, etcdc.WithRange(minKey))
-	if err != nil {
-		log.WithField("error", err).Error("Error while attempting to delete for GC!")
-	}
-	log.WithFields(log.Fields{
-		"entriesCleared": delResp.Deleted, "minKey": minKey,
-	}).Info("Log GC complete")
-	err = em.conn.client.Compact(em.conn.GetCtx(), minRev)
-	log.WithField("minRev", minRev).Info("Compacting up to minRev")
-	if err != nil {
-		log.WithField("error", err).Error("Error while attempting to perform compaction")
+		minKey := ""
+		minRev := int64(math.MaxInt64)
+		for _, gcNode := range getResp.Kvs {
+			if minKey == "" || string(gcNode.Value) < minKey {
+				minKey = string(gcNode.Value)
+			}
+			if gcNode.ModRevision < minRev {
+				minRev = gcNode.ModRevision
+			}
+		}
+		delResp, err := em.conn.kv.Delete(em.conn.GetCtx(), LogPrefix, etcdc.WithRange(minKey))
+		if err != nil {
+			log.WithField("error", err).Error("Error while attempting to delete for GC!")
+		}
+		log.WithFields(log.Fields{
+			"entriesCleared": delResp.Deleted, "minKey": minKey,
+		}).Info("Log GC complete")
+		err = em.conn.client.Compact(em.conn.GetCtx(), minRev)
+		log.WithField("minRev", minRev).Info("Compacting up to minRev")
+		if err != nil {
+			log.WithField("error", err).Error("Error while attempting to perform compaction")
+		}
 	}
 }
 

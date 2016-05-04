@@ -10,12 +10,13 @@ import (
 
 type Broker struct {
 	common.BrokerInfo
-	alive        bool
-	doneChan     chan bool
-	waitGroup    *sync.WaitGroup
-	rcvWaitGroup *sync.WaitGroup
-	aliveLock    sync.Mutex
-	aliveCond    *sync.Cond
+	connectionActive bool
+	alive            bool
+	doneChan         chan bool
+	waitGroup        *sync.WaitGroup
+	rcvWaitGroup     *sync.WaitGroup
+	aliveLock        sync.Mutex
+	aliveCond        *sync.Cond
 
 	outstandingMessages    map[common.MessageIDType]common.SendableWithID // messageID -> message
 	outMessageLock         sync.RWMutex
@@ -75,6 +76,7 @@ func (bc *Broker) StartAsynchronously(commConn CommConn) {
 	}
 	done, wg, receiveWg := bc.doneChan, bc.waitGroup, bc.rcvWaitGroup
 	bc.alive = true
+	bc.connectionActive = true
 	bc.terminating = make(chan bool)
 	bc.aliveLock.Unlock()
 	receiveWg.Add(1)
@@ -111,6 +113,11 @@ func (bc *Broker) Send(msg common.Sendable) {
 // or not the broker is alive (a heartbeat is received or it times out)
 // Returns true if the broker is alive, or else false
 func (bc *Broker) RequestHeartbeatAndWait() bool {
+	bc.aliveLock.Lock()
+	defer bc.aliveLock.Unlock()
+	if !bc.connectionActive {
+		return false
+	}
 	bc.messageSendBuffer <- &common.RequestHeartbeatMessage{}
 	respChan := make(chan bool)
 	bc.requestHeartbeatBuffer <- respChan
@@ -205,6 +212,7 @@ func (bc *Broker) cleanupWhenDone(done chan bool, receiveWg, wg *sync.WaitGroup)
 	receiveWg.Wait()
 	bc.deathChannel <- bc
 	bc.aliveLock.Lock()
+	bc.connectionActive = false
 	bc.alive = false
 	bc.aliveCond.Broadcast()
 	bc.aliveLock.Unlock()
@@ -244,6 +252,9 @@ func (bc *Broker) receiveLoop(commConn CommConn, done chan bool, wg *sync.WaitGr
 			}
 		} else {
 			//closeIfNotClosed(done)
+			bc.aliveLock.Lock()
+			bc.connectionActive = false
+			bc.aliveLock.Unlock()
 			commConn.Close()
 			log.WithFields(log.Fields{
 				"brokerID": bc.BrokerID, "error": err,
@@ -272,6 +283,9 @@ func (bc *Broker) sendLoop(commConn CommConn, done chan bool, wg *sync.WaitGroup
 			if err != nil {
 				bc.messageSendBuffer <- msg
 				//closeIfNotClosed(done)
+				bc.aliveLock.Lock()
+				bc.connectionActive = false
+				bc.aliveLock.Unlock()
 				commConn.Close()
 				log.WithFields(log.Fields{
 					"brokerID": bc.BrokerID, "error": err,

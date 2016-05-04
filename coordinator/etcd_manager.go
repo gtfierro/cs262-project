@@ -52,6 +52,7 @@ type EtcdManagerImpl struct {
 	gcFreq                        int
 	coordCount                    int
 	enableContinuousCheckpointing bool
+	disableSendLog                bool
 }
 
 type LogHandler func(common.Sendable, bool)
@@ -80,7 +81,7 @@ func NewEtcdConnection(endpoints []string) *EtcdConnection {
 }
 
 func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coordCount, gcFreq int, timeout time.Duration,
-	maxKeysPerRequest int64, enableContinuousCheckpointing bool) EtcdManager {
+	maxKeysPerRequest int64, enableContinuousCheckpointing bool, disableSendLog bool) EtcdManager {
 	em := new(EtcdManagerImpl)
 	em.maxKeysPerRequest = maxKeysPerRequest
 	em.conn = etcdConn
@@ -93,6 +94,7 @@ func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coord
 	em.gcFreq = gcFreq
 	em.coordCount = coordCount
 	em.enableContinuousCheckpointing = enableContinuousCheckpointing
+	em.disableSendLog = disableSendLog
 
 	em.logHandlers = make(map[string]LogHandler)
 	em.handlerCond = sync.NewCond(&em.handlerLock)
@@ -175,6 +177,9 @@ func (em *EtcdManagerImpl) WatchFromKey(prefix, startKey string) etcdc.WatchChan
 }
 
 func (em *EtcdManagerImpl) WriteToLog(idOrGeneral string, isSend bool, msg common.Sendable) error {
+	if isSend && em.disableSendLog {
+		return nil
+	}
 	var suffix string
 	bytePacked, err := msg.Marshal()
 	if err != nil {

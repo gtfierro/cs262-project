@@ -44,6 +44,7 @@ type CoordinatorConfig struct {
 	EtcdAddresses                 string // comma-separated list
 	GCFreq                        int    // how often (number of events) to GC etcd
 	EnableContinuousCheckpointing bool   // true to continuously checkpoint
+	DisableSendLog                bool   // true to not log sent messages
 	UseAWSIPSwitcher              bool   // true to use the AWP IP Switcher; doesn't switch IPs otherwise
 	UseEtcd                       bool   // true if events should be stored in Etcd; CoordinatorCount must be 1
 	InstanceId                    string // AWS instance id, e.g. i-1a2b3c4d

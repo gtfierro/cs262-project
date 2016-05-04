@@ -35,8 +35,7 @@ func main() {
 	var clients = make([]*client.Client, numClients)
 	var counts = make([]int64, numClients)
 	for i, _ := range clients {
-		config.ID = client.UUIDFromName(string(i))
-		clients[i], err = client.NewClient(config)
+		clients[i], err = client.NewClient(client.UUIDFromName(string(i)), "Room = '410'", config)
 		if err != nil {
 			log.Criticalf("Could not create client: %v", err)
 			os.Exit(1)
@@ -44,7 +43,7 @@ func main() {
 		clients[i].AttachPublishHandler(func(m *common.PublishMessage) {
 			counts[i] += 1
 		})
-		clients[i].Subscribe("Room = '410'")
+		clients[i].Start()
 	}
 
 	time.Sleep(60 * time.Second)

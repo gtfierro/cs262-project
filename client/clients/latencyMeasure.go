@@ -40,18 +40,17 @@ func main() {
 	var initialDiffLatencies = make([]float64, iterations)
 	go func() {
 		for i := 0; i < iterations; i++ {
-			config.ID = client.UUIDFromName(string(i) + "subscriber")
-			c, err := client.NewClient(config)
+			c, err := client.NewClient(client.UUIDFromName(string(i)+"subscriber"), "Room = '420'", config)
 			if err != nil {
 				log.Criticalf("Could not create client: %v", err)
 				os.Exit(1)
 			}
 			start := time.Now()
-			c.Subscribe("Room = '420'")
 			c.AttachDiffHandler(func(m *common.SubscriptionDiffMessage) {
 				wg.Done()
 				c.Stop <- true
 			})
+			c.Start()
 			diff := time.Since(start)
 			initialDiffLatencies[i] = float64(diff)
 			time.Sleep(500 * time.Millisecond)

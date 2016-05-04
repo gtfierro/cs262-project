@@ -2,25 +2,13 @@ package client
 
 import (
 	"github.com/gtfierro/cs262-project/common"
-	"github.com/pkg/errors"
-	"github.com/tinylib/msgp/msgp"
-	"net"
 	"sync"
 	"sync/atomic"
 )
 
 type Publisher struct {
+	BrokerConnection
 	ID common.UUID
-
-	brokerAddress    *net.TCPAddr
-	brokerConn       *net.TCPConn
-	brokerEncoder    *msgp.Writer
-	brokerEncodeLock sync.Mutex
-
-	coordAddress    *net.TCPAddr
-	coordConn       *net.TCPConn
-	coordEncoder    *msgp.Writer
-	coordEncodeLock sync.Mutex
 
 	// metadata for this client if it acts as a publisher
 	metadataLock sync.RWMutex
@@ -33,49 +21,26 @@ type Publisher struct {
 	sentMessagesTotal   uint32
 }
 
-func NewPublisher(id common.UUID, brokerAddress, coordAddress *net.TCPAddr) *Publisher {
-	p := &Publisher{
+// publishLoop should be a loop which will start whenever a connection to a broker
+// is established; it should exit whenever an error is encountered and it will be
+// restarted once a reconnection is reestablished
+func NewPublisher(id common.UUID, publishLoop func(*Publisher), cfg *Config) (p *Publisher, err error) {
+	p = &Publisher{
 		ID:                  id,
-		brokerAddress:       brokerAddress,
-		coordAddress:        coordAddress,
 		metadata:            make(map[string]interface{}),
 		sentMessagesAttempt: 0,
 		sentMessagesTotal:   0,
 	}
-	// TODO: failover
-	// TODO: connect to coordinator
-	for p.connectBroker(p.brokerAddress) != nil {
+	connectCallback := func() {
+		go publishLoop(p)
+	}
+	err = (&p.BrokerConnection).initialize(connectCallback, func(common.Sendable) {}, cfg)
+	if err != nil {
+		p = nil
+		return
 	}
 
-	return p
-}
-
-// What is our failover technique?
-// TODO
-func (p *Publisher) doFailover() {
-}
-
-func (p *Publisher) connectBroker(address *net.TCPAddr) error {
-	var err error
-	if p.brokerConn, err = net.DialTCP("tcp", nil, address); err != nil {
-		return errors.Wrap(err, "Could not dial broker")
-	}
-	p.brokerEncodeLock.Lock()
-	p.brokerEncoder = msgp.NewWriter(p.brokerConn)
-	p.brokerEncodeLock.Unlock()
-	return nil
-}
-
-func (p *Publisher) sendBroker(m common.Sendable) error {
-	p.brokerEncodeLock.Lock()
-	defer p.brokerEncodeLock.Unlock()
-	if err := m.Encode(p.brokerEncoder); err != nil {
-		return errors.Wrap(err, "Could not encode message")
-	}
-	if err := p.brokerEncoder.Flush(); err != nil {
-		return errors.Wrap(err, "Could not send message to broker")
-	}
-	return nil
+	return
 }
 
 func (p *Publisher) Publish(value interface{}) error {
@@ -91,12 +56,11 @@ func (p *Publisher) Publish(value interface{}) error {
 	p.dirtyMetadata = false
 	p.metadataLock.RUnlock()
 	// if we fail to send, then reconnect
-	var err error
-	if err = p.sendBroker(m); err != nil {
-		p.doFailover()
+	if err := p.sendBroker(m); err != nil {
+		return err
 	}
 	atomic.AddUint32(&p.sentMessagesTotal, 1)
-	return err
+	return nil
 }
 
 func (p *Publisher) GetStats() PublisherStats {

@@ -6,6 +6,7 @@ import (
 	"github.com/gtfierro/cs262-project/client"
 	"github.com/gtfierro/cs262-project/common"
 	"os"
+	"time"
 )
 
 var log *logging.Logger
@@ -26,9 +27,8 @@ func main() {
 	config := &client.Config{
 		BrokerAddress:      fmt.Sprintf("%s:4444", brokerIP),
 		CoordinatorAddress: "cs262.cal-sdb.org:5505",
-		ID:                 client.UUIDFromName(id),
 	}
-	C, err := client.NewClient(config)
+	C, err := client.NewClient(client.UUIDFromName(id), "Room = '410'", config)
 	if err != nil {
 		log.Criticalf("Could not create client: %v", err)
 		os.Exit(1)
@@ -39,8 +39,8 @@ func main() {
 		received += 1
 		log.Infof("MESSAGE %d %v", received, m)
 	})
-
-	C.Subscribe("Room = '410'")
+	C.Start()
+	C.StopIn(60 * time.Second)
 
 	<-C.Stop
 }

@@ -37,17 +37,18 @@ type ServerConfig struct {
 
 // Coordinator configuration
 type CoordinatorConfig struct {
-	Port              int
-	Global            bool
-	HeartbeatInterval int    // seconds
-	CoordinatorCount  int    // number of coordinators total
-	EtcdAddresses     string // comma-separated list
-	GCFreq            int    // how often (number of events) to GC etcd
-	UseAWSIPSwitcher  bool   // true to use the AWP IP Switcher; doesn't switch IPs otherwise
-	UseEtcd           bool   // true if events should be stored in Etcd; CoordinatorCount must be 1
-	InstanceId        string // AWS instance id, e.g. i-1a2b3c4d
-	Region            string // AWS region name, e.g. us-west-1
-	ElasticIP         string // the elastic IP to fight over
+	Port                          int
+	Global                        bool
+	HeartbeatInterval             int    // seconds
+	CoordinatorCount              int    // number of coordinators total
+	EtcdAddresses                 string // comma-separated list
+	GCFreq                        int    // how often (number of events) to GC etcd
+	EnableContinuousCheckpointing bool   // true to continuously checkpoint
+	UseAWSIPSwitcher              bool   // true to use the AWP IP Switcher; doesn't switch IPs otherwise
+	UseEtcd                       bool   // true if events should be stored in Etcd; CoordinatorCount must be 1
+	InstanceId                    string // AWS instance id, e.g. i-1a2b3c4d
+	Region                        string // AWS region name, e.g. us-west-1
+	ElasticIP                     string // the elastic IP to fight over
 }
 
 // MongoDB configuration

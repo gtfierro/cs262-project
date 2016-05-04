@@ -39,18 +39,19 @@ type EtcdManager interface {
 }
 
 type EtcdManagerImpl struct {
-	conn              *EtcdConnection
-	leaderService     LeaderService
-	logHandlers       map[string]LogHandler
-	cancelWatchChan   chan bool
-	handlerLock       sync.RWMutex
-	handlerCond       *sync.Cond
-	highestKeyWritten string
-	highKeyLock       sync.Mutex
-	maxKeysPerRequest int64
-	gcNodeKey         string
-	gcFreq            int
-	coordCount        int
+	conn                          *EtcdConnection
+	leaderService                 LeaderService
+	logHandlers                   map[string]LogHandler
+	cancelWatchChan               chan bool
+	handlerLock                   sync.RWMutex
+	handlerCond                   *sync.Cond
+	highestKeyWritten             string
+	highKeyLock                   sync.Mutex
+	maxKeysPerRequest             int64
+	gcNodeKey                     string
+	gcFreq                        int
+	coordCount                    int
+	enableContinuousCheckpointing bool
 }
 
 type LogHandler func(common.Sendable, bool)
@@ -78,7 +79,8 @@ func NewEtcdConnection(endpoints []string) *EtcdConnection {
 	return ec
 }
 
-func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coordCount, gcFreq int, timeout time.Duration, maxKeysPerRequest int64) EtcdManager {
+func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coordCount, gcFreq int, timeout time.Duration,
+	maxKeysPerRequest int64, enableContinuousCheckpointing bool) EtcdManager {
 	em := new(EtcdManagerImpl)
 	em.maxKeysPerRequest = maxKeysPerRequest
 	em.conn = etcdConn
@@ -90,6 +92,7 @@ func NewEtcdManager(etcdConn *EtcdConnection, leaderService LeaderService, coord
 	em.gcNodeKey = fmt.Sprintf("%v/%v", GCPrefix, uuid.String())
 	em.gcFreq = gcFreq
 	em.coordCount = coordCount
+	em.enableContinuousCheckpointing = enableContinuousCheckpointing
 
 	em.logHandlers = make(map[string]LogHandler)
 	em.handlerCond = sync.NewCond(&em.handlerLock)
@@ -132,7 +135,7 @@ func (em *EtcdManagerImpl) GetLogStatus() (logBelowThreshold bool, logKey string
 }
 
 func (em *EtcdManagerImpl) UpdateEntity(entity EtcdSerializable) error {
-	if !em.leaderService.IsLeader() {
+	if !em.leaderService.IsLeader() || !em.enableContinuousCheckpointing {
 		return nil // No updates if you're not the leader
 	}
 	id, prefix := entity.GetIDType()
@@ -153,7 +156,7 @@ func (em *EtcdManagerImpl) UpdateEntity(entity EtcdSerializable) error {
 }
 
 func (em *EtcdManagerImpl) DeleteEntity(entity EtcdSerializable) error {
-	if !em.leaderService.IsLeader() {
+	if !em.leaderService.IsLeader() || !em.enableContinuousCheckpointing {
 		return nil // No updates if you're not the leader
 	}
 	id, prefix := entity.GetIDType()

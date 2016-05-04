@@ -115,6 +115,10 @@ func (bc *Broker) Send(msg common.Sendable) {
 // or not the broker is alive (a heartbeat is received or it times out)
 // Returns true if the broker is alive, or else false
 func (bc *Broker) RequestHeartbeatAndWait() bool {
+	bc.messageSendBuffer <- &common.RequestHeartbeatMessage{}
+	respChan := make(chan bool)
+	bc.requestHeartbeatBuffer <- respChan
+
 	bc.aliveLock.Lock()
 	if !bc.connectionActive {
 		bc.aliveLock.Unlock()
@@ -122,9 +126,6 @@ func (bc *Broker) RequestHeartbeatAndWait() bool {
 	}
 	bc.aliveLock.Unlock()
 
-	bc.messageSendBuffer <- &common.RequestHeartbeatMessage{}
-	respChan := make(chan bool)
-	bc.requestHeartbeatBuffer <- respChan
 	determineDeathChan := make(chan bool)
 	go func() {
 		bc.aliveLock.Lock()

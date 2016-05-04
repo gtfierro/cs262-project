@@ -180,6 +180,7 @@ func TestBrokerDeathWithClientReassignRequest(t *testing.T) {
 
 	time.Sleep(50 * time.Millisecond)      // Give time for heartbeat threads to get current time
 	clock.AdvanceNowTime(12 * time.Second) // single heartbeat interval since we sent a request
+	time.Sleep(50 * time.Millisecond)
 
 	respMsg := <-clientResp
 

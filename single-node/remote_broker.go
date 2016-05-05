@@ -101,6 +101,48 @@ func (b *RemoteBroker) HandleProducer(msg *common.PublishMessage, dec *msgp.Read
 	}(p)
 }
 
+func (b *RemoteBroker) HandleBrokerProducer(msg *common.BrokerPublishMessage, dec *msgp.Reader, conn net.Conn) {
+	var (
+		found bool
+		p     *Producer
+	)
+	// forward the new message to the coordinator
+	//b.coordinator.forwardPublish(msg)
+	// now wait for the response from the coordinator to tell us what changed
+	// The PROBLEM here is that a) we only have a single connection to the broker and we need
+	// to multiplex many publishers among it. How do I know that I have received the subscription
+	// diff that corresponds to my message?
+
+	b.producers_lock.RLock()
+	p, found = b.producers[msg.UUID]
+	b.producers_lock.RUnlock()
+	if !found {
+		p = NewProducer(msg.UUID, dec)
+	}
+
+	b.ForwardMessage(msg.ToRegular())
+
+	go func(p *Producer) {
+		for p.C != nil {
+			select {
+			case <-p.stop:
+				b.cleanupProducer(p)
+				return
+			case msg := <-p.C:
+				msg.L.RLock()
+				// if we have metadata, then subscriptions could change
+				if len(msg.Metadata) > 0 {
+					// this blocks until the acknowledgement has been sent
+					//b.coordinator.forwardPublish(msg)
+				}
+				log.Debugf("Forwarding msg to clients: %v", msg)
+				b.ForwardMessage(msg)
+				msg.L.RUnlock()
+			}
+		}
+	}(p)
+}
+
 // Removes the producer UUID from the forwarding and producers maps
 func (b *RemoteBroker) cleanupProducer(p *Producer) {
 	b.producers_lock.Lock()
@@ -151,7 +193,7 @@ func (b *RemoteBroker) ForwardMessage(msg *common.PublishMessage) {
 		}
 		log.Debugf("found clients %v %v", deliveries, brokerDeliveries)
 		deliveries.sendToList(msg)
-		brokerDeliveries.sendToList(msg)
+		brokerDeliveries.sendToList(msg.ToBroker())
 	}
 }
 

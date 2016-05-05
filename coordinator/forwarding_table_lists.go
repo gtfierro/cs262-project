@@ -62,5 +62,5 @@ func (ql *queryList) removeQuery(q *ForwardedQuery) {
 	}
 	log.WithFields(log.Fields{
 		"query": q, "queryList": ql,
-	}).Error("Attempted to remove query from queryList that doesn't contain it")
+	}).Info("Attempted to remove query from queryList that doesn't contain it")
 }

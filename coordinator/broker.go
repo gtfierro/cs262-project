@@ -350,7 +350,7 @@ func (bc *Broker) sendEnsureDelivery(commConn CommConn, message common.SendableW
 		case <-bc.terminating:
 			return
 		case <-done:
-		case <-bc.clock.After(bc.heartbeatInterval):
+		case <-bc.clock.After(5 * time.Second):
 		}
 		bc.outMessageLock.RLock()
 		msg, ok := bc.outstandingMessages[message.GetID()]

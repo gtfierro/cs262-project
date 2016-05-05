@@ -145,6 +145,7 @@ func (s *Server) dispatch(conn net.Conn) {
 	case *common.PublishMessage:
 		s.handlePublish(m, dec, conn)
 	case *common.BrokerPublishMessage:
+		s.handleBrokerPublish(m, dec, conn)
 		log.Warnf("got broker publish message %v", m)
 	default:
 		log.WithFields(log.Fields{
@@ -166,4 +167,8 @@ func (s *Server) handleSubscribe(query *common.QueryMessage, dec *msgp.Reader, c
 
 func (s *Server) handlePublish(first *common.PublishMessage, dec *msgp.Reader, conn net.Conn) {
 	s.broker.HandleProducer(first, dec, conn)
+}
+
+func (s *Server) handleBrokerPublish(first *common.BrokerPublishMessage, dec *msgp.Reader, conn net.Conn) {
+	s.broker.HandleBrokerProducer(first, dec, conn)
 }

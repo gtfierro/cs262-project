@@ -401,3 +401,5 @@ reevaluate:
 		b.SendSubscriptionDiffs(query.QueryString, added, removed)
 	}
 }
+func (b *LocalBroker) HandleBrokerProducer(msg *common.BrokerPublishMessage, dec *msgp.Reader, conn net.Conn) {
+}

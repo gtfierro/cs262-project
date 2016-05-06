@@ -8,8 +8,8 @@ import (
 	"github.com/montanaflynn/stats"
 	"os"
 	"sync"
-	"time"
 	"sync/atomic"
+	"time"
 )
 
 var log *logging.Logger
@@ -30,8 +30,8 @@ func main() {
 
 	numBrokers := 5
 	queriesPerBroker := 20
-	queryFrequency := 500 * time.Millisecond // overall; per broker will be (queryFrequency * numBrokers)
-	delayBetweenQueries := time.Duration(numBrokers)*queryFrequency // per broker so requests will arrive at (delayBetweenQueries / numBrokers)
+	queryFrequency := 500 * time.Millisecond                          // overall; per broker will be (queryFrequency * numBrokers)
+	delayBetweenQueries := time.Duration(numBrokers) * queryFrequency // per broker so requests will arrive at (delayBetweenQueries / numBrokers)
 	wg.Add(numBrokers * queriesPerBroker)
 	publisherWorkGroup.Add(numBrokers)
 
@@ -44,15 +44,15 @@ func main() {
 				connectMsg := &common.BrokerConnectMessage{
 					MessageIDStruct: common.GetMessageIDStruct(),
 					BrokerInfo: common.BrokerInfo{
-						BrokerID: client.UUIDFromName(fmt.Sprintf("broker%d", bNum)),
+						BrokerID:         client.UUIDFromName(fmt.Sprintf("broker%d", bNum)),
 						ClientBrokerAddr: fmt.Sprintf("0.0.0.%d:4444", bNum),
-						CoordBrokerAddr: fmt.Sprintf("0.0.0.%d:5505", bNum),
+						CoordBrokerAddr:  fmt.Sprintf("0.0.0.%d:5505", bNum),
 					},
 				}
-				if err := broker.Send(connectMsg); err != nil {		
-					return 
+				if err := broker.Send(connectMsg); err != nil {
+					return
 				} else {
-					time.Sleep(500*time.Millisecond)
+					time.Sleep(500 * time.Millisecond)
 				}
 				if !hasPublisher {
 					err := broker.Send(&common.BrokerPublishMessage{
@@ -93,7 +93,7 @@ func main() {
 					}
 					if bNumQuery != bNum {
 						log.Errorf("bNumQuery: %d, bNum: %d (queryNum %d)", bNumQuery, bNum, qNum)
-					} 
+					}
 					startTime := initialDiffLatencies[qNum*numBrokers+bNum]
 					latency := time.Now().UnixNano() - startTime
 					if startTime < maxDuration {

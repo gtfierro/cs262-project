@@ -15,6 +15,8 @@ We examine each of the systems below along the primary design dimensions of the 
 \hline \hline
 redis~\cite{redis} & $N$ channels & List of channel names & Simple & None & Replicated cluster \\
 MQTT~\cite{locke2010mq}\cite{hunkeler2008mqtt} & Hierarchical topics & Wildcard matching & Simple & None & None \\
+XMPP~\cite{saint2011extensible} & Unique names & List of publishers & Complex & None & Federated Servers \\
+Kafka~\cite{kreps2011kafka} & Hierarchical topics & Wildcard matching & Complex & Yes & Replicated brokers \\
 \hline
 \end{tabular}
 \end{table*}
@@ -32,8 +34,8 @@ Because of these limitations, some modern pub-sub systems use hierarchical topic
 %the CQBS broker: richness of publisher descriptions, expressiveness of
 %syndication model, client complexity and fault tolerance.
 
-\textbf{MQTT}
-\subsubsection{Publishing} Producers of data in MQTT publish on hierarchical path-like topics such as \texttt{/apartment/gabe/livingroom/temperature}.
+\textbf{MQTT} is a lightweight publish-subscribe protocol popular for its simpicity and extensible messages.
+Producers of data in MQTT publish on hierarchical path-like topics such as \texttt{/apartment/gabe/livingroom/temperature}.
 This construction of topics is best for grouping publishers together along a limited number of dimensions, but quickly becomes unwieldy as the dimensionality and sparsity of the descriptions increase.
 For example, a temperature sensor could be described along the following dimensions:
 
@@ -49,13 +51,41 @@ For example, a temperature sensor could be described along the following dimensi
 
 To be effective, a topic-based system must determine the order and syntax of topics so that subscribers can know they are consuming the appropriate streams.
 This is further complicated when considering other types of publishers which may include an entirely different set of descriptive tags.
+MQTT syndication supports prefix matching on topics and limited forms of suffix matching.
+To subscribe, applications specify explicit topics (\texttt{a/b/c/d}), one-level wildcards (\texttt{+/b/c/d, a/+/c/d, a/+/+/d, a/b/c/+}) and multi-level wildcards (\texttt{\#, a/\#, +/b/c/\#}).
+While appropriate for basic subscriptions, this approach does not allow the expression of more complex predicates that contain ``and'', ``or'' or ``not'' relations: temperature sensors in Gabe's apartment, but not the ones in the kitchen or the bedroom.
 
-\subsubsection{Subscribing} MQTT syndication supports prefix matching on topics and limited forms of suffix matching.
+MQTT supports three Quality-of-Service levels for message delivery: at most once, at least once, and exactly once.
+Most client implementations simply address the first two, keeping complexity and code-size down; it is entirely feasible to implement a MQTT client on an embedded device, and there exists an adaptation of MQTT (MQTT-S~\cite{hunkeler2008mqtt}) for non-TCP/IP networks.
+MQTT does not contain any explicit fault tolerance mechanisms: brokers may be distributed and ``bridged'' with the aid of an administrator, but failover logic is entirely implementation dependent.
+In summary, MQTT is insufficient for our goals because hierarchical topics are fundamentally constraining in their structure and syndication.
 
-\subsubsection{Client Complexity}
+\textbf{XMPP}~\cite{saint2011extensible}, or the Extensible Messaging and Presence Protocol, is an XML-based technology for instant messaging, video conferencing and more recently sensor communication (as seen in large, deployed systems such as Sensor Andrew~\cite{rowe2011sensor}).
+Similar to channel-based systems, every entity (publisher or subscriber or broker) in a distribution of federated XMPP servers has some unique address from which it can send and receive messages.
+There are attempts to provide a more expressive pubsub model on top of XMPP that allows for the discovery of services and subsequent subscription to relevant service providers~\cite{millard2010xep}.
+These service descriptions can be extended to include arbitrary contextual data, which is a definite advantage over primitive address-based messaging.
 
-\subsubsection{Fault Tolerance}
+The limitation of XMPP is in its size and complexity.
+XMPP messages are XML-encoded and thus permit the expression of many different structures, but XML parsers are typically large and memory-intensive, rendering them inappropriate for embedded devices.
+Additionally, XML tends towards large messages, which can result in fragmented messages in embedded networks that lower throughput and delivery rate.
 
+\textbf{Apache Kafka}~\cite{kreps2011kafka} is a distributed messaging system designed for data pipelining in large, distributed, high-throughput applications.
+Kafka is not designed for deployment scenarios that require rich descriptions of the array of available data services, so publisher and subscriber interactions are done via hierarchical topics and wildcard matching (very similar to MQTT).
 
+Kafka, unlike MQTT and XMPP, is designed to be fault tolerant: all topics are replicated in a cluster of brokers, and failover is automatic.
+To achieve the combination of fault tolerance and performance, Kafka clients must be carefully engineered, and are intended to be fuller applications rather than embedded devices.
+Thus, while Kafka may be suitable for a data anaylsis pipeline in a datacenter, it does not meet our requirements for message delivery and reception at the ``edge'' of an IoT network.
 
-here we talk about mqtt
+\subsection{Content-Based Publish-Subscribe}
+
+In content-based pub-sub, subscribers specify predicates, which act as filters for incoming messages for publishers.
+While this scheme has richer descriptive power, routing on a per-message basis is computationally expensive (reducing routing efficiency) and can require larger messages from publishers (if messages must contain descriptive elements for routing).
+% these will be fairly short
+
+\textbf{SIENA}
+
+\textbf{CORBA}
+
+\textbf{JMS}
+
+\textbf{Elvin}

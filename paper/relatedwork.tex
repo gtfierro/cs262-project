@@ -2,11 +2,60 @@
 
 %TODO: do we define/justify the basic principles of pubsub anywhere here, e.g. decoupling between publishers and subscribers?
 
-The CQBS distributed broker is most closely related to \emph{publish-subscribe} systems, but because of its intended use in building dynamic applications for the so-called ``Internet of Things'', we also draw comparisons between it and several IoT application frameworks. We examine each of the systems below along the primary design dimensions of the CQBS broker: richness of publisher descriptions, expressiveness of syndication model, client complexity and fault tolerance.
+The CQBS distributed broker is most closely related to \emph{publish-subscribe} systems, but because of its intended use in building dynamic applications for the so-called ``Internet of Things'', we also draw comparisons between it and several IoT application frameworks.
+We examine each of the systems below along the primary design dimensions of the CQBS broker: richness of publisher descriptions, expressiveness of syndication model, client complexity and fault tolerance.
+
+\begin{table*}
+\caption{High-level comparison of features between systems}
+\label{table:comparison}
+\centering
+\begin{tabular}{|l|c|c|c|c|c|}
+\hline
+\textbf{System Name} & \textbf{Publisher Descriptions} & \textbf{Syndication} & \textbf{Client Complexity} & \textbf{Client Failover} & \textbf{Fault Tolerant} \\
+\hline \hline
+redis~\cite{redis} & $N$ channels & List of channel names & Simple & None & Replicated cluster \\
+MQTT~\cite{locke2010mq}\cite{hunkeler2008mqtt} & Hierarchical topics & Wildcard matching & Simple & None & None \\
+\hline
+\end{tabular}
+\end{table*}
 
 \subsection{Topic-Based Publish-Subscribe}
 
-Most publish-subscribe (``pub-sub'')systems fall into one of two categories: topic-based and content based \cite{eugster2003many}. The most basic form of topic-based pub-sub is a channel model, in which producers (data publishers) transmit data associated with some channel name to a broker.
+Most publish-subscribe (``pub-sub'')systems fall into one of two categories: topic-based and content based \cite{eugster2003many}.
+The most basic form of topic-based pub-sub is a channel model, in which producers (data publishers) transmit data associated with some channel name to a broker; subscribers list the channels in which they are interested.
+The benefits of this approach are the its simplicity and speed -- the ``hot path'' of a published messages simply retrieves a list of subscribers -- but there is limited expressive power because each publisher can only describe their data using a single dimension (the name of the channel)~\cite{redis}.
+Because of these limitations, some modern pub-sub systems use hierarchical topics with prefix and suffix matching using wildcards. The most popular of these are MQTT~\cite{locke2010mq}, Kafka~\cite{kreps2011kafka} and XMPP~\cite{saint2011extensible}.
+%While our CQBS system is primarily a \emph{publish-subscribe} solution, its goals of providing
+%resource discovery as well as data transfer means that we must also
 
-%While our CQBS system is primarily a \emph{publish-subscribe} solution, its goals of providing 
-%resource discovery as well as data transfer means that we must also 
+%We examine each of the systems below along the primary design dimensions of
+%the CQBS broker: richness of publisher descriptions, expressiveness of
+%syndication model, client complexity and fault tolerance.
+
+\textbf{MQTT}
+\subsubsection{Publishing} Producers of data in MQTT publish on hierarchical path-like topics such as \texttt{/apartment/gabe/livingroom/temperature}.
+This construction of topics is best for grouping publishers together along a limited number of dimensions, but quickly becomes unwieldy as the dimensionality and sparsity of the descriptions increase.
+For example, a temperature sensor could be described along the following dimensions:
+
+\begin{itemize}
+\item manufacturer and model number
+\item city, campus, building, floor and  room number
+\item orientation or position within a room
+\item accuracy and precision of temperature sensor
+\item method of temperature sensing (e.g. IR, thermopile)
+\item who installed the temperature sensor and when it was installed
+\item sample rate of the temperature sensor
+\end{itemize}
+
+To be effective, a topic-based system must determine the order and syntax of topics so that subscribers can know they are consuming the appropriate streams.
+This is further complicated when considering other types of publishers which may include an entirely different set of descriptive tags.
+
+\subsubsection{Subscribing} MQTT syndication supports prefix matching on topics and limited forms of suffix matching.
+
+\subsubsection{Client Complexity}
+
+\subsubsection{Fault Tolerance}
+
+
+
+here we talk about mqtt

@@ -16,17 +16,19 @@ We examine each of the systems below along the primary design dimensions of the 
 redis~\cite{redis} & $N$ channels & List of channel names & Simple & None & Replicated cluster \\
 MQTT~\cite{locke2010mq}\cite{hunkeler2008mqtt} & Hierarchical topics & Wildcard matching & Simple & None & None \\
 XMPP~\cite{saint2011extensible} & Unique names & List of publishers & Complex & None & Federated Servers \\
-Kafka~\cite{kreps2011kafka} & Hierarchical topics & Wildcard matching & Complex & Yes & Replicated brokers \\
+Kafka~\cite{kreps2011kafka} & Hierarchical topics & Wildcard matching & Complex & Yes & Replicated broker cluster \\
+SIENA~\cite{carzaniga2000achieving} & attribute-value pairs & SQL-like predicate & N/A & N/A & Replicated broker, flexible routing \\
+\textbf{CQBS Broker} & attribute-value pairs & SQL-like predicate & Simple & Yes & Replicated brokers, coordinators \\
 \hline
 \end{tabular}
 \end{table*}
 
 \subsection{Topic-Based Publish-Subscribe}
 
-Most publish-subscribe (``pub-sub'')systems fall into one of two categories: topic-based and content based \cite{eugster2003many}.
-The most basic form of topic-based pub-sub is a channel model, in which producers (data publishers) transmit data associated with some channel name to a broker; subscribers list the channels in which they are interested.
+Most publish-subscribe (``pubsub'')systems fall into one of two categories: topic-based and content based \cite{eugster2003many}.
+The most basic form of topic-based pubsub is a channel model, in which producers (data publishers) transmit data associated with some channel name to a broker; subscribers list the channels in which they are interested.
 The benefits of this approach are the its simplicity and speed -- the ``hot path'' of a published messages simply retrieves a list of subscribers -- but there is limited expressive power because each publisher can only describe their data using a single dimension (the name of the channel)~\cite{redis}.
-Because of these limitations, some modern pub-sub systems use hierarchical topics with prefix and suffix matching using wildcards. The most popular of these are MQTT~\cite{locke2010mq}, Kafka~\cite{kreps2011kafka} and XMPP~\cite{saint2011extensible}.
+Because of these limitations, some modern pubsub systems use hierarchical topics with prefix and suffix matching using wildcards. The most popular of these are MQTT~\cite{locke2010mq}, Kafka~\cite{kreps2011kafka} and XMPP~\cite{saint2011extensible}.
 %While our CQBS system is primarily a \emph{publish-subscribe} solution, its goals of providing
 %resource discovery as well as data transfer means that we must also
 
@@ -78,14 +80,31 @@ Thus, while Kafka may be suitable for a data anaylsis pipeline in a datacenter, 
 
 \subsection{Content-Based Publish-Subscribe}
 
-In content-based pub-sub, subscribers specify predicates, which act as filters for incoming messages for publishers.
-While this scheme has richer descriptive power, routing on a per-message basis is computationally expensive (reducing routing efficiency) and can require larger messages from publishers (if messages must contain descriptive elements for routing).
+In content-based pubsub systems, publishers attach richer descriptions to messages, allowing subscribers to specify predicates that act as filters for which messages they receive.
+While this scheme has richer descriptive power, routing on a per-message basis is computationally expensive (reducing routing efficiency) and can require larger messages from publishers.
 % these will be fairly short
 
-\textbf{SIENA}
+\textbf{SIENA}~\cite{carzaniga2000achieving}, the Scalable Internet Event Notification Architecture, aims to maximize the expressiveness of publishers and subscribers communicating in a wide-area network.
+SIENA publishers send messages containing a set of \texttt{<type, name, value>} tuples, to which clients can subscribe using SQL-like filter expressions.
+This approach, designed to provide discovery of relevant data in a large amount of heterogeneous messages, allows publishers to express richer metadata than would be feasible using a topic-based scheme.
+It also allows subscribers to more precisely define the data they need.
+For example, this could easily capture the proposed descriptive elements of the temperature sensor described above and allow a subscriber to filter on any combination of those attributes.
 
-\textbf{CORBA}
+SIENA is fully distributed, using a tree overlay for routing and a special ``merging'' mechanism for pruning unnecessary delivery of messages to subtrees.
+The disadvantages of SIENA mirror those of other content-based systems: carrying a full description of a publisher with every message reduces the bytes available for application data in embedded, constrained networks typical of the IoT.
 
-\textbf{JMS}
+\textbf{JMS}~\cite{hapner2002java}, the Java Message Service, is a distributed messaging service for connecting distributed application components.
+Publishers send messages with headers containing standardized key-value pairs, but also contain lists of user-defined key-value properties.
+Like SIENA, JMS clients subscribe with SQL-like expressions that express constraints on the set of publisher properties.
+One difference between JMS and other systems is its default setting of exactly-once delivery, which complicates client logic and raises the network overhead of sending or receiving a message.
 
-\textbf{Elvin}
+Distribution and fault-tolerance in JMS is possible, but requires specific configuration of which topics are distributed and among which servers they are distributed.
+The focus of JMS is on enterprise-type applications that are in need of a messaging system that can adapt to its needs, but does not need to do so dynamically.
+
+%\textbf{Elvin}
+
+\subsection{Other Systems}
+
+\textbf{CORBA}~\cite{vinoski1997corba}, the Common Object Request Broker Architecture, is a data bus for communication amongst distributed objects that provides property- and name-based discovery and event notification.
+Distributed object models (including DCOM~\cite{horstmann1997dcom}) share many features with content-based pubsub systems: similar to JMS, published messages contain key-value pairs in the header and body, and syndication is performed by subscribers specifying filters on those attributes.
+CORBA itself is limited because it is not designed to be distributed, and has no failover or replication mechanisms.

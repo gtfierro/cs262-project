@@ -25,9 +25,9 @@ SIENA~\cite{carzaniga2000achieving} & attribute-value pairs & SQL-like predicate
 
 \subsection{Topic-Based Publish-Subscribe}
 
-Most publish-subscribe (``pubsub'')systems fall into one of two categories: topic-based and content based \cite{eugster2003many}.
+Most publish-subscribe (``pubsub'') systems fall into one of two categories: topic-based and content based~\cite{eugster2003many}.
 The most basic form of topic-based pubsub is a channel model, in which producers (data publishers) transmit data associated with some channel name to a broker; subscribers list the channels in which they are interested.
-The benefits of this approach are the its simplicity and speed -- the ``hot path'' of a published messages simply retrieves a list of subscribers -- but there is limited expressive power because each publisher can only describe their data using a single dimension (the name of the channel)~\cite{redis}.
+The benefits of this approach are its simplicity and speed---the ``hot path'' of a published message simply retrieves a list of subscribers---but there is limited expressive power because each publisher can only describe their data using a single dimension (the name of the channel)~\cite{redis}.
 Because of these limitations, some modern pubsub systems use hierarchical topics with prefix and suffix matching using wildcards. The most popular of these are MQTT~\cite{locke2010mq}, Kafka~\cite{kreps2011kafka} and XMPP~\cite{saint2011extensible}.
 %While our CQBS system is primarily a \emph{publish-subscribe} solution, its goals of providing
 %resource discovery as well as data transfer means that we must also
@@ -108,3 +108,8 @@ The focus of JMS is on enterprise-type applications that are in need of a messag
 \textbf{CORBA}~\cite{vinoski1997corba}, the Common Object Request Broker Architecture, is a data bus for communication amongst distributed objects that provides property- and name-based discovery and event notification.
 Distributed object models (including DCOM~\cite{horstmann1997dcom}) share many features with content-based pubsub systems: similar to JMS, published messages contain key-value pairs in the header and body, and syndication is performed by subscribers specifying filters on those attributes.
 CORBA itself is limited because it is not designed to be distributed, and has no failover or replication mechanisms.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "paper"
+%%% End:

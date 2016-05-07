@@ -51,7 +51,7 @@ Each message contains at least the UUID of the originating stream, and can also 
 
 An example of metadata for a temperature sensor, and the basic client logic, can be found in Figure~\ref{fig:pseudoclient}.
 In the initial registration message, along with the other metadata, the reporting process describes the thermostat as being in room 410 Soda.
-If this changes, such as if the sensor were on a piece of smart clothing or furniture, the sensor attaches the metadata update \lstinline{Location/Room = "415"} to any outgoing message, where it is handled by the broker (described in the following section).
+If this changes, such as if the sensor were on a piece of smart clothing or furniture, the sensor attaches the metadata update \lstinline[language=SQL,basicstyle=\ttfamily]{Location/Room = "415"} to any outgoing message, where it is handled by the broker (described in the following section).
 A discussion of client complexity can be found in Section~\ref{section:evaluation}.
 
 This is a departure from the approach of content-based pubsub systems, where although the producer may possess some unique identifier, it transmits any associated ``content'' (metadata) in every message.
@@ -174,12 +174,34 @@ We choose MsgPack, a lean, typed binary serialization format that is simple enou
 A primary contribution of our distributed broker architecture is its continuous, query-based syndication.
 Queries are structured, SQL-like statements that define sets of constraints over stream metadata to express ad-hoc relationships between streams.
 Query-based syndication is the use of these queries to define the forwarding routes from publishers to subscribers.
-The broker persists bindings of streams to clients formed by evaluating subscription queries against the set of available metadata, and routes incoming messages according to those bindings.
-The resolution of queries to routes is \emph{continuous}; the broker reevaluates syndication queries as stream metadata evolves, and informs clients of changes in the set of the streams to which they are subscribed.
+When an application sends a syndication query to the broker, that query is evaluated by the broker into a set of matching streams.
+The broker constructs forwarding paths for those streams to the subscriber; whenever those streams send a message to the broker, it forwards that message to the relevant subscribers.
+
+The resolution of queries to routes is \emph{continuous}; the broker reevaluates syndication queries as stream metadata evolves, and informs clients of changes in the set of the streams to which they are subscribed before adjusting the forwarding paths.
 These changes happen on any metadata event: stream registration, stream deletion and metadata updates on streams.
 
-%Queries are simple strings that support following operators (from giles). Examples of queries include blah blah blah.
-%figure messages illustrates...
+\begin{table}
+\caption{Supported key-value operations for the CQBS syndication query language}
+\label{table:operations}
+\centering
+\begin{tabular}{|l|L|L|}
+\hline
+\textbf{Operator} & \textbf{Description} & \textbf{Example} \\
+\hline \hline
+\texttt{=} & Compare value equality & \texttt{Location/Room = 410} \\
+\hline
+\texttt{like} & Perl-style regex & \texttt{Manufacturer like "Dent\..*"} \\
+\hline
+\texttt{has} & Checks if the stream has the tag & \texttt{has Location/Building} \\
+\hline
+\texttt{and} & Logical AND of two subqueries & \\
+\hline
+\texttt{or} & Logical OR of two subqueries & \\
+\hline
+\texttt{not} & Inverts a clause & \\
+\hline
+\end{tabular}
+\end{table}
 
 \begin{figure*}[t]
 \centering
@@ -189,3 +211,108 @@ for brevity are additional constrains for building, units, etc). As new streams 
 changes to no longer fit the discovery constraints, the client is updated in real-time.}
 \label{fig:messages}
 \end{figure*}
+
+
+Queries are simple strings similar to the "where" clause of a SQL query. Table~\ref{table:operations} contains the set of available operations over keys and values.
+
+For example, a hypothetical daylighting application wants to adjust the brightness of lights corresponding to how much natural light is entering a room.
+It subscribes to the output of all dimmable lights in room 410 as well as all illumination sensors.
+There are two subscriptions:
+
+\begin{sqlcode}
+-- dimmable lights
+Room = 410 AND System = "Lighting"
+AND has Actuator/Brightness
+-- illumination sensors
+Room = 410 AND Point/Type = "Sensor"
+AND Point/Measure = "Illumination"
+\end{sqlcode}
+
+Figure~\ref{fig:messages} illustrates a typical exchange of messsages.
+First, a temperature sensor stream with UUID (starting with) \texttt{9b5155d} is registered as being in Room 410.
+Then, an application enacts a subscription to all temperature sensors in 410 Soda.
+The broker evaluates this query against its metadata store, and establishes forwarding paths for those streams.
+The broker then informs the subscriber of the set of streams it is subscribed to.
+As the sensor publishes, its messages are forwarded to the subscriber.
+Finally, the sensor is moved to another room --- perhaps as part of a piece of smart clothing or furniture --- and informs the broker of the change in its metadata.
+The broker sees that the \texttt{Location/Room} tag has changed, so it looks internally for all syndication queries that contain the \texttt{Location/Room} key.
+The broker reevaluates each of these queries, informs the application of the change in the set of its subscribed streams, and then adjusts the forwarding paths.
+
+\subsection{CQBS Broker Design}
+
+%TODO: add this back in
+%\begin{figure*}[!ht]
+%\centering
+%\includegraphics[width=.8\linewidth]{figs/evalutequery}
+%\caption{The basic flow of operations for evaluating a query for syndication. Metadata keys are extracted
+%from the parsed query and are inserted into several broker data structures that allow the broker to efficiently
+%find queries needing reevaluation.}
+%\label{fig:evaluatequery}
+%\end{figure*}
+%
+Continuous queries are an extension of traditional request-response relational queries to capture changes in a query's result set over time.
+All incoming queries are evaluated against the metadata database or returned from a cache.
+After the initial results of the discovery query are returned, the broker will continue to deliver updates on the result set to the subscribed client.
+
+The broker maintains several data structures that are updated on any metadata event -- such as registering streams, deleting streams or streams changing metadata -- to avoid needing to reevaluate all registered subscriptions on every single event.
+The data structures provide fast lookup of all queries that involve a given metadata key, and store the mapping from a query to the set of the UUIDs for matched streams.
+Both structures are illustrated in Figure~\ref{fig:evaluatequery}.
+
+We decouple the metadata and query mechanism from the underlying database by implementing the query language using Go-yacc.
+This grants the ability to inject functionality at intermediate levels of the parsing process.
+For each submitted syndication query, the broker extracts the set of metadata keys to optimize the query reevaluation process.
+
+The key-query table (the first data structure) maps metadata keys to the set of queries that involve them.
+Queries are consistently hashed to avoid amplification of the lookup table by duplicate queries with reordered clause terms.
+Any incoming metadata event will have its keys referenced against this lookup table, generating a set of queries that will need to be reevaluated after the incoming metadata changes are committed.
+The second data structure, the query-UUID table, stores which streams have been resolved for each query.
+It is updated whenever a query is evaluated, and simplifies identifying which streams have entered or left a result set for a given query upon a metadata event.
+
+\todo{add back in the evaluatequery figure. Change the final "select" step into the set of forwarding UUIDs}
+
+%Queries are simple strings that support following operators (from giles). Examples of queries include blah blah blah.
+%figure messages illustrates...
+
+\todo{change the figure message so it actually has a building value on the initial publisher}
+
+\subsection{Implementation}
+
+The CQBS broker is implemented in Go~\cite{go}, a statically typed, garbage-collected language with language-level support for concurrency in the
+form of multithreading as well as handling asynchronous operations.
+The language contains several built-in concurrency primitives: goroutines (lightweight processes), channels (for message passing) and a \texttt{select} statement (which helps implement non-blocking operations).
+For these reasons, the Go language is a natural fit for developing highly concurrent network systems.
+
+Go channels, in both the buffered and unbuffered varieties, make relaying backpressure straightforward.
+Using channels to convey incoming and outgoing data between pipelined components means that when a component is too loaded to respond to pending tasks, it simply does not dequeue new tasks from the incoming channel.
+This forces upstream components to block in relaying their tasks to that component, and results in cascading backpressure extending to the client~\cite{welsh2001seda}.
+It is important to note that this backpressure is only applied to publishers when they are sending faster than the broker can sustain, \emph{not} when a particular subscribed client is overloaded.
+
+Having to manage queries against an underlying database during metadata changes introduces a number of blocking operations into the ``hot path'' of the broker.
+Goroutines, combined with synchronization primitives such as \texttt{sync.WaitGroup}\footnote{\url{https://golang.org/pkg/sync/#WaitGroup}} from the Go standard library, are a natural way to dispatch multiple concurrent operations in parallel and wait for their completion.
+Goroutines are scheduled by the Go runtime, and scale nicely over multiple cores.
+
+The design and implementation of Go does pose several challenges for low-latency systems.
+First among these is the garbage collector, which is non-generational and mark-and-sweep.
+Concurrent garbage collection was introduced in Go 1.5, but heap allocations do noticeably contribute to increasing latency.
+Because Go is garbage collected, a large numbers of heap allocations can incur high latencies during
+operation.
+Many protocol encoder/decoders in Go create many temporary objects, and Go's compile-time escape analysis unnecessarily promotes many stack allocations to heap allocations, as revealed
+in \cite{goescape}.
+
+Using typed formats such as MsgPack, CapnProto and Protobuf allows parsing code to ``plan-ahead'' for which types to use and how much space they will use.
+JSON is particularly bad at this; because it is a character-based format, parsing it requires many intermediate buffers and lookaheads to determine the size and type of elements in a received message.
+Using generated code for encoding/decoding can drastically reduce the number of allocations. We use the excellent \texttt{msgp} library\footnote{https://github.com/tinylib/msgp}, which reduced the allocations per message from roughly 20 to 3.
+
+%Using the broker as an intermediary for all client communication means
+%that clients need only implement a single application protocol while retaining
+%the ability to ``talk'' to any other client by means of the broker. The broker
+%handles all routing of messages, and its protocol plugins handle all necessary
+%conversions to and from a client's established protocol. This also means that
+%duty-cycled embedded clients can be discovered even if they are not active at
+%the time of some inquiry; embedded clients can pull persisted data like
+%actuation requests and updated discovery results from the broker upon waking.
+
+%Continuous query-based syndication is made tractable by the coordination of the broker and query processor.
+%The query processor keeps those bindings consistent with streams' changing metadata.
+
+%The Giles broker reevalutes these syndication queries as the underlying streams change, ensuring that subscribed clients always have up-to-date information on the state of the system.

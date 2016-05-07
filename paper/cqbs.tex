@@ -173,3 +173,7 @@ We choose MsgPack, a lean, typed binary serialization format that is simple enou
 
 A primary contribution of our distributed broker architecture is its continuous, query-based syndication.
 Queries are structured, SQL-like statements that define sets of constraints over stream metadata to express ad-hoc relationships between streams.
+Query-based syndication is the use of these queries to define the forwarding routes from publishers to subscribers.
+The broker persists bindings of streams to clients formed by evaluating subscription queries against the set of available metadata, and routes incoming messages according to those bindings.
+The resolution of queries to routes is \emph{continuous}; the broker reevaluates syndication queries as stream metadata evolves, and informs clients of changes in the set of the streams to which they are subscribed.
+These changes happen on any metadata event: stream registration, stream deletion and metadata updates on streams.

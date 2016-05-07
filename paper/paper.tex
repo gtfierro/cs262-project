@@ -2,6 +2,7 @@
 \usepackage{enumitem}
 \usepackage{graphicx}
 \usepackage{url}
+\usepackage{xcolor}
 \usepackage{listings}
 \usepackage[labelfont=bf,format=plain,font=small]{subcaption}
 \usepackage[labelfont=bf,format=plain,font=small]{caption}
@@ -13,6 +14,9 @@
                                morekeywords={if,else,while}}
 \lstset{breaklines=true,breakindent=5pt,
         postbreak=\postbreak,prebreak=\prebreak}
+
+\newcommand{\todo}[1]{\textcolor{red}{TODO: #1}\PackageWarning{TODO:}{#1!}}
+
 
 \begin{document}
 
@@ -42,17 +46,11 @@ TODO Abstract
 
 \input{relatedwork} % Gabe
 
-\section{Continuous Query-Based Syndication} % Gabe (somewhat copy from old paper)
+\input{cqbs}
 
 \input{architecture}
 
-\section{Evaluation}
-
-\subsection{Client Complexity}
-
-\subsection{Performance}
-
-\subsection{Fault Tolerance}
+\input{evaluation}
 
 \section{Future Work}
 

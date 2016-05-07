@@ -2,7 +2,7 @@
 
 %TODO: do we define/justify the basic principles of pubsub anywhere here, e.g. decoupling between publishers and subscribers?
 
-The CQBS distributed broker is most closely related to \emph{publish-subscribe} systems, but because of its intended use in building dynamic applications for the so-called ``Internet of Things'', we also draw comparisons between it and several IoT application frameworks.
+The CQBS distributed broker is most closely related to \emph{publish-subscribe} systems.
 We examine each of the systems below along the primary design dimensions of the CQBS broker: richness of publisher descriptions, expressiveness of syndication model, client complexity and fault tolerance.
 
 \begin{table*}
@@ -104,6 +104,8 @@ The focus of JMS is on enterprise-type applications that are in need of a messag
 %\textbf{Elvin}
 
 \subsection{Other Systems}
+
+\textbf{Tuple Spaces} \todo{tuple spaces: t-spaces and linda}
 
 \textbf{CORBA}~\cite{vinoski1997corba}, the Common Object Request Broker Architecture, is a data bus for communication amongst distributed objects that provides property- and name-based discovery and event notification.
 Distributed object models (including DCOM~\cite{horstmann1997dcom}) share many features with content-based pubsub systems: similar to JMS, published messages contain key-value pairs in the header and body, and syndication is performed by subscribers specifying filters on those attributes.

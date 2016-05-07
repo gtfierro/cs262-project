@@ -1,0 +1,20 @@
+\section{Evaluation} \label{section:evaluation}
+
+\subsection{Client Complexity}
+
+\subsection{Performance}
+
+\subsection{Fault Tolerance}
+
+\subsection{Challenges}
+
+\todo{rephrase this so it flows}
+Our current implementation restricts values to be strings to simplify development. 
+Handling typing with Go's \texttt{interface\{\}} type is slow because of runtime reflection.
+Because Go is garbage collected, a large numbers of heap allocations can incur high latencies during
+operation. Many protocol encoder/decoders in Go create many temporary objects, which, due to Go's poor escape analysis, get promoted to heap allocations. 
+
+This issue can be addressed with a number of techniques. 
+Firstly, using typed formats such as MsgPack, CapnProto and Protobuf allows parsing code to ``plan-ahead'' for which types to use and how much space they will use. 
+JSON is particularly bad at this; because it is a character-based format, parsing it requires many intermediate buffers and lookaheads to determine the size and type of elements in a received message.
+Secondly, using generated code for encoding/decoding can further reduce the number of allocations. We use the excellent \texttt{msgp} library\footnote{https://github.com/tinylib/msgp}, which reduced the allocations per message from roughly 20 to 3.

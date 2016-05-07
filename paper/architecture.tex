@@ -96,11 +96,11 @@ This is essentially a form of continuous checkpointing which enables a newly ins
 Rather than reading and executing the log from the beginning of time, a new replica can read the current state of the system via the client and broker keys up to some fixed point in time, then resume reading the log from that same point in time.
 To maintain consistency between the continuous checkpoint and the log, we make use of the fact that Etcd internally maintains a sequential log of events (a consequence of using Raft).
 Each modification to the Etcd store is marked with a revision number which indicates the order in which the modifications occurred.
-By choosing some revision number and reading all client/broker state up to and including that revision, then reading all log entries after that revision, it is ensured that the replica switches from reading the checkpoint to reading the log in a consistent manner.
-Note that this works even if the client or broker key was overwritten (i.e.\ if a change to the state occurred which was then written to Etcd) because Etcd stores versioned copies.
+By choosing some revision number and reading all client/broker state up to and including that revision, then reading all log entries after that revision, it is ensured that the replica switches from reading the checkpoint to reading the log in a consistent manner; see Figure~\ref{fig:logreplay}.
+Note that this works even if the client or broker key was overwritten (i.e.\ if a change to the state occurred which was then written to Etcd) because Etcd stores versioned copies of key-value pairs.
 
 To clear old checkpoint versions and unnecessary log entries, the leader periodically performs garbage collection.
-Replicas periodically write the sequence number of the last log entry they processed to a specific key in Etcd.
+Replicas periodically write the sequence number of the last log entry they have processed to a specific key in Etcd.
 The leader periodically checks these values and instructs Etcd to delete entries which both replicas have already read, as well as instructing Etcd to perform a ``compaction'' up to this point, which removes old versions of keys which are no longer needed.
 
 \subsection{Broker Fault-Tolerance}

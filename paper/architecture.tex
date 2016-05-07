@@ -65,6 +65,13 @@ The broker to which the publisher is connected simply broadcasts the message ove
 \subsection{Coordinator Fault-Tolerance}
 \label{subsec:coordinator_fault_tolerance}
 
+\begin{figure*}[t]
+\centering
+\includegraphics[width=.9\linewidth]{figs/logreplay.pdf}
+\caption{Although they live in separate key spaces, the log and the continuous checkpointing are serialized via the Etcd log so that they can be leveraged for a consistent rebuild.}
+\label{fig:logreplay}
+\end{figure*}
+
 To all other components of the system, including clients, the coordinator appears to be a single node which is resilient to failures; however, to construct a highly available system the coordinator must be able to handle at least one node failure.
 To ensure that the coordinator will be resilient in the face of machine failure, we replicate its state across three independent nodes.
 Each coordinator node runs an Etcd\footnote{\url{https://coreos.com/etcd/}} node, a reliable key-value store which internally uses the Raft distributed consensus protocol~\cite{ongaro2014} to provide strong consistency semantics among its members.

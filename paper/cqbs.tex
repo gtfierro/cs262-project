@@ -177,3 +177,15 @@ Query-based syndication is the use of these queries to define the forwarding rou
 The broker persists bindings of streams to clients formed by evaluating subscription queries against the set of available metadata, and routes incoming messages according to those bindings.
 The resolution of queries to routes is \emph{continuous}; the broker reevaluates syndication queries as stream metadata evolves, and informs clients of changes in the set of the streams to which they are subscribed.
 These changes happen on any metadata event: stream registration, stream deletion and metadata updates on streams.
+
+%Queries are simple strings that support following operators (from giles). Examples of queries include blah blah blah.
+%figure messages illustrates...
+
+\begin{figure*}[t]
+\centering
+\includegraphics[width=.8\linewidth]{figs/messages.pdf}
+\caption{The network traffic for a continuous query for discovering all temperature sensors in room 410 (ommitted
+for brevity are additional constrains for building, units, etc). As new streams are registered, or their metadata
+changes to no longer fit the discovery constraints, the client is updated in real-time.}
+\label{fig:messages}
+\end{figure*}

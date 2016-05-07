@@ -11,7 +11,7 @@ class Subscriber:
         self.diff_handler = None
         self.query = query
 
-        self.broker_conn = BrokerConnection(config, self.subscribe, self.message_handle, uuid)
+        self.broker_conn = BrokerConnection(config, False, self.subscribe, self.message_handle, uuid)
 
     def start(self):
         self.broker_conn.start()

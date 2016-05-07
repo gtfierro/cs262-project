@@ -16,7 +16,7 @@ class Publisher:
         self.md_lock = threading.Lock()
         self.publish_loop = publish_loop
 
-        self.broker_conn = BrokerConnection(config, self.connect_callback, None, uuid)
+        self.broker_conn = BrokerConnection(config, True, self.connect_callback, None, uuid)
 
     def start(self):
         self.broker_conn.start()

@@ -83,11 +83,9 @@ class BrokerRequestMessage:
         self.uuid = uuid
 
     def pack(self):
-        packer = msgpack.Packer(autoreset=False)
-        packer.pack(self.MSG_NUM)
-        packer.pack({"LocalBrokerAddr": self.local_broker_addr,
-                     "IsPublisher": self.is_publisher, "UUID": self.uuid})
-        return packer.bytes()
+        msgbytes = msgpack.packb({"LocalBrokerAddr": self.local_broker_addr,
+                                  "IsPublisher": self.is_publisher, "UUID": self.uuid})
+        return bytearray([self.MSG_NUM]) + msgbytes
 
 
 class BrokerAssignmentMessage:
@@ -100,4 +98,4 @@ class BrokerAssignmentMessage:
 
     @staticmethod
     def from_msgpack_map(m):
-        return BrokerAssignmentMessage(m['BrokerID'], m['ClientBrokerAddr'])
+        return BrokerAssignmentMessage(m['BrokerInfo']['BrokerID'], m['BrokerInfo']['ClientBrokerAddr'])

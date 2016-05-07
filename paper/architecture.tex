@@ -1,7 +1,7 @@
 \section{System Design} \label{section:coordinator}
 
-% TODO ETK make sure 'publisher', 'subscriber', 'client' have all been defined by this point
-% TODO ETK if these goals are already outlined somewhere else then no need to put them here
+\todo{ETK make sure 'publisher', 'subscriber', 'client' have all been defined by this point}
+\todo{ETK if these goals are already outlined somewhere else then no need to put them here}
 
 Our design is motivated by a number of goals that we wish to achieve:
 \begin{itemize}
@@ -40,7 +40,7 @@ Any changes to the set of clients connected to the broker, or to the metadata of
 In this section we describe the events which take place under normal operation, i.e.\ in the case that there are no failures within the system.
 
 \textbf{A new subscriber enters the system.}
-A subscriber contacts its local broker, Broker A, whose address can be hardcoded into the client or discovered through some network discovery protocol, e.g.\ % TODO Gabe can you help here
+A subscriber contacts its local broker, Broker A, whose address can be hardcoded into the client or discovered through some network discovery protocol, e.g.\ \todo{Gabe can you help here}
 The subscriber submits a message to Broker A containing the query which defines which publishers' output it is subscribed to.
 Broker A forwards the message along to the coordinator, which evaluates the query against the set of publisher metadata currently known to the system and replies to Broker A with the (possibly empty) set of relevant publishers.
 If any relevant publishers are found, the coordinator will contact the broker at which they are located and instruct that broker to forward the publisher's messages to Broker A, which will in turn forward the messages to the subscriber.
@@ -123,6 +123,8 @@ while client_active:
   else:
     broker_addr := connect_to_get_message(coordinator_address)
     success := connect_to(broker_addr)
+    if not success:
+      continue
     // process ...
 \end{lstlisting}
 

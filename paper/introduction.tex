@@ -1,0 +1,29 @@
+\section{Introduction}
+% just copying over chunks of the old intro
+Applications in the Internet of Things exist at a confluence of semantically isolated networks over buildings, physical spaces, cloud services, smart appliances and mobile and wearable devices. 
+The utility of these applications is in their ability to capture capabilities of new families of smart, networked devices and integrate them with existing networks surrounding people, things and places.
+
+Most modern systems that address composition of services over networked things deal primarily with hardware abstraction -- the need to separate \emph{what} is being sensed or actuated from \emph{how} that action is performed -- and syntactic interoperability -- common packet formats and canonical descriptions of common capabilities. 
+These systems (including CORBA~\cite{vinoski1997corba}, Jini~\cite{waldo1999jini}, AllJoyn~\cite{alljoyn}, IoTivity~\cite{iotivity}) generally offer limited discovery capabilities that only identify implementers of a given interface, and not how that implementer is related to other resources required by the application. 
+In other words, this approach assumes that the application or application developer has enough contextual information on the set of discovered resources to disambiguate which are relevant to the application. 
+The notion of relevance extends beyond what a resource logically represents (a temperature sensor, a light bulb, etc) and includes location, ownership, and how that resource links to other entities such as in a building management system.
+
+The current approach is insufficient for establishing meaningful collections of devices and services because it assumes that either a) the domain of discovery is small enough to remove any ambiguities on the identity of returned devices, or b) the application or user possesses prior contextual information on those devices.  
+This ``out-of-band'' information becomes harder to manage from application and user perspectives as deployments get larger and devices get more diverse.
+
+In this paper, we present the design and implementation of a distributed CQBS broker, a discovery service and message broker for service composition that uses \emph{continuous query-based syndication} to enable dynamic and contextually-aware applications and services for the Internet of Things. 
+
+We begin by outlining the core
+primitives of CQBS, \emph{streams}, which are virtual representations of
+specific sensor and actuator capabilities.  
+We then define the syndication
+model, which describes relationships between streams to create ad-hoc
+collections of capabilities needed for applications. 
+Syndication queries are
+expressed using SQL-like relations over stream descriptions and are
+continuously evaluated to maintain consistency with the environment.  
+\todo{also mention how we're going to evaluate it}
+\todo{want to explicitly mention our goals here}
+% also want to capture how expressive it is
+% do we mention here who we compare against?
+

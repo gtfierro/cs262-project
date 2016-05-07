@@ -1982,7 +1982,7 @@ Data: 70 deg F}</string>
 			<integer>195</integer>
 			<key>Points</key>
 			<array>
-				<string>{444.98666642606258, 306}</string>
+				<string>{444.98666642606258, 306.00000512599956}</string>
 				<string>{238.99999155104157, 327.53999799489969}</string>
 			</array>
 			<key>Style</key>
@@ -2165,14 +2165,14 @@ Data: 70 deg F}</string>
 				<key>ID</key>
 				<integer>39</integer>
 				<key>Position</key>
-				<real>0.52618135376756059</real>
+				<real>0.52618134021759033</real>
 			</dict>
 			<key>ID</key>
 			<integer>191</integer>
 			<key>Points</key>
 			<array>
-				<string>{444.98666642606258, 252.66666666666666}</string>
-				<string>{238.3199946731329, 273.22666428486502}</string>
+				<string>{444.98666642606258, 252.66666334867486}</string>
+				<string>{238.3199946731329, 273.22666074832279}</string>
 			</array>
 			<key>Style</key>
 			<dict>
@@ -2438,7 +2438,7 @@ Data: 70 deg F}</string>
 \f1\b 9b5155d
 \f0\b0 ...\
 Location/Room: 410\
-Location/Building\
+Location/Building: Soda\
 Point/Type: Sensor\
 Point/Measure: Temperature}</string>
 				<key>VerticalPad</key>
@@ -2999,7 +2999,7 @@ Point/Measure  = "Temperature"}</string>
 	<key>MasterSheets</key>
 	<array/>
 	<key>ModificationDate</key>
-	<string>2016-05-05 04:13:57 +0000</string>
+	<string>2016-05-07 21:55:30 +0000</string>
 	<key>Modifier</key>
 	<string>Gabriel Fierro</string>
 	<key>NotesVisible</key>

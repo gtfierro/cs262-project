@@ -32,6 +32,24 @@ func main() {
 		CoordinatorAddress: "cs262.cal-sdb.org:5505",
 	}
 
+	// before we begin, need to put some metadata in or it will not give us a response
+
+	pub, err := client.NewPublisher(client.UUIDFromName("publishSlow"), func(pub *client.Publisher) {
+		waitforever := make(chan bool)
+		pub.AddMetadata(map[string]interface{}{"Room": "420"})
+		if err := pub.Publish(1); err != nil {
+			log.Error(err)
+		}
+		<-waitforever
+
+	}, config)
+
+	if err != nil {
+		log.Criticalf("Could not publish (%v)", err)
+		os.Exit(1)
+	}
+	pub.Start()
+
 	var wg sync.WaitGroup
 
 	var iterations = 100
@@ -46,12 +64,20 @@ func main() {
 				os.Exit(1)
 			}
 			start := time.Now()
+			counted := false
 			c.AttachDiffHandler(func(m *common.SubscriptionDiffMessage) {
-				wg.Done()
-				c.Stop <- true
+				if !counted {
+					counted = true
+					wg.Done()
+					c.Stop <- true
+				}
 			})
 			c.Start()
+			<-c.Stop
 			diff := time.Since(start)
+			if i%10 == 0 {
+				log.Infof("iteration %d: %s", i, diff.String())
+			}
 			initialDiffLatencies[i] = float64(diff)
 			time.Sleep(500 * time.Millisecond)
 		}

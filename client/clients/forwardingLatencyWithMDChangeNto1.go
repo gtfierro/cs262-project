@@ -29,22 +29,25 @@ func init() {
 	log, _ = logging.WriterLogger("main", logging.DEBUG, logging.BasicFormat, logging.DefaultTimeFormat, os.Stderr, true)
 	r = rand.New(rand.NewSource(time.Now().UnixNano()))
 	rate = time.Duration(200) * time.Millisecond
-	waitTime = 1 * time.Minute
+	waitTime = 5 * time.Minute
 	numPublishers = 12
 	numClients = 10
-	mdkey = fmt.Sprintf("Room%d", r.Int63())
+	mdkey = "Room"
+	//mdkey = fmt.Sprintf("Room%d", r.Int63())
 	wg.Add(numClients * numPublishers) // wait for everyone
 	clientLatencies = make([][]float64, numClients)
 }
 
-func runPub(mdval int, rate time.Duration, pubConfig *client.Config) {
+func runPub(idx, mdval int, rate time.Duration, pubConfig *client.Config) {
 	publisher_seed := fmt.Sprintf("%d", r.Int63())
 	// change mdval to change the metadata
 
+	log.Errorf("UUID %v", client.UUIDFromName(publisher_seed))
 	publisher, err := client.NewPublisher(client.UUIDFromName(publisher_seed), func(pub *client.Publisher) {
 		ticker := time.Tick(rate)
 		val := fmt.Sprintf("%d", mdval)
-		pub.AddMetadata(map[string]interface{}{mdkey: val})
+		pub.AddMetadata(map[string]interface{}{"Bucket": fmt.Sprintf("%d", idx), mdkey: val})
+		log.Info(map[string]interface{}{"Bucket": fmt.Sprintf("%d", idx), mdkey: val})
 		for now := range ticker {
 			if err := pub.Publish(now.UnixNano()); err != nil {
 				log.Error(err)
@@ -57,11 +60,12 @@ func runPub(mdval int, rate time.Duration, pubConfig *client.Config) {
 	}
 	go func(pub *client.Publisher) {
 		for {
-			time.Sleep(time.Duration(r.Int31n(30)) * time.Second)
+			time.Sleep((30 * time.Second) + time.Duration(r.Int31n(30))*time.Second)
+			old := mdval
 			mdval = (mdval + 1) % 12
 			val := fmt.Sprintf("%d", mdval)
-			log.Infof("chaning metdata to %v", val)
-			pub.AddMetadata(map[string]interface{}{mdkey: val})
+			log.Infof("Changing metadata room from %d to %d", old, mdval)
+			pub.AddMetadata(map[string]interface{}{"Bucket": fmt.Sprintf("%d", idx), mdkey: val})
 		}
 	}(publisher)
 	publisher.Start()
@@ -78,13 +82,14 @@ func run1sub10pub(idx int, subscribeChunk string, rate time.Duration, pubConfig,
 
 	switch subscribeChunk {
 	case "1":
-		query = fmt.Sprintf("%s = '0' or %s = '1' or %s = '2' or %s = '3'", mdkey, mdkey, mdkey, mdkey)
+		query = fmt.Sprintf("Bucket = '%d' and (%s = '0' or %s = '1' or %s = '2' or %s = '3')", idx, mdkey, mdkey, mdkey, mdkey)
 	case "2":
-		query = fmt.Sprintf("%s = '4' or %s = '5' or %s = '6' or %s = '7'", mdkey, mdkey, mdkey, mdkey)
+		query = fmt.Sprintf("Bucket = '%d' and (%s = '4' or %s = '5' or %s = '6' or %s = '7')", idx, mdkey, mdkey, mdkey, mdkey)
 	case "3":
-		query = fmt.Sprintf("%s = '8' or %s = '9' or %s = '10' or %s = '11'", mdkey, mdkey, mdkey, mdkey)
+		query = fmt.Sprintf("Bucket = '%d' and (%s = '8' or %s = '9' or %s = '10' or %s = '11')", idx, mdkey, mdkey, mdkey, mdkey)
 	}
 	subscriber_seed := fmt.Sprintf("%d", r.Int63())
+	log.Info(query)
 	c, err := client.NewClient(client.UUIDFromName(subscriber_seed), query, subConfig)
 	num := 0
 	c.AttachPublishHandler(func(m *common.PublishMessage) {
@@ -108,7 +113,7 @@ func run1sub10pub(idx int, subscribeChunk string, rate time.Duration, pubConfig,
 	for i := 0; i < numPublishers; i++ {
 		i := i
 		time.Sleep(time.Duration(r.Int31n(100)) * time.Millisecond)
-		go runPub(i, rate, pubConfig)
+		go runPub(idx, i, rate, pubConfig)
 	}
 
 }
@@ -126,5 +131,5 @@ func main() {
 		go run1sub10pub(idx, subscribeChunk, rate, config, config)
 	}
 	wg.Wait()
-	client.ManyColumnCSV(clientLatencies, []string{}, "data.csv")
+	client.ManyColumnCSV(clientLatencies, []string{}, fmt.Sprintf("mdchange_data_%s.csv", subscribeChunk))
 }

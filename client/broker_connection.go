@@ -76,6 +76,7 @@ func (bc *BrokerConnection) Start() {
 func (bc *BrokerConnection) StopIn(d time.Duration) {
 	go func(c *BrokerConnection) {
 		time.Sleep(d)
+		bc.brokerDead = true
 		c.Stop <- true
 	}(bc)
 }

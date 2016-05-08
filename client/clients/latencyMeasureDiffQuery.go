@@ -1,11 +1,3 @@
-// This client measures the forwarding latency by running both a publisher and a subscriber and
-// measuring the time for operations.
-// Operations:
-// - ping to the intended broker. Establish a baseline for network communication.
-// - Time for initial subscription diff: send subscription and see how long before we get a diff
-//   (should be empty)
-// - Publish Message: send new metadata and measure latency to receive diff
-// - Publish Message: no metadata, measure latency to receive message
 package main
 
 import (

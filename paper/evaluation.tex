@@ -48,7 +48,7 @@ In both cases the coordinator nodes are run on \texttt{t2.medium} instances.
 We start 10 ``dummy'' brokers which act as if they have publishers and subscribers attached to them.
 These brokers load the system with a total of 500 subscribers, each of which subscribes to 10\% of the total publishers in the system at any given time.
 At the start of the experiment there are no publishers in the system.
-Each of the 10 brokers adds a new publisher to the system after a delay uniformly randomly spread between 50 and 500ms, until there are a total of 1000 publishers in the system.
+New publishers are added to the system at intervals uniformly randomly spread between 50 and 500ms, until there are a total of 1000 publishers in the system.
 At this point, no new publishers enter the system, but the existing publishers start to change their metadata at the same frequency, causing the set of subscribers to which they are relevant to change over time.
 We measure the latency of handling the new publisher joining the system, which is defined as the time elapsed between when the publication message is first sent to the coordinator until the time at which a subscriber receives a notification about the new publisher's presence.
 
@@ -58,9 +58,8 @@ Latency results are shown in Figure~\ref{fig:coordinator_performance}; each dot 
 For the replicated and unreplicated cases respectively, the mean and 95\textsuperscript{th} latencies are $95.5ms$/$191.2ms$ and $24.7ms$/$57.3ms$.
 We see that in both the replicated and unreplicated cases, latency slows increases as more and more publishers are added to the system (before 280 seconds), and levels off once the publishers are only changing their metadata (after 280 seconds).
 We also see that the unreplicated coordinator is over an order of magnitude faster in the best cases, and the highest latencies experienced by the unreplicated coordinator are similar to the lowest latencies experienced by the replicated coordinator.
-No request to the replicated coordinator takes less than approximately 30--40ms, which is approximately the latency of an Etcd store operation in our system.
+No request to the replicated coordinator takes less than 30--40ms, which is approximately the latency of an Etcd store operation in our experimental setup.
 This is indicative of the fact that the serialization process through Etcd is a significant bottleneck in our system that severely limits throughput and degrades latency, and indicates that moving Etcd storage farther from the hot path of coordinator decisions could be very beneficial; this is discussed further in Section~\ref{subsec:alternate_designs}.
-However, we also note that publishers changing metadata on the order of multiple times per second is a significantly faster rate of change than we expect from real devices, and is meant to put the coordinator under very high load, so we consider these numbers to be within an acceptable range.
 
 At approximately 325 seconds we force one of the leaders to fail.
 This can be seen on the plot as a gap in latencies, since no messages could be sent during this time.
@@ -90,10 +89,6 @@ The ``waterfall'' at the beginning of the stream is caused by all 30 subscribers
 
 When considered in conjunction with the microbenchmark above, it is clear that the serialization of the metadata changes and coordinator updates is the limiting factor in system performance.
 However, in the authors' experience with real world sensor systems using similar systems, these high rates of change are rarely seen: it is important to note that these loads are intentionally heavy to find the bottlenecks in the system.
-
-\subsection{Fault Tolerance}
-
-\todo{fault tolerance metrics when a broker dies}
 
 \subsection{Client Complexity}
 

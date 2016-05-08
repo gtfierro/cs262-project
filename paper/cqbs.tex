@@ -54,7 +54,7 @@ In the initial registration message, along with the other metadata, the reportin
 If this changes, such as if the sensor were on a piece of smart clothing or furniture, the sensor attaches the metadata update \lstinline[language=SQL,basicstyle=\ttfamily]{Location/Room = "415"} to any outgoing message, where it is handled by the broker (described in the following section).
 A discussion of client complexity can be found in Section~\ref{section:evaluation}.
 
-This is a departure from the approach of content-based pubsub systems, where although the producer may possess some unique identifier, it transmits any associated ``content'' (metadata) in every message.
+This is a departure from the approach of content-based pub-sub systems, where although the producer may possess some unique identifier, it transmits any associated ``content'' (metadata) in every message.
 This verbose design choice may be appropriate for distributed sytems in which a publisher is a larger application that produces many different types of data, but when the data per-producer is relatively static (temperature sensors will always report temperature data), this flexibility is unneeded.
 It becomes more efficient to essentially ``cache'' the metadata of a publisher in a central location where it can be used for syndication.
 

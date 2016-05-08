@@ -8,8 +8,6 @@ For these reasons, we decided to focus our evaluation on the behavior of our own
 \subsection{Alternate Designs}
 \label{subsec:alternate_designs}
 
-\todo{this could probably be cleaned up a little}
-
 Currently, a full Raft transaction is performed through Etcd on every change to the system state.
 While this provided a relatively simple design with strong consistency guarantees, it incurs a rather high latency that does not parallelize due to the serial nature of Raft transactions.
 One alternate method to explore would be to use Raft only for leader elections, and have the leader stream events directly to the other coordinators rather than submitting them to the Etcd log.

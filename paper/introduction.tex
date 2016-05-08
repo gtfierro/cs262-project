@@ -15,7 +15,7 @@ The benefits are that matching is typically fast and message overhead is small, 
 In content-based pub-sub, subscribers specify predicates, which act as filters for incoming messages for publishers.
 While this scheme has richer descriptive power, it requires larger messages and computationally intensive brokers.
 
-We propose an alternative pub-sub mechanism, continuous query-based syndication (CQBS), in which subscriptions are defined by SQL-style queries over devices descriptions.
+We propose an alternative pub-sub mechanism, continuous query-based syndication (CQBS), in which subscriptions are defined by SQL-style queries over device descriptions.
 Device descriptions contain ``metadata'' defining properties of the device, e.g.\ location, units of measure, groupings, etc.\ that describe the context and configuration of the producer.
 These queries are continuously evaluated to reflect the current configuration of all publishers, enabling subscribers to always receive messages relevant to their query even as the landscape of
 publishers changes.

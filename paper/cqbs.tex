@@ -2,10 +2,10 @@
 
 Continuous Query-Based Syndication (CQBS) is a hybrid publish-subscribe pattern that provides the expressiveness of content-based systems while retaining the simplicity of topic-based systems.
 The goal of CQBS is to provide a messaging system that can account for and adapt to the heterogeneity of data sources in the IoT.
-CQBS endows embedded publishers to describe themselves using rich metadata, and provides subscribers to discover and subscribe to relevant data sources and maintain a consistent view of the context of those sources.
+CQBS allows embedded publishers to describe themselves using rich metadata, and provides subscribers with the ability to discover and subscribe to relevant data sources and maintain a consistent view of the context of those sources.
 
-Here, we first establish the CQBS primitives --- streams and metadata --- before delving into how CQBS operates and what roles publishers and subscribers play.
-We then describe the design and implementation of an individual broker (we defer the discussion of the full distributed system to Section~\ref{section:coordinator}.
+Here, we first establish the CQBS primitives---streams and metadata---before delving into how CQBS operates and what roles publishers and subscribers play.
+We then describe the design and implementation of an individual broker (we defer the discussion of the full distributed system to Section~\ref{section:coordinator}).
 
 \begin{figure}
 \centering
@@ -41,7 +41,7 @@ while True:
 \subsection{Streams and Metadata}
 
 A stream is a virtual representation of a specific sensor or actuator channel (a ``capability'') that is indexed by a 16-byte universally unique identifier (UUID).
-Each stream is described by \emph{metadata}, which is a bag of key-value pairs: keys are required to be string, but values may be any one-dimensional data type\footnote{In our implementation, values are restricted to strings: see Section~\ref{section:evaluation}.}.
+Each stream is described by \emph{metadata}, which is a bag of key-value pairs: keys are required to be strings, but values may be any one-dimensional data type\footnote{In our implementation, values are restricted to strings: see Section~\ref{section:evaluation}.}.
 Key-value pairs are most effective when drawn from some well-known ontology (such as Semantic Sensor Web~\cite{sheth2008semantic}), but our system places no restrictions on their content.
 The association of metadata to a stream is done by the UUID; when a publisher creates a new stream, it registers that stream with the broker by sending a message containing the UUID and all of the metadata.
 The broker (or the coordinator, in the distributed case) stores the mapping from stream UUID to metadata.
@@ -281,7 +281,7 @@ Goroutines are scheduled by the Go runtime, and scale nicely over multiple cores
 The design and implementation of Go does pose several challenges for low-latency systems.
 First among these is the garbage collector, which is non-generational and mark-and-sweep.
 Concurrent garbage collection was introduced in Go 1.5, but heap allocations do noticeably contribute to increasing latency.
-Because Go is garbage collected, a large numbers of heap allocations can incur high latencies during
+Because Go is garbage collected, a large number of heap allocations can incur high latencies during
 operation.
 Many protocol encoder/decoders in Go create many temporary objects, and Go's compile-time escape analysis unnecessarily promotes many stack allocations to heap allocations, as revealed
 in \cite{goescape}.

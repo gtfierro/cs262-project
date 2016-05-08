@@ -11,7 +11,7 @@ As we will demonstrate below, the CQBS system is amenable to commodity systems b
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figs/singlenodelatency.png}
-\caption{Microbenchmark: standalone CQBS broker forwarding latency with increasing concurrency}
+\caption{Microbenchmark: standalone CQBS broker forwarding latency with increasing concurrency.}
 \label{fig:singlenodelatency}
 \end{figure}
 
@@ -32,14 +32,48 @@ The microbenchmark demonstrates that a single broker can quite easily handle a c
 
 \subsection{Coordinator Performance}
 
-\todo{include existing graph}
+\begin{figure}[t]
+\centering
+\includegraphics[width=\linewidth]{figs/coordinator_performance.png}
+\caption{Microbenchmark: coordinator latency in the face of failures.
+Red dots indicate running a single-node coordinator with no replication or fault tolerance; green dots indicate running a full three-node coordinator with fault tolerance via Etcd.
+At the blue line at approximately 280 seconds, the system switches from adding new publishers to existing publishers changing their metadata.
+At the gap seen in the replicated results at approximately 325 seconds, the leader node of the coordinator node was shut down.}
+\label{fig:coordinator_performance}
+\end{figure}
+
+Next we examine the latency of the central coordinator's query evaluation and decision making processes.
+We run the coordinator in two different modes; one with a single-machine coordinator which has no fault tolerance and does not use Etcd, and one with a full three-node coordinator cluster which is fully replicated via Etcd.
+In both cases the coordinator nodes are run on \texttt{t2.medium} instances.
+We start 10 ``dummy'' brokers which act as if they have publishers and subscribers attached to them.
+These brokers load the system with a total of 500 subscribers, each of which subscribes to 10\% of the total publishers in the system at any given time.
+At the start of the experiment there are no publishers in the system.
+Each of the 10 brokers adds a new publisher to the system after a delay uniformly randomly spread between 50 and 500ms, until there are a total of 1000 publishers in the system.
+At this point, no new publishers enter the system, but the existing publishers start to change their metadata at the same frequency, causing the set of subscribers to which they are relevant to change over time.
+We measure the latency of handling the new publisher joining the system, which is defined as the time elapsed between when the publication message is first sent to the coordinator until the time at which a subscriber receives a notification about the new publisher's presence.
+
+In the case of the fully replicated coordinator cluster, we also force the leader of the cluster to fail, causing one of the replicas to become the new leader, and causing all brokers to have to reconnect to this new leader.
+
+Latency results are shown in Figure~\ref{fig:coordinator_performance}; each dot represents the latency from the viewpoint of a subscriber which received a notification about a new publisher.
+For the replicated and unreplicated cases respectively, the mean and 95\textsuperscript{th} latencies are $95.5ms$/$191.2ms$ and $24.7ms$/$57.3ms$.
+We see that in both the replicated and unreplicated cases, latency slows increases as more and more publishers are added to the system (before 280 seconds), and levels off once the publishers are only changing their metadata (after 280 seconds).
+We also see that the unreplicated coordinator is over an order of magnitude faster in the best cases, and the highest latencies experienced by the unreplicated coordinator are similar to the lowest latencies experienced by the replicated coordinator.
+No request to the replicated coordinator takes less than approximately 30--40ms, which is approximately the latency of an Etcd store operation in our system.
+This is indicative of the fact that the serialization process through Etcd is a significant bottleneck in our system that severely limits throughput and degrades latency, and indicates that moving Etcd storage farther from the hot path of coordinator decisions could be very beneficial; this is discussed further in Section~\ref{subsec:alternate_designs}.
+However, we also note that publishers changing metadata on the order of multiple times per second is a significantly faster rate of change than we expect from real devices, and is meant to put the coordinator under very high load, so we consider these numbers to be within an acceptable range.
+
+At approximately 325 seconds we force one of the leaders to fail.
+This can be seen on the plot as a gap in latencies, since no messages could be sent during this time.
+The approximately 15 seconds for brokers to reconnect is primarily due to the latency of switching over the Elastic IP address via Amazon AWS API calls, as discussed in Section~\ref{subsec:coordinator_fault_tolerance}.
+The large spike in a small number of latencies immediately following is due to the fact that some brokers were able to reconnect more quickly, so they began sending messages destined for brokers which had not yet reconnected.
+However, once all brokers were able to reconnect, we see that the system is able to settle back into a stable state with reasonable levels of latency.
 
 \subsection{Full-System Performance}
 
 \begin{figure}[t]
 \centering
 \includegraphics[width=\linewidth]{figs/fullsystem_metadatachange.png}
-\caption{Benchmark: forwarding latency with 30 subscribers, 360 publishers in a 3 broker, 3 coordinator system. Each publisher changes metadata every 30--60 seconds, causing the broker to reevaluate roughly a third of all subscriptions every few seconds.}
+\caption{Benchmark: forwarding latency with 30 subscribers and 360 publishers in a 3 broker, 3 coordinator system. Each publisher changes metadata every 30--60 seconds, causing the broker to reevaluate roughly a third of all subscriptions every few seconds.}
 \label{fig:fullsystem_metadatachange}
 \end{figure}
 

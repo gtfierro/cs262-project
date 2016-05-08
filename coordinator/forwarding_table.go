@@ -743,6 +743,9 @@ func (ft *ForwardingTable) getOrEvaluateQuery(queryStr string) *ForwardedQuery {
 	if fq, found := ft.queryMap[queryStr]; !found {
 		// New query; parse and add
 		queryAST := common.Parse(queryStr)
+		if queryAST.Tree == nil {
+			log.WithField("query", queryStr).Error("Error parsing query; queryAST.Tree was nil!")
+		}
 		query, err := ft.metadata.Query(queryAST)
 		if err != nil {
 			log.WithFields(log.Fields{

@@ -219,6 +219,7 @@ For example, a hypothetical daylighting application wants to adjust the brightne
 It subscribes to the output of all dimmable lights in room 410 as well as all illumination sensors.
 There are two subscriptions:
 
+\begin{minipage}{\linewidth}
 \begin{sqlcode}
 -- dimmable lights
 Room = 410 AND System = "Lighting"
@@ -227,6 +228,8 @@ AND has Actuator/Brightness
 Room = 410 AND Point/Type = "Sensor"
 AND Point/Measure = "Illumination"
 \end{sqlcode}
+\end{minipage}
+\vspace{0.3cm}
 
 Figure~\ref{fig:messages} illustrates a typical exchange of messsages.
 First, a temperature sensor stream with UUID (starting with) \texttt{9b5155d} is registered as being in Room 410.
@@ -298,3 +301,8 @@ Using generated code for encoding/decoding can drastically reduce the number of 
 %The query processor keeps those bindings consistent with streams' changing metadata.
 
 %The Giles broker reevalutes these syndication queries as the underlying streams change, ensuring that subscribed clients always have up-to-date information on the state of the system.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "paper.tex"
+%%% End:

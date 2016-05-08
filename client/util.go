@@ -1,6 +1,8 @@
 package client
 
 import (
+	"encoding/csv"
+	"fmt"
 	"github.com/ccding/go-logging/logging"
 	"github.com/gtfierro/cs262-project/common"
 	uuidlib "github.com/satori/go.uuid"
@@ -17,4 +19,25 @@ func init() {
 // than UUIDs, so this should make writing scripts easier
 func UUIDFromName(name string) common.UUID {
 	return common.UUID(uuidlib.NewV5(NamespaceUUID, name).String())
+}
+
+func ManyColumnCSV(allLatencies [][]float64, filename string) {
+	records := make([][]string, len(allLatencies))
+	for outIdx, latencies := range allLatencies {
+		records[outIdx] = make([]string, len(latencies))
+		for inIdx, latency := range latencies {
+			records[outIdx][inIdx] = fmt.Sprintf("%v", latency)
+		}
+	}
+	file, err := os.OpenFile(
+		filename,
+		os.O_WRONLY|os.O_TRUNC|os.O_CREATE,
+		0666,
+	)
+	if err != nil {
+		log.Errorf("Error opening CSV file: %v", err)
+	}
+	w := csv.NewWriter(file)
+	w.WriteAll(records) // calls Flush internally
+	file.Close()
 }

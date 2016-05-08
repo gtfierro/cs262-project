@@ -120,7 +120,7 @@ func main() {
 	timeseries[1] = data2
 	log.Info(data2)
 	log.Info(timeseries)
-	client.ManyColumnCSV(timeseries, []string{"time", "latency"}, "metadata_change_clients.csv")
+	client.ManyColumnCSV(timeseries, "metadata_change_clients.csv")
 
 	for _, data := range clientLatencies {
 		quartiles, _ := stats.Quartile(data)

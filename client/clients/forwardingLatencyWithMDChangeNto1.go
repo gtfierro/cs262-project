@@ -126,5 +126,5 @@ func main() {
 		go run1sub10pub(idx, subscribeChunk, rate, config, config)
 	}
 	wg.Wait()
-	client.ManyColumnCSV(clientLatencies, []string{}, "data.csv")
+	client.ManyColumnCSV(clientLatencies, "data.csv")
 }

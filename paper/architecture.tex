@@ -40,7 +40,7 @@ Any changes to the set of clients connected to the broker, or to the metadata of
 In this section we describe the events which take place under normal operation, i.e.\ in the case that there are no failures within the system.
 
 \textbf{A new subscriber enters the system.}
-A subscriber contacts its local broker, Broker A, whose address can be hardcoded into the client or discovered through some network discovery protocol, e.g.\ \todo{Gabe can you help here}
+A subscriber contacts its local broker, Broker A, whose address can be hardcoded into the client or discovered through some network discovery protocol, e.g. Bonjour, UPnP, or mDNS.
 The subscriber submits a message to Broker A containing the query which defines which publishers' output it is subscribed to.
 Broker A forwards the message along to the coordinator, which evaluates the query against the set of publisher metadata currently known to the system and replies to Broker A with the (possibly empty) set of relevant publishers.
 If any relevant publishers are found, the coordinator will contact the broker at which they are located and instruct that broker to forward the publisher's messages to Broker A, which will in turn forward the messages to the subscriber.

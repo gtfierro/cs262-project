@@ -1,6 +1,5 @@
 \section{Related Work}
-
-%TODO: do we define/justify the basic principles of pubsub anywhere here, e.g. decoupling between publishers and subscribers?
+\label{section:relatedwork}
 
 The CQBS distributed broker is most closely related to \emph{publish-subscribe} systems.
 We examine each of the systems below along the primary design dimensions of the CQBS broker: richness of publisher descriptions, expressiveness of syndication model, client complexity and fault tolerance.
@@ -18,6 +17,8 @@ MQTT~\cite{locke2010mq}\cite{hunkeler2008mqtt} & Hierarchical topics & Wildcard 
 XMPP~\cite{saint2011extensible} & Unique names & List of publishers & Complex & None & Federated Servers \\
 Kafka~\cite{kreps2011kafka} & Hierarchical topics & Wildcard matching & Complex & Yes & Replicated broker cluster \\
 SIENA~\cite{carzaniga2000achieving} & attribute-value pairs & SQL-like predicate & N/A & N/A & Replicated broker, flexible routing \\
+JMS~\cite{hapner2002java} & attribute-value pairs & SQL-like predicate & Complex & Unknown & Yes \\
+CORBA~\cite{vinoski1997corba} & properties and names & property matching & Complex & No & No \\
 \textbf{CQBS Broker} & attribute-value pairs & SQL-like predicate & Simple & Yes & Replicated brokers, coordinators \\
 \hline
 \end{tabular}
@@ -103,9 +104,9 @@ The focus of JMS is on enterprise-type applications that are in need of a messag
 
 %\textbf{Elvin}
 
-\subsection{Other Systems}
+%\subsection{Other Systems}
 
-\textbf{Tuple Spaces} \todo{tuple spaces: t-spaces and linda}
+%\textbf{Tuple Spaces} \todo{tuple spaces: t-spaces and linda}
 
 \textbf{CORBA}~\cite{vinoski1997corba}, the Common Object Request Broker Architecture, is a data bus for communication amongst distributed objects that provides property- and name-based discovery and event notification.
 Distributed object models (including DCOM~\cite{horstmann1997dcom}) share many features with content-based pubsub systems: similar to JMS, published messages contain key-value pairs in the header and body, and syndication is performed by subscribers specifying filters on those attributes.

@@ -180,28 +180,28 @@ The broker constructs forwarding paths for those streams to the subscriber; when
 The resolution of queries to routes is \emph{continuous}; the broker reevaluates syndication queries as stream metadata evolves, and informs clients of changes in the set of the streams to which they are subscribed before adjusting the forwarding paths.
 These changes happen on any metadata event: stream registration, stream deletion and metadata updates on streams.
 
-\begin{table}
-\caption{Supported key-value operations for the CQBS syndication query language}
-\label{table:operations}
-\centering
-\begin{tabular}{|l|L|L|}
-\hline
-\textbf{Operator} & \textbf{Description} & \textbf{Example} \\
-\hline \hline
-\texttt{=} & Compare value equality & \texttt{Location/Room = 410} \\
-\hline
-\texttt{like} & Perl-style regex & \texttt{Manufacturer like "Dent\..*"} \\
-\hline
-\texttt{has} & Checks if the stream has the tag & \texttt{has Location/Building} \\
-\hline
-\texttt{and} & Logical AND of two subqueries & \\
-\hline
-\texttt{or} & Logical OR of two subqueries & \\
-\hline
-\texttt{not} & Inverts a clause & \\
-\hline
-\end{tabular}
-\end{table}
+%\begin{table}
+%\caption{Supported key-value operations for the CQBS syndication query language}
+%\label{table:operations}
+%\centering
+%\begin{tabular}{|l|L|L|}
+%\hline
+%\textbf{Operator} & \textbf{Description} & \textbf{Example} \\
+%\hline \hline
+%\texttt{=} & Compare value equality & \texttt{Location/Room = 410} \\
+%\hline
+%\texttt{like} & Perl-style regex & \texttt{Manufacturer like "Dent\..*"} \\
+%\hline
+%\texttt{has} & Checks if the stream has the tag & \texttt{has Location/Building} \\
+%\hline
+%\texttt{and} & Logical AND of two subqueries & \\
+%\hline
+%\texttt{or} & Logical OR of two subqueries & \\
+%\hline
+%\texttt{not} & Inverts a clause & \\
+%\hline
+%\end{tabular}
+%\end{table}
 
 \begin{figure*}[t]
 \centering
@@ -213,7 +213,9 @@ changes to no longer fit the discovery constraints, the client is updated in rea
 \end{figure*}
 
 
-Queries are simple strings similar to the "where" clause of a SQL query. Table~\ref{table:operations} contains the set of available operations over keys and values.
+Queries are simple strings similar to the "where" clause of a SQL query. 
+These predicates support basic operations on keys and values: equality, regex matching, existence, and combinations of these using \texttt{and}, \texttt{or} and \texttt{not}.
+%Table~\ref{table:operations} contains the set of available operations over keys and values.
 
 For example, a hypothetical daylighting application wants to adjust the brightness of lights corresponding to how much natural light is entering a room.
 It subscribes to the output of all dimmable lights in room 410 as well as all illumination sensors.

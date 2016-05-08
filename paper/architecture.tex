@@ -5,7 +5,7 @@
 
 \begin{figure*}[t]
 \centering
-\includegraphics[width=6.5in]{figs/full_architecture.pdf}
+\includegraphics[width=.7\linewidth]{figs/full_architecture.pdf}
 \caption{Overview of the architecture of our brokerage system.
 Numerous clients communicate to a set of decentralized brokers which create a forwarding network between themselves as instructed by the centralized coordinator nodes.}
 \label{fig:architecture}
@@ -56,12 +56,12 @@ The broker to which the publisher is connected simply broadcasts the message ove
 \subsection{Coordinator Fault-Tolerance}
 \label{subsec:coordinator_fault_tolerance}
 
-\begin{figure*}[t]
+\begin{figure}[t]
 \centering
-\includegraphics[width=.9\linewidth]{figs/logreplay.pdf}
+\includegraphics[width=\linewidth]{figs/logreplay.pdf}
 \caption{Although they live in separate key spaces, the log and the continuous checkpointing are serialized via the Etcd log so that they can be leveraged for a consistent rebuild.}
 \label{fig:logreplay}
-\end{figure*}
+\end{figure}
 
 To all other components of the system, including clients, the coordinator appears to be a single node which is resilient to failures; however, to construct a highly available system the coordinator must be able to handle at least one node failure.
 To ensure that the coordinator will be resilient in the face of machine failure, we replicate its state across three independent nodes.

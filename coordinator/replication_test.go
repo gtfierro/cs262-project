@@ -27,6 +27,7 @@ func makeConfig(port int) *common.Config {
 			CoordinatorCount:  3,
 			EtcdAddresses:     "127.0.0.1:2379",
 			UseEtcd:           true,
+			DisableSendLog:    true, // should still work without it
 		},
 	}
 }

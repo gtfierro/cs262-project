@@ -8,9 +8,9 @@ import (
 	"github.com/montanaflynn/stats"
 	"os"
 	"sync"
-	"time"
 	"sync/atomic"
 	"math/rand"
+        "time"
 )
 
 var log *logging.Logger

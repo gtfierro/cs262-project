@@ -63,14 +63,6 @@ func (p *Publisher) Publish(value interface{}) error {
 	return nil
 }
 
-func (p *Publisher) GetStats() PublisherStats {
-	stats := PublisherStats{
-		MessagesAttempted:  atomic.LoadUint32(&p.sentMessagesAttempt),
-		MessagesSuccessful: atomic.LoadUint32(&p.sentMessagesTotal),
-	}
-	return stats
-}
-
 func (p *Publisher) AddMetadata(newm map[string]interface{}) {
 	// TODO: do we need to do anything beyond a blind overwrite?
 	p.metadataLock.Lock()
@@ -80,6 +72,14 @@ func (p *Publisher) AddMetadata(newm map[string]interface{}) {
 	}
 	p.dirtyMetadata = true
 	p.metadataLock.Unlock()
+}
+
+func (p *Publisher) GetStats() PublisherStats {
+	stats := PublisherStats{
+		MessagesAttempted:  atomic.LoadUint32(&p.sentMessagesAttempt),
+		MessagesSuccessful: atomic.LoadUint32(&p.sentMessagesTotal),
+	}
+	return stats
 }
 
 type PublisherStats struct {

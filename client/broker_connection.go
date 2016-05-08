@@ -10,6 +10,14 @@ import (
 	"time"
 )
 
+// configuration for a client
+type Config struct {
+	// ip:port of the initial, local broker
+	BrokerAddress string
+	// ip:port of the coordinator
+	CoordinatorAddress string
+}
+
 type BrokerConnection struct {
 	// Handling the connection to the local broker
 	// the IP:Port of the local broker we talk to
@@ -68,6 +76,7 @@ func (bc *BrokerConnection) Start() {
 func (bc *BrokerConnection) StopIn(d time.Duration) {
 	go func(c *BrokerConnection) {
 		time.Sleep(d)
+		bc.brokerDead = true
 		c.Stop <- true
 	}(bc)
 }

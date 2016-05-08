@@ -1,0 +1,72 @@
+\documentclass[conference]{IEEEtran}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{url}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage[labelfont=bf,format=plain,font=small]{subcaption}
+\usepackage[labelfont=bf,format=plain,font=small]{caption}
+\usepackage{array}
+\newcolumntype{L}{>{\arraybackslash}m{3cm}}
+\usepackage{minted}
+\newminted{sql}{mathescape, numbersep=5pt, frame=lines, framesep=2mm, fontsize=\footnotesize}
+\usepackage{MnSymbol}
+\def\prebreak{\raisebox{0ex}[0ex][0ex]{\ensuremath{\rhookswarrow}}}
+\def\postbreak{\raisebox{0ex}[0ex][0ex]{\ensuremath{\hookrightarrow\space}}}
+\def\lstbreak{\prebreak\newline\postbreak}
+\lstdefinelanguage{pseudocode}{sensitive=false,morecomment=[l]{//},morestring=[b]",
+                               morekeywords={if,else,while,continue,true}}
+\lstset{breaklines=true,breakindent=5pt,
+        postbreak=\postbreak,prebreak=\prebreak}
+
+\newcommand{\todo}[1]{\textcolor{red}{TODO: #1}\PackageWarning{TODO:}{#1!}}
+
+
+\begin{document}
+
+% TODO playing with new ways of wording the title; the content we had was correct
+% but I didn't feel great about the wording (and don't feel great about this either)
+\title{Continuous Query-Based Syndication in the Cloud for Scalability and Availability}
+
+\author{\IEEEauthorblockN{Gabriel Fierro}
+\IEEEauthorblockA{gt.fierro@berkeley.edu}
+\and
+\IEEEauthorblockN{Erik Krogen}
+\IEEEauthorblockA{erikkrogen@berkeley.edu}
+}
+
+\maketitle
+
+\begin{abstract}
+Applications in the Internet of Things exist at a confluence of semantically isolated networks over buildings, physical spaces, cloud services, smart appliances and mobile and wearable devices.
+The utility of these applications is in their ability to capture capabilities of new families of smart, networked devices and integrate them with existing networks surrounding people, things and places.
+We present a novel publish-subscribe mechanism --- continuous query-based syndication (CQBS) --- that allows subscribers to richly describe the set of resources they require and maintain a consistent view of relevant data sources even as they change over time.
+We implement a highly available, distributed CQBS broker that uses a replicated coordinator to provide simple failover for embedded clients.
+Through benchmarks, we demonstrate that the system maintains reasonable 95\textsuperscript{th} percentile latencies of under $10ms$ even under load.
+\end{abstract}
+
+\input{introduction} % for later
+
+\input{relatedwork} % Gabe
+
+\input{cqbs}
+
+\input{architecture}
+
+\input{evaluation}
+
+\input{futurework}
+
+\input{conclusion}
+
+\bibliographystyle{IEEEtran}
+\bibliography{IEEEabrv,references}
+
+\end{document}
+
+
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: t
+%%% End:

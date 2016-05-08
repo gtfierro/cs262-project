@@ -1,0 +1,29 @@
+\section{Future Work}
+
+\todo{Do we need other stuff here or should the subsection just become the entire section?}
+
+\subsection{Alternate Designs}
+\label{subsec:alternate_designs}
+
+\todo{this could probably be cleaned up a little}
+
+Currently, a full Raft transaction is performed through Etcd on every change to the system state.
+While this provided a relatively simple design with strong consistency guarantees, it incurs a rather high latency that does not parallelize due to the serial nature of Raft transactions.
+One alternate method to explore would be to use Raft only for leader elections, and have the leader stream events directly to the other coordinators rather than submitting them to the Etcd log.
+It may be possible to achieve higher throughput using, for example, a 2-phase commit protocol.
+
+Currently, the full state of the system is stored only at the coordinator, which can become a scalability bottleneck.
+We have considered one alternate design which is essentially the opposite of this, with the coordinator storing no system state beyond the set of connected brokers.
+On inbound queries and metadata changes, a broker would broadcast to all other brokers, allowing them to evaluate the changes and set up new forwarding routes as necessary.
+This is unfortunately expensive as it requires a broadcast, but it does away with the necessity for replication via Etcd since brokers can recreate the state of their system via information they receive when clients reconnect to them, which may be a desirable tradeoff.
+
+Another option we considered that provides a tradeoff between our current design and the one described above would be to have each broker store only its own state, and have the coordinator store only some sort of heuristic data.
+A broker would forward messages to the coordinator, which would not contain the full system state, but have enough information to narrow the possibly affected brokers to a smaller subset as opposed to having to broadcast to the entire system.
+This could, perhaps, mean storing ranges of metadata values that publishers at brokers contain.
+This pushes off the query processing effort onto the brokers and avoids full system broadcasts, making it scalable, but unfortunately still requires the coordinator to have a consistent view of the system to avoid the situation where the coordinator doesn't forward a message to a broker which it should have.
+However, as this view of the system is only required for performance rather than correctness (since all messages could still be broadcast), it may prove to be a desirable point in the design space.
+
+%%% Local Variables:
+%%% mode: latex
+%%% TeX-master: "paper"
+%%% End:

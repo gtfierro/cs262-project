@@ -118,5 +118,5 @@ func main() {
 	fmt.Printf("Quartiles. 25%% %s, 50%% %s, 75%% %s\n", q1.String(), q2.String(), q3.String())
 	fmt.Printf("Mean: %s\n", time.Duration(mean).String())
 	fmt.Printf("99 percentile: %s\n", time.Duration(percent99).String())
-	client.OneColumnCSV(initialDiffLatencies, "latency_subscriptiondiff_diffquery.csv", "latency")
+	client.ManyColumnCSV([][]float64{initialDiffLatencies}, "latency_subscriptiondiff_diffquery.csv")
 }

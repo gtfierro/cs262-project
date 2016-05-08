@@ -15,6 +15,7 @@ type SimulatedBroker struct {
 	coordConn          *net.TCPConn
 	coordEncoder       *msgp.Writer
 	coordEncodeLock    sync.RWMutex
+	sendLock           sync.Mutex
 
 	// signals on this channel when it is done
 	Stop chan bool
@@ -22,14 +23,16 @@ type SimulatedBroker struct {
 	uuid common.UUID
 
 	connectCallback func(*SimulatedBroker)
+	errorCallback   func()
 	msgHandler      func(common.Sendable)
 }
 
-func NewSimulatedBroker(connectCallback func(*SimulatedBroker), msgHandler func(common.Sendable), id common.UUID,
+func NewSimulatedBroker(connectCallback func(*SimulatedBroker), errorCallback func(), msgHandler func(common.Sendable), id common.UUID,
 	coordAddr string) (sb *SimulatedBroker, err error) {
 
 	sb = new(SimulatedBroker)
 	sb.connectCallback = connectCallback
+	sb.errorCallback = errorCallback
 	sb.msgHandler = msgHandler
 	sb.Stop = make(chan bool)
 	sb.uuid = id
@@ -43,8 +46,9 @@ func NewSimulatedBroker(connectCallback func(*SimulatedBroker), msgHandler func(
 }
 
 func (bc *SimulatedBroker) Start() {
+	bc.sendConnectMessage()
 	go bc.listenCoordinator()
-	bc.connectCallback(bc)
+	go bc.connectCallback(bc)
 }
 
 // after the duration expires, stop the client by signalling on c.Stop
@@ -61,13 +65,12 @@ func (bc *SimulatedBroker) connectCoordinator(startListener bool) {
 	var (
 		err      error
 		waitTime = 500 * time.Millisecond
-		maxWait  = 10 * time.Second
+		maxWait  = 5 * time.Second
 	)
 	bc.coordEncodeLock.Lock()
-	defer bc.coordEncodeLock.Unlock()
 	bc.coordConn, err = net.DialTCP("tcp", nil, bc.CoordinatorAddress)
 	for err != nil {
-		log.Warningf("Retrying coordinator connection to %v with delay %v", bc.CoordinatorAddress, waitTime)
+		log.Warningf("Retrying coordinator connection to %v with delay %v (%s)", bc.CoordinatorAddress, waitTime, bc.uuid)
 		time.Sleep(waitTime)
 		waitTime *= 2
 		if waitTime > maxWait {
@@ -75,12 +78,33 @@ func (bc *SimulatedBroker) connectCoordinator(startListener bool) {
 		}
 		bc.coordConn, err = net.DialTCP("tcp", nil, bc.CoordinatorAddress)
 	}
-	log.Debug("Connected to coordinator")
+	log.Debugf("Connected to coordinator (%s)", bc.uuid)
 	bc.coordEncoder = msgp.NewWriter(bc.coordConn)
+	bc.coordEncodeLock.Unlock()
 	if startListener {
-		go bc.listenCoordinator()
-		go bc.connectCallback(bc)
+		if err := bc.sendConnectMessage(); err != nil {
+			go bc.connectCoordinator(true)
+		} else {
+			go bc.listenCoordinator()
+			go bc.connectCallback(bc)
+		}
 	}
+}
+
+func (bc *SimulatedBroker) sendConnectMessage() error {
+	connectMsg := &common.BrokerConnectMessage{
+		MessageIDStruct: common.GetMessageIDStruct(),
+		BrokerInfo: common.BrokerInfo{
+			BrokerID: bc.uuid,
+			ClientBrokerAddr: "0.0.0.0:4444", // TODO
+			CoordBrokerAddr: "0.0.0.0:5505",
+		},
+	}
+	if err := bc.Send(connectMsg); err != nil {		
+		return err
+	} 
+	time.Sleep(50*time.Millisecond)
+	return nil 
 }
 
 func (bc *SimulatedBroker) listenCoordinator() {
@@ -91,7 +115,8 @@ func (bc *SimulatedBroker) listenCoordinator() {
 	for {
 		msg, err := common.MessageFromDecoderMsgp(reader)
 		if err != nil {
-			log.Warn("connection issue. Will attempt to reconnect")
+			log.Warnf("connection issue. Will attempt to reconnect (%s)", bc.uuid)
+			bc.errorCallback()
 			go bc.connectCoordinator(true)
 			return
 		}
@@ -99,8 +124,6 @@ func (bc *SimulatedBroker) listenCoordinator() {
 		switch m := msg.(type) {
 		case *common.RequestHeartbeatMessage:
 			go bc.Send(&heartbeat)
-		case *common.AcknowledgeMessage:
-			// Ignore
 		case common.SendableWithID:
 			go bc.Send(&common.AcknowledgeMessage{MessageID: m.GetID()})
 			bc.msgHandler(m)
@@ -113,13 +136,18 @@ func (bc *SimulatedBroker) listenCoordinator() {
 func (bc *SimulatedBroker) Send(m common.Sendable) error {
 	bc.coordEncodeLock.RLock()
 	defer bc.coordEncodeLock.RUnlock()
+	bc.sendLock.Lock()
+	defer bc.sendLock.Unlock()
 	if bc.coordEncoder == nil {
-		return errors.Wrap(nil, "Nil encoder")
+		log.Infof("Null encoder when sending (%s)", bc.uuid)
+		return errors.New("Nil encoder")
 	}
 	if err := m.Encode(bc.coordEncoder); err != nil {
+		log.Infof("Error when encoding (%s)", bc.uuid)
 		return errors.Wrap(err, "Could not encode message")
 	}
 	if err := bc.coordEncoder.Flush(); err != nil {
+		log.Infof("Error when sending (%s)", bc.uuid)
 		return errors.Wrap(err, "Could not send message to coordinator")
 	}
 	return nil

@@ -5,9 +5,10 @@ The goal of CQBS is to provide a messaging system that can account for and adapt
 CQBS allows embedded publishers to describe themselves using rich metadata, and provides subscribers with the ability to discover and subscribe to relevant data sources and maintain a consistent view of the context of those sources.
 
 Here, we first establish the CQBS primitives---streams and metadata---before delving into how CQBS operates and what roles publishers and subscribers play.
-We then describe the design and implementation of an individual broker (we defer the discussion of the full distributed system to Section~\ref{section:coordinator}).
+We then describe the design and implementation of an individual broker. 
+We defer the discussion of the full distributed system to Section~\ref{section:coordinator}.
 
-\begin{figure}
+\begin{figure}[!ht]
 \centering
 \begin{lstlisting}[language=pseudocode,basicstyle=\small]
 UUID = "dd9ef92e-140a-11e6-b352-1002b58053c7"
@@ -40,16 +41,27 @@ while True:
 
 \subsection{Streams and Metadata}
 
+\begin{figure*}[!ht]
+\centering
+\includegraphics[width=.8\linewidth]{figs/messages.pdf}
+\caption{The network traffic for a continuous query for discovering all temperature sensors in room 410 (ommitted
+for brevity are additional constrains for building, units, etc). As new streams are registered, or their metadata
+changes to no longer fit the discovery constraints, the client is updated in real-time.}
+\label{fig:messages}
+\end{figure*}
+
+
 A stream is a virtual representation of a specific sensor or actuator channel (a ``capability'') that is indexed by a 16-byte universally unique identifier (UUID).
-Each stream is described by \emph{metadata}, which is a bag of key-value pairs: keys are required to be strings, but values may be any one-dimensional data type\footnote{In our implementation, values are restricted to strings: see Section~\ref{section:evaluation}.}.
+Each stream is described by \emph{metadata}, which is a bag of key-value pairs: keys are required to be strings, but values may be any one-dimensional data type\footnote{In our implementation, values are restricted to strings: see the Implementation header at the end of this section.}.
 Key-value pairs are most effective when drawn from some well-known ontology (such as Semantic Sensor Web~\cite{sheth2008semantic}), but our system places no restrictions on their content.
+
 The association of metadata to a stream is done by the UUID; when a publisher creates a new stream, it registers that stream with the broker by sending a message containing the UUID and all of the metadata.
 The broker (or the coordinator, in the distributed case) stores the mapping from stream UUID to metadata.
 A publisher changes metadata by sending the ``diff'' of which keys and values have changed.
 A given producer (data provider) can have as many streams as it wishes.
 Each message contains at least the UUID of the originating stream, and can also contain any metadata changes, and of couse the published value itself, which can be any serializable object.
 
-An example of metadata for a temperature sensor, and the basic client logic, can be found in Figure~\ref{fig:pseudoclient}.
+An example of metadata for a temperature sensor and the associated client logic can be found in Figure~\ref{fig:pseudoclient}.
 In the initial registration message, along with the other metadata, the reporting process describes the thermostat as being in room 410 Soda.
 If this changes, such as if the sensor were on a piece of smart clothing or furniture, the sensor attaches the metadata update \lstinline[language=SQL,basicstyle=\ttfamily]{Location/Room = "415"} to any outgoing message, where it is handled by the broker (described in the following section).
 A discussion of client complexity can be found in Section~\ref{section:evaluation}.
@@ -169,13 +181,14 @@ We choose MsgPack, a lean, typed binary serialization format that is simple enou
 %and informs our decision to impose structure over metadata using client-defined
 %queries.
 
+
 \subsection{Query-Based Syndication}
 
 A primary contribution of our distributed broker architecture is its continuous, query-based syndication.
 Queries are structured, SQL-like statements that define sets of constraints over stream metadata to express ad-hoc relationships between streams.
 Query-based syndication is the use of these queries to define the forwarding routes from publishers to subscribers.
 When an application sends a syndication query to the broker, that query is evaluated by the broker into a set of matching streams.
-The broker constructs forwarding paths for those streams to the subscriber; whenever those streams send a message to the broker, it forwards that message to the relevant subscribers.
+The broker constructs forwarding paths for those streams to the subscriber; whenever those streams send a message to the broker, the broker forwards that message to the relevant subscribers.
 
 The resolution of queries to routes is \emph{continuous}; the broker reevaluates syndication queries as stream metadata evolves, and informs clients of changes in the set of the streams to which they are subscribed before adjusting the forwarding paths.
 These changes happen on any metadata event: stream registration, stream deletion and metadata updates on streams.
@@ -202,15 +215,6 @@ These changes happen on any metadata event: stream registration, stream deletion
 %\hline
 %\end{tabular}
 %\end{table}
-
-\begin{figure*}[t]
-\centering
-\includegraphics[width=.8\linewidth]{figs/messages.pdf}
-\caption{The network traffic for a continuous query for discovering all temperature sensors in room 410 (ommitted
-for brevity are additional constrains for building, units, etc). As new streams are registered, or their metadata
-changes to no longer fit the discovery constraints, the client is updated in real-time.}
-\label{fig:messages}
-\end{figure*}
 
 
 Queries are simple strings similar to the "where" clause of a SQL query. 

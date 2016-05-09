@@ -11,19 +11,20 @@ Numerous clients communicate to a set of decentralized brokers which create a fo
 \label{fig:architecture}
 \end{figure*}
 
-To meet these goals, we have developed an architecture which consists of two primary components: distributed brokers and centralized coordinators.
+To meet the goals of client simplicity, availability and scalability, we have developed an architecture which consists of two primary components: distributed brokers and centralized coordinators.
 See Figure~\ref{fig:architecture} for an overview which will be described in more detail in this and the following sections.
 
 The system contains one logically centralized coordinator; to all other entities in the system, the coordinator can be treated as a single machine.
 In actuality, this logical coordinator consists of three independent nodes to improve fault tolerance; see Section~\ref{subsec:coordinator_fault_tolerance} for more detail.
-This coordinator makes all of the decisions in the system, determining when a broker has failed, which brokers should forward which messages where, when changes occur to the set of publishers a subscriber is currently receiving messages from, which broker a client should contact if their broker fails, etc.
+This coordinator makes all of the decisions in the system, determining when a broker has failed, which brokers should forward which messages where, when changes occur to the set of publishers a subscriber is currently receiving messages from and which broker a client should contact if their broker fails.
 It then distributes these decisions to the brokers, which take appropriate action.
+
 To do this the coordinator stores the current state of all brokers in the system, as well as information about all of the clients that are known to the system, i.e.\ what broker they are attached to, what query they are interested in (for subscribers), and what their current metadata is (for publishers).
-Publisher metadata is stored in a local instance of MongoDB\footnote{\url{https://www.mongodb.com/}} which is used for executing queries.
+Publisher metadata is stored in a local instance of MongoDB~\cite{mongodb} which is used for executing queries.
 
 Brokers are numerous and may reside anywhere; for example, a deployment may consist of a broker located in each building which contains client devices, or brokers may be run on cloud computing nodes.
 Brokers are responsible for communicating with clients and for forwarding messages along routes as instructed by the coordinator.
-Any changes to the set of clients connected to the broker, or to the metadata of a publisher connected to the broker, are communicated back to the coordinator for handling so that the coordinator always has an update-to-date view of the entire system state.
+Any changes to the set of clients connected to the broker, or to the metadata of a publisher connected to the broker, are communicated back to the coordinator for handling so that the coordinator always has an up-to-date view of the entire system state.
 
 \subsection{Normal Operation}
 \label{subsec:normal_operation}
@@ -65,7 +66,7 @@ The broker to which the publisher is connected simply broadcasts the message ove
 
 To all other components of the system, including clients, the coordinator appears to be a single node which is resilient to failures; however, to construct a highly available system the coordinator must be able to handle at least one node failure.
 To ensure that the coordinator will be resilient in the face of machine failure, we replicate its state across three independent nodes.
-Each coordinator node runs an Etcd\footnote{\url{https://coreos.com/etcd/}} node, a reliable key-value store which internally uses the Raft distributed consensus protocol~\cite{ongaro2014} to provide strong consistency semantics among its members.
+Each coordinator node runs an Etcd~\cite{etcd} node, a reliable key-value store which internally uses the Raft distributed consensus protocol~\cite{ongaro2014} to provide strong consistency semantics among its members.
 At any given time, one coordinator is designated as the leader; this is the only coordinator node which will accept messages from or send messages to brokers.
 A single ``leader'' key is stored in Etcd; whichever coordinator was able to create this key via an atomic create-if-not-exists operation is considered the leader.
 The key is marked with a time-to-live of a few seconds which is continually refreshed by the leader; if the leader fails to refresh its ownership of the key, the key will disappear, allowing another replica to become the new leader.
@@ -99,7 +100,7 @@ The leader periodically checks these values and instructs Etcd to delete entries
 In addition to being resilient to coordinator failures, we require that our system continue functioning and all clients continue to be able to participate in the face of a broker failure.
 To this end, and with low client complexity in mind as a goal, we have designed a very simple fail-over protocol which allows the client to continue to operate on another broker during the period in which its local broker is not available.
 
-In addition to being aware of its local broker as described in Section~\ref{subsec:normal_operation}, each client must know the external address of the coordinator.
+In addition to being aware of its local broker as described in Section~\ref{subsec:normal_operation}, each client must know the external address of the coordinator; this can be accomplished using the same discovery method used to find the local broker.
 First, a client attempts to contact its local broker, Broker A.
 If the client is unable to do so, it sends a request to the coordinator, which will supply it with the address of some other broker B which can service its needs until Broker A is available again.
 The client connects to Broker B and continues as usual.

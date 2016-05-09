@@ -5,7 +5,7 @@ The CQBS distributed broker is most closely related to \emph{publish-subscribe} 
 We examine each of the systems below along the primary design dimensions of the CQBS broker: richness of publisher descriptions, expressiveness of syndication model, client complexity and fault tolerance.
 A summary of these systems and their properties can be seen in Table~\ref{table:comparison}.
 
-\begin{table*}
+\begin{table*}[h]
 \caption{High-level comparison of features between systems}
 \label{table:comparison}
 \centering
@@ -29,7 +29,7 @@ CORBA~\cite{vinoski1997corba} & properties and names & property matching & Compl
 
 Most publish-subscribe (``pub-sub'') systems fall into one of two categories: topic-based and content based~\cite{eugster2003many}.
 The most basic form of topic-based pub-sub is a channel model, in which producers (data publishers) transmit data associated with some channel name to a broker; subscribers list the channels in which they are interested.
-The benefits of this approach are its simplicity and speed---the ``hot path'' of a published message simply retrieves a list of subscribers---but there is limited expressive power because each publisher can only describe their data using a single dimension (the name of the channel)~\cite{redis}.
+The benefits of this approach are its simplicity and speed---the ``hot path'' of a published message simply retrieves a list of subscribers---but each publisher is limited in expressive power to a single dimension (the name of the channel)~\cite{redis}.
 Because of these limitations, some modern pub-sub systems use hierarchical topics with prefix and suffix matching using wildcards. The most popular of these are MQTT~\cite{locke2010mq}, Kafka~\cite{kreps2011kafka} and XMPP~\cite{saint2011extensible}.
 %While our CQBS system is primarily a \emph{publish-subscribe} solution, its goals of providing
 %resource discovery as well as data transfer means that we must also
@@ -69,7 +69,7 @@ Similar to channel-based systems, every entity (publisher or subscriber or broke
 There are attempts to provide a more expressive pub-sub model on top of XMPP that allows for the discovery of services and subsequent subscription to relevant service providers~\cite{millard2010xep}.
 These service descriptions can be extended to include arbitrary contextual data, which is a definite advantage over primitive address-based messaging.
 
-The limitation of XMPP is in its size and complexity.
+The limitation of XMPP lies in its size and complexity.
 XMPP messages are XML-encoded and thus permit the expression of many different structures, but XML parsers are typically large and memory-intensive, rendering them inappropriate for embedded devices.
 Additionally, XML tends towards large messages, which can result in fragmented messages in embedded networks that lower throughput and delivery rate.
 
@@ -88,7 +88,7 @@ While this scheme has richer descriptive power, routing on a per-message basis i
 
 \textbf{SIENA}~\cite{carzaniga2000achieving}, the Scalable Internet Event Notification Architecture, aims to maximize the expressiveness of publishers and subscribers communicating in a wide-area network.
 SIENA publishers send messages containing a set of \texttt{<type, name, value>} tuples, to which clients can subscribe using SQL-like filter expressions.
-This approach, designed to provide discovery of relevant data in a large amount of heterogeneous messages, allows publishers to express richer metadata than would be feasible using a topic-based scheme.
+This approach, designed to provide discovery of relevant data in a large number of heterogeneous messages, allows publishers to express richer metadata than would be feasible using a topic-based scheme.
 It also allows subscribers to more precisely define the data they need.
 For example, this could easily capture the proposed descriptive elements of the temperature sensor described above and allow a subscriber to filter on any combination of those attributes.
 

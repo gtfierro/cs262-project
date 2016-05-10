@@ -38,7 +38,7 @@ The microbenchmark demonstrates that a single broker can quite easily handle a c
 \caption{Microbenchmark: coordinator latency in the face of failures.
 Red dots indicate running a single-node coordinator with no replication or fault tolerance; green dots indicate running a full three-node coordinator with fault tolerance via Etcd.
 At the blue line at approximately 280 seconds, the system switches from adding new publishers to existing publishers changing their metadata.
-At the gap seen in the replicated results at approximately 325 seconds, the leader node of the coordinator node was shut down.}
+At the gap seen in the replicated results at approximately 325 seconds, the leader node of the coordinator cluster was shut down.}
 \label{fig:coordinator_performance}
 \end{figure}
 

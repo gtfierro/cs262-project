@@ -21,11 +21,11 @@ These queries are continuously evaluated to reflect the current configuration of
 publishers changes.
 
 In this paper, we present the design and implementation of a distributed CQBS broker, a message broker for service composition that uses \emph{continuous query-based syndication} to enable dynamic and contextually-aware applications and services for the Internet of Things.
-
-Our design is motivated by a number of goals:
+The system is intended to serve as a ubiquitous message bus connecting an array of embedded, networked devices with a collection of distributed applications.
+In order to be effective, the design must meet the following requirements:
 \begin{itemize}
-\item High Availability: We wish to create a system that is resilient in the face of arbitrary machine failures.
-\item Scalability: The system should be able to scale to large numbers of clients with reasonably high message rates.
+\item High Availability: IoT applications must be robust to the inevitable hardware and network failures at scale. We wish to create a system that is resilient in the face of arbitrary machine failures.
+\item Scalability: Applications will want to connect across rooms, buildings or even cities, requiring a large number of ingress points. The system should be able to scale to large numbers of clients with reasonably high message rates.
 \item Simple Clients: The code necessary for a client to interact with the system should be very simple, since we assume that they may be embedded devices with limited programming facilities and computational resources.
 \end{itemize}
 

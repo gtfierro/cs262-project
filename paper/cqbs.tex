@@ -1,18 +1,11 @@
 \section{Continuous Query-Based Syndication}
 
-Continuous Query-Based Syndication (CQBS) is a hybrid publish-subscribe pattern that provides the expressiveness of content-based systems while retaining the simplicity of topic-based systems.
-The goal of CQBS is to provide a messaging system that can account for and adapt to the heterogeneity of data sources in the IoT.
-CQBS allows embedded publishers to describe themselves using rich metadata, and provides subscribers with the ability to discover and subscribe to relevant data sources and maintain a consistent view of the context of those sources.
-
-Here, we first establish the CQBS primitives---streams and metadata---before delving into how CQBS operates and what roles publishers and subscribers play.
-We then describe the design and implementation of an individual broker. 
-We defer the discussion of the full distributed system to Section~\ref{section:coordinator}.
-
-\begin{figure}[!ht]
+\begin{figure}[ht]
 \centering
 \begin{lstlisting}[language=pseudocode,basicstyle=\small]
+// stream identifier for temperature data
 UUID = "dd9ef92e-140a-11e6-b352-1002b58053c7"
-# register client
+// register client
 metadata = {
   UUID = UUID,
   Location/Room = "410",
@@ -25,6 +18,7 @@ metadata = {
   Timezone = "America/Los_Angeles"
 }
 register_msg := msgpack.encode(metadata)
+// transmit to local broker
 send_to_broker(register_msg)
 while True:
     temp_val := read_sensor()
@@ -35,16 +29,25 @@ while True:
     send_to_broker(msg)
     sleep(10)
 \end{lstlisting}
-\caption{Client registration and publishing pseudocode}
+\caption{Pseudocode for a publisher registering a stream and publishing data to a local broker. The figure is explained in fuller detail below.}
 \label{fig:pseudoclient}
 \end{figure}
+
+
+Continuous Query-Based Syndication (CQBS) is a hybrid publish-subscribe pattern that provides the expressiveness of content-based systems while retaining the simplicity of topic-based systems.
+The goal of CQBS is to provide a messaging system that can account for and adapt to the heterogeneity of data sources in the IoT.
+CQBS allows embedded publishers to describe themselves using rich metadata, and provides subscribers with the ability to discover and subscribe to relevant data sources and maintain a consistent view of the context of those sources.
+
+Here, we first establish the CQBS primitives---streams and metadata---before delving into how CQBS operates and what roles publishers and subscribers play.
+We then describe the design and implementation of an individual broker. 
+We defer the discussion of the full distributed system to Section~\ref{section:coordinator}.
 
 \subsection{Streams and Metadata}
 
 \begin{figure*}[!ht]
 \centering
 \includegraphics[width=.8\linewidth]{figs/messages.pdf}
-\caption{The network traffic for a continuous query for discovering all temperature sensors in room 410 (ommitted
+\caption{The network traffic for a continuous query for discovering all temperature sensors in room 410 (omitted
 for brevity are additional constrains for building, units, etc). As new streams are registered, or their metadata
 changes to no longer fit the discovery constraints, the client is updated in real-time.}
 \label{fig:messages}
@@ -226,14 +229,14 @@ It subscribes to the output of all dimmable lights in room 410 as well as all il
 There are two subscriptions:
 
 \begin{minipage}{\linewidth}
-\begin{sqlcode}
+\begin{textcode}
 -- dimmable lights
 Room = 410 AND System = "Lighting"
 AND has Actuator/Brightness
 -- illumination sensors
 Room = 410 AND Point/Type = "Sensor"
 AND Point/Measure = "Illumination"
-\end{sqlcode}
+\end{textcode}
 \end{minipage}
 \vspace{0.3cm}
 
